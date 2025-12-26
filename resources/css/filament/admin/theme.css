@@ -1,0 +1,19 @@
+@import "../../../../vendor/filament/filament/resources/css/theme.css";
+
+@source '../../../../app/Filament/**/*';
+@source '../../../../resources/views/filament/**/*';
+
+/* Overrides y estilos de tema para la maqueta de Filament */
+.filament-header {
+    background-color: #ffffff;
+    box-shadow: 0 1px 0 rgba(0, 0, 0, 0.04);
+}
+
+.filament-button-primary {
+    background-color: #ff3b1f;
+    color: #ffffff;
+}
+
+.text-brand {
+    color: #ff3b1f;
+}

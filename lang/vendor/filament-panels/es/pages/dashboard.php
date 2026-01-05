@@ -2,7 +2,7 @@
 
 return [
 
-    'title' => 'Launch Pad',
+    'title' => 'Escritorio',
 
     'actions' => [
 

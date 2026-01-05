@@ -39,12 +39,12 @@ class UserResource extends Resource
 {
     protected static ?string $model = User::class;
 
-    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedUserGroup;
+    protected static string|BackedEnum|null $navigationIcon = Heroicon::UserGroup;
 
     protected static ?string $modelLabel = 'usuario';
     protected static ?string $pluralModelLabel = 'Usuarios';
     protected static bool $hasTitleCaseModelLabel = false;
-/*     protected static string | UnitEnum | null $navigationGroup = 'Sistema'; */
+    protected static string | UnitEnum | null $navigationGroup = 'Sistema';
     protected static ?int $navigationSort = 2;
 
     protected static ?string $recordTitleAttribute = 'name';

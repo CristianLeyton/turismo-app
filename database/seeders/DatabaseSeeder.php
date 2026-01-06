@@ -2,9 +2,11 @@
 
 namespace Database\Seeders;
 
+use App\Models\Route;
 use App\Models\User;
 // use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
+
 
 class DatabaseSeeder extends Seeder
 {
@@ -43,5 +45,13 @@ class DatabaseSeeder extends Seeder
             'is_admin' => false,
             'email_verified_at' => now(),
         ]);
+    
+    $this->call([
+        BusSeeder::class,
+        SeatSeeder::class,
+        LocationSeeder::class,
+        RouteSeeder::class,
+        RouteStopSeeder::class,
+    ]);
     }
 }

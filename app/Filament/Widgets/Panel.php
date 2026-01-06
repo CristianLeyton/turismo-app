@@ -2,6 +2,7 @@
 
 namespace App\Filament\Widgets;
 
+use App\Filament\Resources\Users\UserResource;
 use Filament\Widgets\StatsOverviewWidget;
 use Filament\Widgets\StatsOverviewWidget\Stat;
 use Illuminate\Support\Facades\Auth;
@@ -36,7 +37,7 @@ class Panel extends StatsOverviewWidget
                 ->extraAttributes(['class' => 'group [&_.fi-wi-stats-overview-stat-value]:text-2xl [&_.fi-wi-stats-overview-stat-value]:group-hover:text-primary-600 [&_.fi-wi-stats-overview-stat-value]:transition']),
             Stat::make('Administrar usuarios', 'Usuarios')
                 ->icon('heroicon-o-user-group')
-                ->url('#')
+                ->url(UserResource::getUrl())
                 ->description('Crear o editar usuarios')
                 ->descriptionIcon('heroicon-m-arrow-up-right')
                 ->extraAttributes(['class' => 'group [&_.fi-wi-stats-overview-stat-value]:text-2xl [&_.fi-wi-stats-overview-stat-value]:group-hover:text-primary-600 [&_.fi-wi-stats-overview-stat-value]:transition'])

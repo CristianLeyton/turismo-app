@@ -44,8 +44,8 @@ class UserResource extends Resource
     protected static ?string $modelLabel = 'usuario';
     protected static ?string $pluralModelLabel = 'Usuarios';
     protected static bool $hasTitleCaseModelLabel = false;
-    protected static string | UnitEnum | null $navigationGroup = 'Sistema';
-    protected static ?int $navigationSort = 2;
+/*     protected static string | UnitEnum | null $navigationGroup = 'Sistema'; */
+    protected static ?int $navigationSort = 3;
 
     protected static ?string $recordTitleAttribute = 'name';
 
@@ -57,12 +57,41 @@ class UserResource extends Resource
                     ->label('Nombre')
                     ->required()
                     ->validationMessages(['required' => 'El campo nombre es obligatorio.']),
+                TextInput::make('surname')
+                    ->label('Apellido')
+                    ->maxLength(255)
+                    ->nullable()
+                    ->validationMessages([
+                        'max' => 'El apellido no debe exceder los :max caracteres.',
+                    ]),
+                TextInput::make('username')
+                    ->label('Nombre de usuario')
+                    ->minLength(3)
+                    ->maxLength(255)
+                    ->required()
+                    ->unique()
+                    ->validationMessages([
+                        'min' => 'El nombre de usuario debe tener al menos :min caracteres.',
+                        'required' => 'El nombre de usuario es obligatorio.',
+                        'max' => 'El nombre de usuario no debe exceder los :max caracteres.',
+                        'unique' => 'El nombre de usuario ya está en uso.',
+                    ]),
+                TextInput::make('phone')
+                    ->tel()
+                    ->label('Número de teléfono')
+                    ->maxLength(15)
+                    ->nullable()
+                    ->unique()
+                    ->validationMessages([
+                        'unique' => 'El número de teléfono ya está en uso.',
+                        'max' => 'El número de teléfono no debe exceder los :max caracteres.',
+                    ]),
                 TextInput::make('email')
                     ->label('Email')
+                    ->unique()
                     ->email()
-                    ->required()
                     ->validationMessages([
-                        'required' => 'El campo email es obligatorio.',
+                        'unique' => 'El email ya está en uso.',
                         'email' => 'El campo email debe ser una dirección de correo electrónico válida.',
                     ]),
                 TextInput::make('password')
@@ -81,15 +110,24 @@ class UserResource extends Resource
     {
         return $table
             ->recordTitleAttribute('User')
+             ->modifyQueryUsing(fn (Builder $query) => $query->where('id', '!=', 1)) // Excluir el usuario con ID 1
             ->columns([
                 TextColumn::make('name')
+                    ->label('Nombre')
+                    ->getStateUsing(fn(Model $record): string => $record->name . ' ' . ($record->surname ?? ''))
                     ->searchable(),
-                TextColumn::make('email')
+/*                 TextColumn::make('surname')
+                    ->label('Apellido')
+                    ->searchable()
+                    ->visibleFrom('md'), */
+                TextColumn::make('username')
+                    ->label('Nombre de usuario')
+                    ->searchable(),
+                /* TextColumn::make('email')
                     ->label('Email address')
                     ->searchable()
-                    ->visibleFrom('md')
-                    ,
-                /*                 ToggleColumn::make('is_admin')
+                    ->visibleFrom('md'), */
+                /*ToggleColumn::make('is_admin')
                     ->label('Es administrador')
                     ->disabled(fn(Model $record): bool => $record->id === 1)
                     ->sortable(), */
@@ -126,7 +164,7 @@ class UserResource extends Resource
                 TrashedFilter::make(),
             ])
             ->recordActions([
-                EditAction::make()->disabled(fn(User $record): bool => $record->id === 1)->button()->hiddenLabel()->extraAttributes([
+                EditAction::make()->disabled(fn(User $record): bool => $record->id === 2)->button()->hiddenLabel()->extraAttributes([
                     'title' => 'Editar',
                 ]),
                 Action::make('resetPassword')
@@ -134,14 +172,14 @@ class UserResource extends Resource
                     ->icon(Heroicon::Key)
                     ->color('info')
                     ->action(function (User $record) {
-                        $newPassword = explode('@', $record->email)[0];
+                        $newPassword = $record->username;
                         $record->password = bcrypt($newPassword);
                         $record->save();
 
                         // Aquí puedes agregar lógica para notificar al usuario sobre su nueva contraseña
                         Notification::make()
                             ->title('Contraseña restablecida')
-                            ->body('Contraseña restablecida a la parte antes del "@" de su correo electrónico.')
+                            ->body('El nombre de usuario y la nueva contraseña es: ' . $newPassword)
                             ->success()
                             ->icon('heroicon-o-key')
                             ->iconColor('info')
@@ -149,20 +187,20 @@ class UserResource extends Resource
                             ->send();
                     })
                     ->requiresConfirmation()
-                    ->disabled(fn(User $record): bool => $record->id === 1)
+                    ->disabled(fn(User $record): bool => $record->id === 2)
                     ->button()
                     ->hiddenLabel()
                     ->extraAttributes([
                         'title' => 'Restablecer contraseña',
                     ]),
 
-                DeleteAction::make()->disabled(fn(User $record): bool => $record->id === 1)->button()->hiddenLabel()->extraAttributes([
+                DeleteAction::make()->disabled(fn(User $record): bool => $record->id === 2)->button()->hiddenLabel()->extraAttributes([
                     'title' => 'Eliminar',
                 ]),
-                ForceDeleteAction::make()->disabled(fn(User $record): bool => $record->id === 1)->button()->hiddenLabel()->extraAttributes([
+                ForceDeleteAction::make()->disabled(fn(User $record): bool => $record->id === 2)->button()->hiddenLabel()->extraAttributes([
                     'title' => 'Eliminar permanentemente',
                 ]),
-                RestoreAction::make()->disabled(fn(User $record): bool => $record->id === 1)->button()->hiddenLabel()->extraAttributes([
+                RestoreAction::make()->disabled(fn(User $record): bool => $record->id === 2)->button()->hiddenLabel()->extraAttributes([
                     'title' => 'Restaurar',
                 ]),
             ])

@@ -2,6 +2,7 @@
 
 namespace App\Providers\Filament;
 
+use app\Filament\Resources\Users\Pages\Auth\CustomLogin;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
@@ -19,24 +20,25 @@ use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
 use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Session\Middleware\StartSession;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
+use App\Filament\Pages\Auth\EditProfile;
 
 class AdminPanelProvider extends PanelProvider
 {
     public function panel(Panel $panel): Panel
     {
         return $panel
-            ->profile(isSimple: false)
-            ->registration()
-            ->passwordReset()
-            ->emailVerification()
-            ->emailChangeVerification()
+            ->profile(isSimple: false, page: EditProfile::class)
+            /* ->registration() */
+            /* ->passwordReset()
+            ->emailVerification() */
+            /* ->emailChangeVerification() */
             ->spa(hasPrefetching: true)
             ->default()
             ->id('admin')
             ->path('admin')
-            ->login()
+            ->login(CustomLogin::class)
             ->colors([
-                'primary' => Color::Cyan,
+                'primary' => Color::Fuchsia,
             ])
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\Filament\Resources')
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\Filament\Pages')

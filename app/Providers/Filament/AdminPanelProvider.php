@@ -33,10 +33,13 @@ class AdminPanelProvider extends PanelProvider
             ->emailVerification() */
             /* ->emailChangeVerification() */
             ->spa(hasPrefetching: true)
+/*             ->sidebarCollapsibleOnDesktop() */
+            ->topNavigation()
             ->default()
             ->id('admin')
             ->path('admin')
             ->login(CustomLogin::class)
+            ->viteTheme('resources/css/filament/admin/theme.css')
             ->colors([
                 'primary' => Color::Fuchsia,
             ])
@@ -47,7 +50,7 @@ class AdminPanelProvider extends PanelProvider
             ])
             ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\Filament\Widgets')
             ->widgets([
-                AccountWidget::class,
+                //AccountWidget::class,
             ])
             ->middleware([
                 EncryptCookies::class,

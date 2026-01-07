@@ -38,7 +38,7 @@ class RouteStopResource extends Resource
 
     protected static ?string $recordTitleAttribute = 'name';
 
-        protected static ?string $modelLabel = 'parada';
+    protected static ?string $modelLabel = 'parada';
     protected static ?string $pluralModelLabel = 'Paradas';
     protected static bool $hasTitleCaseModelLabel = false;
     protected static ?int $navigationSort = 2;
@@ -63,6 +63,7 @@ class RouteStopResource extends Resource
     {
         return $table
             ->paginated([6, 10, 25, 50])
+            ->defaultPaginationPageOption(6)
             ->recordTitleAttribute('name')
             ->columns([
                 TextColumn::make('route.name')
@@ -91,8 +92,8 @@ class RouteStopResource extends Resource
             ])
             ->filters([
                 SelectFilter::make('route')
-                ->label('Ruta')
-                ->relationship('route', 'name'),
+                    ->label('Ruta')
+                    ->relationship('route', 'name'),
                 TrashedFilter::make(),
             ])
             ->recordActions([

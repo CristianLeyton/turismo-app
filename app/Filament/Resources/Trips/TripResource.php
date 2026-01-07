@@ -1,11 +1,10 @@
 <?php
 
-namespace App\Filament\Resources\Seats;
+namespace App\Filament\Resources\Trips;
 
-use App\Filament\Clusters\Buses\BusesCluster;
-use App\Filament\Resources\Seats\Pages\ManageSeats;
-use App\Models\Bus;
-use App\Models\Seat;
+use App\Filament\Resources\Trips\Pages\ManageTrips;
+use App\Models\Schedule;
+use App\Models\Trip;
 use BackedEnum;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
@@ -15,39 +14,28 @@ use Filament\Actions\ForceDeleteAction;
 use Filament\Actions\ForceDeleteBulkAction;
 use Filament\Actions\RestoreAction;
 use Filament\Actions\RestoreBulkAction;
+use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Select;
-use Filament\Forms\Components\TextInput;
-use Filament\Forms\Components\Toggle;
 use Filament\Resources\Resource;
-use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
-use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
-use Filament\Tables\Columns\ToggleColumn;
-use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
-use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Filters\TrashedFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
-use UnitEnum;
 
-class SeatResource extends Resource
+class TripResource extends Resource
 {
-    protected static ?string $model = Seat::class;
+    protected static ?string $model = Trip::class;
 
-    protected static string|BackedEnum|null $navigationIcon = Heroicon::User;
+    protected static string|BackedEnum|null $navigationIcon = Heroicon::ClipboardDocument;
 
-    
-      protected static ?string $cluster = BusesCluster::class;
-
-    protected static ?string $modelLabel = 'asiento';
-    protected static ?string $pluralModelLabel = 'Asientos';
+    protected static ?string $modelLabel = 'viaje';
+    protected static ?string $pluralModelLabel = 'Viajes';
     protected static bool $hasTitleCaseModelLabel = false;
-    protected static ?int $navigationSort = 2;
-    
+    protected static ?int $navigationSort = 3;
 
     public static function form(Schema $schema): Schema
     {
@@ -56,51 +44,64 @@ class SeatResource extends Resource
                 Select::make('bus_id')
                     ->label('Colectivo')
                     ->relationship('bus', 'name')
-                    ->live()
                     ->required(),
-                TextInput::make('seat_number')
-                    ->label('Número de asiento')
-                    ->unique(column: 'seat_number', ignoreRecord: true)
+                Select::make('route_id')
+                    ->label('Ruta')
+                    ->relationship('route', 'name')
                     ->required()
-                    ->numeric()
-                    ->minValue(1)
-                    ->maxValue(function (Get $get) {
-                        $busId = $get('bus_id');
-                        if (! $busId) {
-                            return null;
-                        }
-                        return Bus::find($busId)?->seat_count;
+                    ->reactive(),
+                Select::make('schedule_id')
+                    ->label('Horario')
+                    ->relationship(
+                        'schedule',
+                        'name',
+                        fn($query, $get) => $query->where('is_active', true)
+                            ->where('route_id', $get('route_id'))
+                    )
+                    ->getOptionLabelFromRecordUsing(function (Schedule $record) {
+                        return $record->display_name;
                     })
-                    ->validationMessages([
-                        'required' => 'El número de asiento es obligatorio.',
-                        'unique' => 'El número de asiento ya está en uso para este colectivo.',
-                        'numeric' => 'El número de asiento debe ser un número.',
-                        'min' => 'El número de asiento debe ser al menos :min.',
-                    ]),
-                Toggle::make('is_active')
-                    ->label('Activo')
-                    ->required(),
+                    ->required()
+                    ->preload()
+                    ->reactive()
+                    ->afterStateUpdated(function ($state, callable $set) {
+                        if ($state) {
+                            $schedule = Schedule::find($state);
+                            if ($schedule) {
+                                $set('departure_time', $schedule->departure_time);
+                                $set('arrival_time', $schedule->arrival_time);
+                            }
+                        }
+                    }),
+                DatePicker::make('trip_date')
+                    ->label('Fecha del viaje')
+                    ->required()
+                    ->displayFormat('d/m/Y')
+                    ->native(false),
             ]);
     }
 
     public static function table(Table $table): Table
     {
         return $table
-            ->paginated([5, 10, 25, 50, 100])
             ->columns([
                 TextColumn::make('bus.name')
                     ->label('Colectivo')
                     ->sortable()
                     ->searchable(),
-                TextColumn::make('seat_number')
-                    ->label('Número de asiento')
-                    ->numeric()
+                TextColumn::make('trip_date')
+                    ->label('Fecha')
+                    ->date()
                     ->sortable()
                     ->alignCenter(),
-                ToggleColumn::make('is_active')
-                    ->label('Activo')
-                    ->alignCenter()
-                    ->sortable(),
+                TextColumn::make('schedule.name')
+                    ->label('Horario')
+                    ->searchable()
+                    ->alignCenter(),
+                TextColumn::make('route.name')
+                    ->label('Ruta')
+                    ->sortable()
+                    ->searchable(),
                 TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable()
@@ -109,20 +110,20 @@ class SeatResource extends Resource
                     ->dateTime()
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
+                TextColumn::make('deleted_at')
+                    ->dateTime()
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
-                 SelectFilter::make('bus')
-                    ->relationship('bus', 'name')
-                    ->label('Colectivo'),
-
-                TernaryFilter::make('is_active')
-                    ->label('Estado')
-                    ->trueLabel('Activo')
-                    ->falseLabel('Inactivo'),
+                SelectFilter::make('route')
+                    ->relationship('route', 'name')
+                    ->label('Ruta')
+                    ->preload(),
                 TrashedFilter::make(),
             ])
             ->recordActions([
-                EditAction::make()->button()->hiddenLabel()->extraAttributes([
+/*                 EditAction::make()->button()->hiddenLabel()->extraAttributes([
                     'title' => 'Editar',
                 ]),
                 DeleteAction::make()->button()->hiddenLabel()->extraAttributes([
@@ -133,21 +134,21 @@ class SeatResource extends Resource
                 ]),
                 RestoreAction::make()->button()->hiddenLabel()->extraAttributes([
                     'title' => 'Restaurar',
-                ]),
+                ]), */
             ])
             ->toolbarActions([
-                BulkActionGroup::make([
+/*                 BulkActionGroup::make([
                     DeleteBulkAction::make(),
                     ForceDeleteBulkAction::make(),
                     RestoreBulkAction::make(),
-                ]),
+                ]), */
             ]);
     }
 
     public static function getPages(): array
     {
         return [
-            'index' => ManageSeats::route('/'),
+            'index' => ManageTrips::route('/'),
         ];
     }
 

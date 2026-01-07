@@ -52,6 +52,7 @@ class DatabaseSeeder extends Seeder
         LocationSeeder::class,
         RouteSeeder::class,
         RouteStopSeeder::class,
+        ScheduleSeeder::class,
     ]);
     }
 }

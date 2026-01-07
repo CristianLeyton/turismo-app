@@ -18,8 +18,10 @@ return new class extends Migration
                 ->cascadeOnDelete();
 
             $table->date('trip_date');
-            $table->time('departure_time');
-            $table->time('arrival_time')->nullable();
+            $table->foreignId('schedule_id')
+            ->nullable()
+            ->constrained()
+            ->cascadeOnDelete();
 
             $table->foreignId('route_id')
                 ->constrained()
@@ -28,7 +30,7 @@ return new class extends Migration
             $table->timestamps();
 
             $table->softDeletes();
-            $table->index(['trip_date', 'departure_time']);
+            $table->index(['trip_date']);
         });
     }
 

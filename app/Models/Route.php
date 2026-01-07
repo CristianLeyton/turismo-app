@@ -78,4 +78,22 @@ class Route extends Model
         ->whereBetween('stop_order', [$originOrder, $destinationOrder])
         ->get();
 }
+
+public function schedules(): HasMany
+{
+    return $this->hasMany(Schedule::class)
+        ->orderBy('departure_time');
+}
+
+public function activeSchedules(): HasMany
+{
+    return $this->hasMany(Schedule::class)
+        ->where('is_active', true)
+        ->orderBy('departure_time');
+}
+
+public function trips(): HasMany
+{
+    return $this->hasMany(Trip::class);
+}
 }

@@ -5,28 +5,37 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 use App\Models\Seat;
 
 class Trip extends Model
 {
+    use SoftDeletes;
     protected $fillable = [
+        'route_id',        // Agregar esto
+        'schedule_id',     // Nuevo
         'bus_id',
         'trip_date',
-        'departure_time',
-        'arrival_time',
     ];
 
     protected $casts = [
         'trip_date' => 'date',
-        'departure_time' => 'datetime:H:i',
-        'arrival_time' => 'datetime:H:i',
     ];
 
     public function bus(): BelongsTo
     {
         return $this->belongsTo(Bus::class);
+    }
+
+    public function route(): BelongsTo
+    {
+        return $this->belongsTo(Route::class);
+    }
+
+    public function schedule(): BelongsTo
+    {
+        return $this->belongsTo(Schedule::class);
     }
 
     public function tickets(): HasMany
@@ -89,8 +98,22 @@ class Trip extends Model
             ->count();
     }
 
-    public function route(): BelongsTo
+    public function getDepartureTimeAttribute($value)
     {
-        return $this->belongsTo(Route::class);
+        if ($this->schedule && $this->schedule->departure_time) {
+            return $this->schedule->departure_time;
+        }
+        return $value;
+    }
+
+    /**
+     * Obtener hora de llegada (del schedule si existe, sino del campo)
+     */
+    public function getArrivalTimeAttribute($value)
+    {
+        if ($this->schedule && $this->schedule->arrival_time) {
+            return $this->schedule->arrival_time;
+        }
+        return $value;
     }
 }

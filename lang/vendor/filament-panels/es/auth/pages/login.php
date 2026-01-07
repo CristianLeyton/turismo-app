@@ -4,7 +4,7 @@ return [
 
     'title' => 'Acceso',
 
-    'heading' => 'Ingresar a su cuenta',
+    'heading' => 'Ingresar al sistema',
 
     'actions' => [
 

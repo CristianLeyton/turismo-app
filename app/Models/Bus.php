@@ -12,6 +12,7 @@ class Bus extends Model
         'name',
         'plate',
         'seat_count',
+        'floors',
     ];
 
     public function seats(): HasMany

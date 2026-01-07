@@ -27,8 +27,8 @@ class ScheduleSeeder extends Seeder
         Schedule::create([
             'route_id' => $oranSalta->id,
             'name' => 'Tarde',
-            'departure_time' => Carbon::createFromTime(14, 0, 0), // 14:00
-            'arrival_time' => Carbon::createFromTime(19, 0, 0),   // 19:00
+            'departure_time' => Carbon::createFromTime(02, 0, 0), // 02:00
+            'arrival_time' => Carbon::createFromTime(06, 30, 0),   // 06:30
             'is_active' => true,
         ]);
 
@@ -41,7 +41,7 @@ class ScheduleSeeder extends Seeder
             'route_id' => $saltaOran->id,
             'name' => 'Noche',
             'departure_time' => Carbon::createFromTime(19, 0, 0), // 19:00
-            'arrival_time' => Carbon::createFromTime(0, 0, 0),    // 00:00 (medianoche)
+            'arrival_time' => Carbon::createFromTime(23, 30, 0),    // 23:30 (medianoche)
             'is_active' => true,
         ]);
     }

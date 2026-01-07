@@ -24,6 +24,8 @@ return new class extends Migration
             $table->timestamps();
 
             $table->index('sale_date');
+
+            $table->softDeletes();
         });
     }
 

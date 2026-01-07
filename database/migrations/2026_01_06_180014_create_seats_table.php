@@ -16,6 +16,7 @@ return new class extends Migration
             $table->foreignId('bus_id')
                 ->constrained()
                 ->cascadeOnDelete();
+            $table->string('floor')->nullable();
 
             $table->unsignedInteger('seat_number');
             $table->boolean('is_active')->default(true);

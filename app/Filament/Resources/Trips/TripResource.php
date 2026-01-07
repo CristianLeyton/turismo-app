@@ -30,12 +30,12 @@ class TripResource extends Resource
 {
     protected static ?string $model = Trip::class;
 
-    protected static string|BackedEnum|null $navigationIcon = Heroicon::ClipboardDocument;
+    protected static string|BackedEnum|null $navigationIcon = Heroicon::ClipboardDocumentList;
 
     protected static ?string $modelLabel = 'viaje';
     protected static ?string $pluralModelLabel = 'Viajes';
     protected static bool $hasTitleCaseModelLabel = false;
-    protected static ?int $navigationSort = 3;
+    protected static ?int $navigationSort = 2;
 
     public static function form(Schema $schema): Schema
     {

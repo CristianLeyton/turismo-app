@@ -15,6 +15,7 @@ class Seat extends Model
         'bus_id',
         'seat_number',
         'is_active',
+        'floor',
     ];
 
     protected $casts = [

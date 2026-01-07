@@ -77,6 +77,24 @@ class SeatResource extends Resource
                         'numeric' => 'El número de asiento debe ser un número.',
                         'min' => 'El número de asiento debe ser al menos :min.',
                     ]),
+                    TextInput::make('floor')
+                    ->label('Piso')
+                    ->required()
+                    ->numeric()
+                    ->min(1)
+                    ->max(
+                       function (Get $get) {
+                            $busId = $get('bus_id');
+                            if (! $busId) {
+                                return null;
+                            }
+                            return Bus::find($busId)?->floors;
+                        } 
+                    )
+                    ->validationMessages([
+                        'required' => 'El campo piso es obligatorio.',
+                        'max' => 'El piso no debe exceder los :max caracteres.',
+                    ]),
                 Toggle::make('is_active')
                     ->label('Activo')
                     ->required(),
@@ -95,6 +113,10 @@ class SeatResource extends Resource
                 TextColumn::make('seat_number')
                     ->label('Número de asiento')
                     ->numeric()
+                    ->sortable()
+                    ->alignCenter(),
+                TextColumn::make('floor')
+                    ->label('Piso')
                     ->sortable()
                     ->alignCenter(),
                 ToggleColumn::make('is_active')

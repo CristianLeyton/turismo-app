@@ -19,12 +19,14 @@ class BusSeeder extends Seeder
             'name' => 'Expresso Sofia Turismo',
             'plate' => 'ABC123',
             'seat_count' => 60,
+            'floors' => 2,
         ]);
 
         Bus::create([
             'name' => 'Colectivo La Estrella',
             'plate' => 'DEF456',
             'seat_count' => 50,
+            'floors' => 1,
         ]);
     }
 }

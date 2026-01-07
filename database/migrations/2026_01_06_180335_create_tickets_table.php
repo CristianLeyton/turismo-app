@@ -45,10 +45,10 @@ return new class extends Migration
             $table->boolean('is_round_trip')->default(false);
             $table->boolean('travels_with_child')->default(false);
 
-            $table->decimal('price', 10, 2);
+            $table->decimal('price', 10, 2)->nullable();
 
             $table->timestamps();
-
+            $table->softDeletes();
             $table->index(['trip_id', 'seat_id']);
         });
     }

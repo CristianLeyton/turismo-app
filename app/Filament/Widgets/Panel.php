@@ -2,7 +2,10 @@
 
 namespace App\Filament\Widgets;
 
+use App\Filament\Resources\Tickets\TicketResource;
+use App\Filament\Resources\Trips\TripResource;
 use App\Filament\Resources\Users\UserResource;
+use App\Models\Trip;
 use Filament\Widgets\StatsOverviewWidget;
 use Filament\Widgets\StatsOverviewWidget\Stat;
 use Illuminate\Support\Facades\Auth;
@@ -29,7 +32,7 @@ class Panel extends StatsOverviewWidget
         return [
             Stat::make('Venta de pasajes', 'Vender')
                 ->icon('heroicon-o-ticket')
-                ->url('#')
+                ->url(TicketResource::getUrl('create'))
                 ->description('Ir a vender pasajes')
                 ->descriptionIcon('heroicon-m-arrow-up-right')
                 ->extraAttributes(['class' => 'group [&_.fi-wi-stats-overview-stat-value]:text-2xl [&_.fi-wi-stats-overview-stat-value]:group-hover:text-primary-600 [&_.fi-wi-stats-overview-stat-value]:transition
@@ -37,7 +40,7 @@ class Panel extends StatsOverviewWidget
 
             Stat::make('Pasajes vendidos', 'Ver vendidos')
                 ->icon('heroicon-o-clipboard-document-list')
-                ->url('#')
+                ->url(TicketResource::getUrl())
                 ->description('Listado de pasajes vendidos')
                 ->descriptionIcon('heroicon-m-arrow-up-right')
                 ->extraAttributes(['class' => 'group [&_.fi-wi-stats-overview-stat-value]:text-2xl [&_.fi-wi-stats-overview-stat-value]:group-hover:text-primary-600 [&_.fi-wi-stats-overview-stat-value]:transition
@@ -45,7 +48,7 @@ class Panel extends StatsOverviewWidget
 
             Stat::make('Detalle de viajes', 'Ver viajes')
                 ->icon('heroicon-o-calendar-days')
-                ->url('#')
+                ->url(TripResource::getUrl())
                 ->description('Ver detalle de viajes')
                 ->descriptionIcon('heroicon-m-arrow-up-right')
                 ->extraAttributes(['class' => 'group [&_.fi-wi-stats-overview-stat-value]:text-2xl [&_.fi-wi-stats-overview-stat-value]:group-hover:text-primary-600 [&_.fi-wi-stats-overview-stat-value]:transition

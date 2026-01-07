@@ -4,9 +4,14 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Validation\ValidationException;
+use Illuminate\Database\Eloquent\SoftDeletes;
+
 
 class Ticket extends Model
 {
+    use SoftDeletes;
+
     protected $fillable = [
         'sale_id',
         'trip_id',
@@ -16,6 +21,8 @@ class Ticket extends Model
         'is_round_trip',
         'travels_with_child',
         'price',
+        'origin_location_id',
+        'destination_location_id',
     ];
 
     protected $casts = [
@@ -64,5 +71,31 @@ class Ticket extends Model
     public function destination(): BelongsTo
     {
         return $this->belongsTo(Location::class, 'destination_location_id');
+    }
+
+    public static function validateTicketCreation(array $data): void
+    {
+        $trip = Trip::findOrFail($data['trip_id']);
+
+        // Validar que origen y destino sean válidos para la ruta
+        if (!$trip->route->isValidSegment($data['origin_location_id'], $data['destination_location_id'])) {
+            throw ValidationException::withMessages([
+                'origin_location_id' => 'El origen y destino no son válidos para esta ruta.',
+            ]);
+        }
+
+        // Validar que el viaje no esté completo
+        if ($trip->isFull()) {
+            throw ValidationException::withMessages([
+                'trip_id' => 'El viaje está completo.',
+            ]);
+        }
+
+        // Validar asiento si se asigna
+        if (isset($data['seat_id']) && !$trip->canAssignSeat($data['seat_id'])) {
+            throw ValidationException::withMessages([
+                'seat_id' => 'El asiento no está disponible.',
+            ]);
+        }
     }
 }

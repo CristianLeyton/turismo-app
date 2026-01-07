@@ -54,6 +54,18 @@ class BusResource extends Resource
                     ]),
                 TextInput::make('plate')
                     ->label('Patente'),
+                TextInput::make('floors')
+                    ->label('Cantidad de pisos')
+                    ->required()
+                    ->numeric()
+                    ->min(1)
+                    ->max(3)
+                    ->validationMessages([
+                        'required' => 'El campo cantidad de pisos es obligatorio.',
+                        'numeric' => 'El campo cantidad de pisos debe ser un número.',
+                        'min' => 'El colectivo debe tener al menos :min piso.',
+                        'max' => 'El colectivo no debe tener más de :max pisos.',
+                    ]),
                 TextInput::make('seat_count')
                     ->label('Cantidad de asientos')
                     ->required()
@@ -81,6 +93,12 @@ class BusResource extends Resource
                     ->numeric()
                     ->sortable()
                     ->alignCenter(),
+                TextColumn::make('floors')
+                ->label('Cantidad de pisos')
+                    ->numeric()
+                    ->sortable()
+                    ->alignCenter()
+                    ->toggleable(),
                 TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable()

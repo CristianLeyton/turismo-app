@@ -21,6 +21,7 @@ class SeatSeeder extends Seeder
                     'bus_id' => $busId,
                     'seat_number' => $i,
                     'is_active' => true,
+                    'floor' => $busId === 1 ? ($i <= 48 ? '1' : '2') : 1,
                 ]);
             }
         }

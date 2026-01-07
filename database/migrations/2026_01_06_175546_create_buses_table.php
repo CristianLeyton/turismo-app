@@ -16,6 +16,7 @@ return new class extends Migration
             $table->string('name')->nullable(); // Interno: "Colectivo 1"
             $table->string('plate')->nullable();
             $table->unsignedInteger('seat_count'); // ej: 60
+            $table->integer('floors')->unsigned()->default(1); // ej: 2 pisos
             $table->timestamps();
             $table->softDeletes();
         });

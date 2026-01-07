@@ -20,6 +20,7 @@ return new class extends Migration
             $table->timestamps();
 
             $table->index(['last_name', 'dni']);
+            $table->softDeletes();
         });
     }
 

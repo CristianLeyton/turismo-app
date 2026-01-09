@@ -13,6 +13,8 @@ class Passenger extends Model
         'last_name',
         'dni',
         'birth_date',
+        'phone_number',
+        'email',
     ];
 
     protected $casts = [

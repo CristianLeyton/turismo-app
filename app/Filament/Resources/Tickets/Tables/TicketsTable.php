@@ -20,26 +20,36 @@ class TicketsTable
         return $table
             ->columns([
                 TextColumn::make('sale.id')
+                    ->label('Venta')
                     ->searchable(),
                 TextColumn::make('trip.id')
+                    ->label('Viaje')
                     ->searchable(),
                 TextColumn::make('origin_location_id')
+                    ->label('Origen')
                     ->numeric()
                     ->sortable(),
                 TextColumn::make('destination_location_id')
+                    ->label('Destino')
                     ->numeric()
                     ->sortable(),
                 TextColumn::make('returnTrip.id')
+                    ->label('Viaje de regreso')
                     ->searchable(),
                 TextColumn::make('passenger.id')
+                    ->label('Pasajero')
                     ->searchable(),
                 TextColumn::make('seat.id')
+                    ->label('Asiento')
                     ->searchable(),
                 IconColumn::make('is_round_trip')
+                    ->label('Ida y vuelta')
                     ->boolean(),
                 IconColumn::make('travels_with_child')
+                    ->label('Viaja con niño')    
                     ->boolean(),
                 TextColumn::make('price')
+                    ->label('Precio')
                     ->money()
                     ->sortable(),
                 TextColumn::make('created_at')

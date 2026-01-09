@@ -11,6 +11,7 @@ use App\Filament\Resources\Tickets\Schemas\TicketInfolist;
 use App\Filament\Resources\Tickets\Tables\TicketsTable;
 use App\Models\Ticket;
 use BackedEnum;
+use Filament\Actions\CreateAction;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
@@ -30,6 +31,8 @@ class TicketResource extends Resource
     protected static ?int $navigationSort = 1;
 
     protected static ?string $recordTitleAttribute = 'trip_id';
+
+        protected static bool $canCreateAnother = false;
 
     public static function form(Schema $schema): Schema
     {
@@ -70,4 +73,6 @@ class TicketResource extends Resource
                 SoftDeletingScope::class,
             ]);
     }
+
+
 }

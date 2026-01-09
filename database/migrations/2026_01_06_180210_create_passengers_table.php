@@ -19,6 +19,9 @@ return new class extends Migration
             $table->date('birth_date')->nullable();
             $table->timestamps();
 
+            $table->string('phone_number')->nullable();
+            $table->string('email')->nullable();
+
             $table->index(['last_name', 'dni']);
             $table->softDeletes();
         });

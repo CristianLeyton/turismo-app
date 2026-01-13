@@ -48,10 +48,21 @@ class CreateTicket extends CreateRecord
         );
 
         // 3. Crear tickets de IDA
+        $seatIds = $data['seat_ids'] ?? ($this->seat_ids ?? []);
+        if (!is_array($seatIds)) {
+            if (is_string($seatIds)) {
+                $seatIds = json_decode($seatIds, true) ?? [];
+            } else {
+                $seatIds = [];
+            }
+        }
+
         foreach ($passengers as $index => $passenger) {
+            $seatId = $seatIds[$index] ?? null;
+
             $sale->tickets()->create([
                 'trip_id' => $data['trip_id'],
-                'seat_id' => $data['seat_ids'][$index],
+                'seat_id' => $seatId,
                 'passenger_id' => $passenger->id,
                 'is_round_trip' => $data['is_round_trip'] ?? false,
                 'origin_location_id' => $data['origin_location_id'],
@@ -62,10 +73,21 @@ class CreateTicket extends CreateRecord
 
         // 4. Crear tickets de VUELTA
         if ($data['is_round_trip'] ?? false) {
+            $returnSeatIds = $data['return_seat_ids'] ?? ($this->return_seat_ids ?? []);
+            if (!is_array($returnSeatIds)) {
+                if (is_string($returnSeatIds)) {
+                    $returnSeatIds = json_decode($returnSeatIds, true) ?? [];
+                } else {
+                    $returnSeatIds = [];
+                }
+            }
+
             foreach ($passengers as $index => $passenger) {
+                $seatId = $returnSeatIds[$index] ?? null;
+
                 $sale->tickets()->create([
                     'trip_id' => $data['return_trip_id'],
-                    'seat_id' => $data['return_seat_ids'][$index],
+                    'seat_id' => $seatId,
                     'passenger_id' => $passenger->id,
                     'is_round_trip' => true,
                     'origin_location_id' => $data['destination_location_id'],

@@ -32,26 +32,26 @@ class ScheduleSeeder extends Seeder
             'is_active' => true,
         ]);
 
-        Schedule::create([
+/*         Schedule::create([
             'route_id' => $oranSalta->id,
             'name' => 'Noche',
             'departure_time' => Carbon::createFromTime(19, 0, 0), // 19:00
             'arrival_time' => Carbon::createFromTime(23, 30, 0),   // 23:30
             'is_active' => true,
-        ]);
+        ]); */
 
         /*
         |--------------------------------------------------------------------------
         | Horarios para: Salta - Orán
         |--------------------------------------------------------------------------
         */
-        Schedule::create([
+/*         Schedule::create([
             'route_id' => $saltaOran->id,
             'name' => 'Madrugada',
             'departure_time' => Carbon::createFromTime(02, 0, 0), // 02:00
             'arrival_time' => Carbon::createFromTime(06, 30, 0),    // 06:30
             'is_active' => true,
-        ]);
+        ]); */
 
         Schedule::create([
             'route_id' => $saltaOran->id,

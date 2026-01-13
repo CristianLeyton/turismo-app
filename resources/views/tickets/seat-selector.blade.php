@@ -2,7 +2,6 @@
     $tripId = $trip_id ?? null;
     $requiredSeats = (int) ($passengers_count ?? 0);
 
-
     $trip = $trip ?? ($tripId ? \App\Models\Trip::find($tripId) : null);
     $layoutData = $trip ? $trip->getFullLayoutData() : null;
 
@@ -11,11 +10,8 @@
 @endphp
 
 
-
-
-<div
-    x-data="{
-    selected: @entangle($fieldId),
+<div x-data="{
+    selected: @entangle('data.' . $fieldId),
     required: {{ (int) $passengers_count }},
 
     init() {
@@ -44,9 +40,7 @@
     isSelected(seatId) {
         return Array.isArray(this.selected) && this.selected.includes(seatId);
     }
-}"
-    class="seat-selector-container grid grid-cols-1 gap-4"
->
+}" class="seat-selector-container grid grid-cols-1 gap-4">
     @if (!$trip || !$layoutData)
         <div class="p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 w-full">
             <p class="text-sm text-gray-600 dark:text-gray-400">
@@ -76,7 +70,9 @@
             @endif
         </div>
 
-        <h3 class="text-lg font-semibold text-primary text-fuchsia-600">Seleccionar asientos de Ida</h3>
+        <h3 class="text-lg font-semibold text-primary text-fuchsia-600">Seleccionar asientos de
+            {{ strpos($fieldId, 'return') !== false ? 'Vuelta' : 'Ida' }}</h3>
+
         <!-- Contenedor de pisos con flexbox para cambiar orden -->
         <div class="flex flex-col-reverse md:flex-row-reverse md:justify-center items-end *:w-full gap-4">
 
@@ -226,15 +222,14 @@
                                         <button type="button" @click="toggleSeat({{ $seatId }})"
                                             @if ($isOccupied) disabled @endif
                                             :class="{
-    'bg-gray-300 dark:bg-gray-600 border-gray-400 hover:bg-gray-400 dark:hover:bg-gray-500':
-        !isSelected({{ $seatId }}) && !@js($isOccupied),
-
-    'bg-purple-500 border-purple-600 text-white hover:bg-purple-600':
-        isSelected({{ $seatId }}),
-
-    'bg-red-500 border-red-600 cursor-not-allowed opacity-75':
-        @js($isOccupied)
-}"
+                                                'bg-gray-300 dark:bg-gray-600 border-gray-400 hover:bg-gray-400 dark:hover:bg-gray-500':
+                                                    !isSelected({{ $seatId }}) && !@js($isOccupied),
+                                            
+                                                'bg-purple-500 border-purple-600 text-white hover:bg-purple-600': isSelected(
+                                                    {{ $seatId }}),
+                                            
+                                                'bg-red-500 border-red-600 cursor-not-allowed opacity-75': @js($isOccupied)
+                                            }"
                                             class="seat-button rounded border-2 flex items-center justify-center text-xs font-semibold text-gray-800 dark:text-gray-200 transition-colors duration-200 disabled:opacity-75 disabled:cursor-not-allowed"
                                             title="{{ $isOccupied ? 'Asiento ocupado' : 'Asiento ' . $seatNumber }}">
                                             <span>{{ $seatNumber }}</span>
@@ -274,14 +269,12 @@
             @endforeach
         </div>
 
-        <div
-    x-show="selected.length < required"
-    class="w-full mt-4 p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg"
->
-    <p class="text-sm text-yellow-800 dark:text-yellow-200">
-        Debe seleccionar <span x-text="required - selected.length"></span> asiento(s) más.
-    </p>
-</div>
+        <div x-show="selected.length < required"
+            class="w-full mt-4 p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+            <p class="text-sm text-yellow-800 dark:text-yellow-200">
+                Debe seleccionar <span x-text="required - selected.length"></span> asiento(s) más.
+            </p>
+        </div>
     @endif
 </div>
 

@@ -18,7 +18,9 @@ use App\Models\Seat;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\ViewField;
 use Filament\Forms\Components\Button;
+use Filament\Forms\Components\Placeholder;
 use Filament\Notifications\Notification;
+use Filament\Schemas\Components\Fieldset;
 use Illuminate\Support\HtmlString;
 use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Utilities\Get;
@@ -1064,7 +1066,7 @@ class TicketForm
                             ->minItems(fn(Get $get) => (int) $get('passengers_count'))
                             ->maxItems(fn(Get $get) => (int) $get('passengers_count'))
                             ->required(),
-                    ]),
+                    ]) ,
 
                 Step::make('Resumen')
                     ->schema([

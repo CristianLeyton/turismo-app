@@ -27,7 +27,7 @@ class CreateTicket extends CreateRecord
     protected static bool $canCreateAnother = false;
 
     public array $seat_ids = [];
-    
+
     public array $return_seat_ids = [];
 
     protected function getCreateFormAction(): Action

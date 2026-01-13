@@ -32,4 +32,24 @@ class Bus extends Model
     {
         return $this->seats()->where('is_active', true);
     }
+
+    /**
+     * Áreas especiales del layout del bus
+     */
+    public function layoutAreas()
+    {
+        return $this->hasMany(BusLayoutArea::class);
+    }
+
+    /**
+     * Obtener áreas especiales por piso
+     */
+    public function layoutAreasByFloor(?string $floor = null)
+    {
+        $query = $this->layoutAreas();
+        if ($floor !== null) {
+            $query->where('floor', $floor);
+        }
+        return $query->orderBy('row_start')->orderBy('column_start');
+    }
 }

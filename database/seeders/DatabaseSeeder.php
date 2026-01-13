@@ -53,6 +53,7 @@ class DatabaseSeeder extends Seeder
         RouteSeeder::class,
         RouteStopSeeder::class,
         ScheduleSeeder::class,
+        SeatLayoutSeeder::class,
     ]);
     }
 }

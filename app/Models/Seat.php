@@ -16,10 +16,16 @@ class Seat extends Model
         'seat_number',
         'is_active',
         'floor',
+        'row',
+        'column',
+        'position',
+        'seat_type',
     ];
 
     protected $casts = [
         'is_active' => 'boolean',
+        'row' => 'integer',
+        'column' => 'integer',
     ];
 
     public function bus(): BelongsTo

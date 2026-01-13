@@ -77,24 +77,56 @@ class SeatResource extends Resource
                         'numeric' => 'El número de asiento debe ser un número.',
                         'min' => 'El número de asiento debe ser al menos :min.',
                     ]),
-                    TextInput::make('floor')
+                TextInput::make('floor')
                     ->label('Piso')
                     ->required()
                     ->numeric()
-                    ->min(1)
-                    ->max(
-                       function (Get $get) {
-                            $busId = $get('bus_id');
-                            if (! $busId) {
-                                return null;
-                            }
-                            return Bus::find($busId)?->floors;
-                        } 
-                    )
+                    ->minValue(1)
+                    ->maxValue(function (Get $get) {
+                        $busId = $get('bus_id');
+                        if (! $busId) {
+                            return null;
+                        }
+                        return Bus::find($busId)?->floors;
+                    })
                     ->validationMessages([
                         'required' => 'El campo piso es obligatorio.',
-                        'max' => 'El piso no debe exceder los :max caracteres.',
+                        'numeric' => 'El campo piso debe ser un número.',
+                        'min' => 'El piso debe ser al menos :min.',
+                        'max' => 'El piso no debe exceder :max.',
                     ]),
+                
+                TextInput::make('row')
+                    ->label('Fila')
+                    ->numeric()
+                    ->minValue(0)
+                    ->helperText('Posición de fila en el layout visual (0 = sin posición específica)'),
+                
+                TextInput::make('column')
+                    ->label('Columna')
+                    ->numeric()
+                    ->minValue(0)
+                    ->helperText('Posición de columna en el layout visual (0 = sin posición específica)'),
+                
+                Select::make('position')
+                    ->label('Posición')
+                    ->options([
+                        'left' => 'Izquierda',
+                        'right' => 'Derecha',
+                        'center' => 'Centro',
+                        'aisle' => 'Pasillo',
+                    ])
+                    ->helperText('Posición relativa del asiento'),
+                
+                Select::make('seat_type')
+                    ->label('Tipo de asiento')
+                    ->options([
+                        'normal' => 'Normal',
+                        'special' => 'Especial',
+                        'disabled' => 'Deshabilitado',
+                    ])
+                    ->default('normal'),
+                
                 Toggle::make('is_active')
                     ->label('Activo')
                     ->required(),
@@ -119,6 +151,24 @@ class SeatResource extends Resource
                     ->label('Piso')
                     ->sortable()
                     ->alignCenter(),
+                TextColumn::make('row')
+                    ->label('Fila')
+                    ->sortable()
+                    ->alignCenter()
+                    ->toggleable(),
+                TextColumn::make('column')
+                    ->label('Columna')
+                    ->sortable()
+                    ->alignCenter()
+                    ->toggleable(),
+                TextColumn::make('position')
+                    ->label('Posición')
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
+                TextColumn::make('seat_type')
+                    ->label('Tipo')
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
                 ToggleColumn::make('is_active')
                     ->label('Activo')
                     ->alignCenter()

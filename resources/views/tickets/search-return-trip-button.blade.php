@@ -1,7 +1,7 @@
 <div class="rounded-lg bg-gray-50 dark:bg-gray-800/50 p-4 border -mt-6 border-gray-200 dark:border-gray-700">
-    <p class="text-sm text-gray-700 dark:text-gray-300 mb-3 ">
+{{--     <p class="text-sm text-gray-700 dark:text-gray-300 mb-3 ">
         Haga clic en el botón para buscar el viaje de vuelta.
-    </p>
+    </p> --}}
     <button type="button" wire:click="searchReturnTrip" wire:loading.attr="disabled" wire:target="searchReturnTrip"
         class="fi-color fi-color-primary fi-bg-color-600 hover:fi-bg-color-500 dark:fi-bg-color-600 
         dark:hover:fi-bg-color-500 fi-text-color-0 hover:fi-text-color-0 dark:fi-text-color-0 

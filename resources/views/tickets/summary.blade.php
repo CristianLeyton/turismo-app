@@ -1,6 +1,8 @@
 {{-- resources/views/tickets/summary.blade.php --}}
 
 <div class="space-y-4">
+    {{ json_encode($this->data, JSON_PRETTY_PRINT) }}
+
     <h2 class="text-xl font-bold">Resumen del boleto</h2>
 
     <div>
@@ -29,4 +31,5 @@
         <strong>Asientos seleccionados:</strong>
         {{ implode(', ', $get('selected_seats') ?? []) }}
     </div>
+
 </div>

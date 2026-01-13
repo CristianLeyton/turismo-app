@@ -196,4 +196,144 @@ class Trip extends Model
                 : "Viaje encontrado pero no hay asientos disponibles.",
         ];
     }
+
+    /**
+     * Obtener todos los asientos del bus organizados por piso para el layout visual
+     * Si no tienen row/column configurados, los infiere automáticamente
+     * 
+     * @return array ['floor_1' => [...], 'floor_2' => [...], ...]
+     */
+    public function getSeatsLayout(): array
+    {
+        if (!$this->bus) {
+            return [];
+        }
+
+        // Obtener IDs de asientos ocupados en este viaje
+        $occupiedSeatIds = $this->tickets()
+            ->whereNotNull('seat_id')
+            ->pluck('seat_id')
+            ->toArray();
+
+        // Obtener todos los asientos del bus activos, ordenados por piso y número
+        $allSeats = Seat::query()
+            ->where('bus_id', $this->bus_id)
+            ->where('is_active', true)
+            ->orderBy('floor')
+            ->orderBy('seat_number')
+            ->get();
+
+        // Agrupar por piso
+        $layout = [];
+        
+        foreach ($allSeats as $seat) {
+            $floor = $seat->floor ?? '1';
+            $floorKey = 'floor_' . $floor;
+            
+            if (!isset($layout[$floorKey])) {
+                $layout[$floorKey] = [];
+            }
+
+            // Si no tiene row/column configurados, inferirlos basándose en el número de asiento
+            // Asumimos 4 columnas por fila (2 a cada lado del pasillo) como layout estándar
+            $row = $seat->row;
+            $column = $seat->column;
+            
+            if ($row === null || $column === null) {
+                // Inferir posición: asumimos layout estándar de 4 columnas (2-2)
+                // Primero piso: asientos 1-48, segundo piso: asientos 49-60
+                $seatNum = $seat->seat_number;
+                $seatsPerRow = 4; // 2 izquierda, pasillo, 2 derecha
+                
+                // Calcular fila y columna inferidas
+                $inferredRow = (int) ceil(($seatNum - 1) / $seatsPerRow);
+                $positionInRow = (($seatNum - 1) % $seatsPerRow) + 1;
+                
+                // Mapear posición a columna: 1,2 -> left (0,1), 3,4 -> right (2,3)
+                if ($positionInRow <= 2) {
+                    $inferredColumn = $positionInRow - 1; // 0, 1
+                    $inferredPosition = 'left';
+                } else {
+                    $inferredColumn = $positionInRow - 1; // 2, 3
+                    $inferredPosition = 'right';
+                }
+                
+                $row = $row ?? $inferredRow;
+                $column = $column ?? $inferredColumn;
+                $position = $seat->position ?? $inferredPosition;
+            } else {
+                $position = $seat->position ?? 'normal';
+            }
+
+            $layout[$floorKey][] = [
+                'id' => $seat->id,
+                'seat_number' => $seat->seat_number,
+                'row' => $row ?? 0,
+                'column' => $column ?? 0,
+                'position' => $position ?? 'normal',
+                'seat_type' => $seat->seat_type ?? 'normal',
+                'is_occupied' => in_array($seat->id, $occupiedSeatIds),
+                'is_available' => !in_array($seat->id, $occupiedSeatIds),
+            ];
+        }
+
+        return $layout;
+    }
+
+    /**
+     * Obtener áreas especiales del layout del bus organizadas por piso
+     * 
+     * @return array ['floor_1' => [...], 'floor_2' => [...], ...]
+     */
+    public function getLayoutAreas(): array
+    {
+        if (!$this->bus) {
+            return [];
+        }
+
+        $areas = $this->bus->layoutAreas()->get();
+        $layoutAreas = [];
+
+        foreach ($areas as $area) {
+            $floor = $area->floor ?? '1';
+            $floorKey = 'floor_' . $floor;
+            
+            if (!isset($layoutAreas[$floorKey])) {
+                $layoutAreas[$floorKey] = [];
+            }
+
+            $layoutAreas[$floorKey][] = [
+                'id' => $area->id,
+                'area_type' => $area->area_type,
+                'label' => $area->label ?? strtoupper($area->area_type),
+                'row_start' => $area->row_start,
+                'row_end' => $area->row_end,
+                'column_start' => $area->column_start,
+                'column_end' => $area->column_end,
+                'span_rows' => $area->span_rows ?? 1,
+                'span_columns' => $area->span_columns ?? 1,
+            ];
+        }
+
+        return $layoutAreas;
+    }
+
+    /**
+     * Obtener información completa del layout para el selector de asientos
+     * 
+     * @return array
+     */
+    public function getFullLayoutData(): array
+    {
+        return [
+            'bus_id' => $this->bus_id,
+            'bus_name' => $this->bus?->name ?? 'N/A',
+            'floors' => $this->bus?->floors ?? 1,
+            'seats' => $this->getSeatsLayout(),
+            'areas' => $this->getLayoutAreas(),
+            'total_seats' => $this->bus?->seat_count ?? 0,
+            'available_seats' => $this->remainingSeats(),
+            'occupied_seats' => $this->occupiedSeatsCount(),
+        ];
+    }
 }

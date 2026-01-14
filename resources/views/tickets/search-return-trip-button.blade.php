@@ -20,6 +20,6 @@
             </path>
         </svg>
         <span wire:loading.remove wire:target="searchReturnTrip">Buscar viaje de vuelta</span>
-        <span wire:loading wire:target="searchReturnTrip">Buscando viaje de vuelte...</span>
+        <span wire:loading wire:target="searchReturnTrip">Buscando viaje de vuelta...</span>
     </button>
 </div>

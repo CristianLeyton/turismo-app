@@ -59,12 +59,15 @@ class CreateTicket extends CreateRecord
 
         foreach ($passengers as $index => $passenger) {
             $seatId = $seatIds[$index] ?? null;
+            $passengerData = $data['passengers'][$index] ?? [];
+            $travelsWithChild = $passengerData['travels_with_child'] ?? false;
 
             $sale->tickets()->create([
                 'trip_id' => $data['trip_id'],
                 'seat_id' => $seatId,
                 'passenger_id' => $passenger->id,
                 'is_round_trip' => $data['is_round_trip'] ?? false,
+                'travels_with_child' => $travelsWithChild,
                 'origin_location_id' => $data['origin_location_id'],
                 'destination_location_id' => $data['destination_location_id'],
                 'price' => 0,
@@ -84,12 +87,15 @@ class CreateTicket extends CreateRecord
 
             foreach ($passengers as $index => $passenger) {
                 $seatId = $returnSeatIds[$index] ?? null;
+                $passengerData = $data['passengers'][$index] ?? [];
+                $travelsWithChild = $passengerData['travels_with_child'] ?? false;
 
                 $sale->tickets()->create([
                     'trip_id' => $data['return_trip_id'],
                     'seat_id' => $seatId,
                     'passenger_id' => $passenger->id,
                     'is_round_trip' => true,
+                    'travels_with_child' => $travelsWithChild,
                     'origin_location_id' => $data['destination_location_id'],
                     'destination_location_id' => $data['origin_location_id'],
                     'price' => 0,

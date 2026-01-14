@@ -29,7 +29,12 @@
 
     <div>
         <strong>Asientos seleccionados:</strong>
-        {{ implode(', ', $get('selected_seats') ?? []) }}
+        {{ implode(', ', $get('seat_ids') ?? []) }}
+
+        @if ($get('is_round_trip'))
+            <strong>Asientos seleccionados de vuelta:</strong>
+            {{ implode(', ', $get('return_seat_ids') ?? []) }}
+        @endif
     </div>
 
 </div>

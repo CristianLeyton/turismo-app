@@ -110,6 +110,7 @@ class TicketForm
                                         $set('return_trip_id', null),
                                         $set('return_trip_search_status', null),
                                         $set('return_trip_available_seats', null),
+                                        $set('is_round_trip', false),
                                     ])
                                     ->validationMessages([
                                         'required' => 'Seleccione un origen',
@@ -164,6 +165,7 @@ class TicketForm
                                         $set('return_trip_id', null),
                                         $set('return_trip_search_status', null),
                                         $set('return_trip_available_seats', null),
+                                        $set('is_round_trip', false),
                                     ])
                                     ->validationMessages([
                                         'required' => 'Seleccione un destino',
@@ -200,6 +202,7 @@ class TicketForm
                                         $set('return_trip_id', null),
                                         $set('return_trip_search_status', null),
                                         $set('return_trip_available_seats', null),
+                                        $set('is_round_trip', false),
                                     ])
                                     ->validationMessages([
                                         'required' => 'Seleccione una fecha de ida',
@@ -404,6 +407,7 @@ class TicketForm
                                         $set('return_trip_id', null),
                                         $set('return_trip_search_status', null),
                                         $set('return_trip_available_seats', null),
+                                        $set('is_round_trip', false),
                                     ])
                                     ->validationMessages([
                                         'required' => 'Seleccione un horario',
@@ -421,6 +425,7 @@ class TicketForm
                                 $set('trip_id', null),
                                 $set('trip_search_status', null),
                                 $set('trip_available_seats', null),
+                                $set('is_round_trip', false),
                             ])
                             ->validationMessages([
                                 'required' => 'Ingrese la cantidad de pasajeros',
@@ -499,6 +504,7 @@ class TicketForm
                             ->label('Diferido')
                             /*                             ->helperText('Si es seleccionado, se mostrarán los campos de fecha y horario de vuelta') */
                             ->live()
+                            ->disabled(fn(Get $get) => blank($get('trip_id')))
                             ->afterStateUpdated(function ($state, Get $get, Set $set) {
 
                                 if (!$state) {
@@ -1055,13 +1061,98 @@ class TicketForm
                     ->schema([
                         Repeater::make('passengers')
                             ->label('Datos de pasajeros')
+                            ->defaultItems(fn(Get $get) => (int) $get('passengers_count') ?: 1)
                             ->schema([
-                                TextInput::make('first_name')->required(),
-                                TextInput::make('last_name')->required(),
-                                TextInput::make('dni')->required(),
-                                DatePicker::make('birth_date')->required(),
-                                TextInput::make('phone_number'),
-                                TextInput::make('email'),
+                                ViewField::make('assigned_seats')
+                                    ->label('Asientos asignados')
+                                    ->view('tickets.passenger-assigned-seats')
+                                    ->viewData(function ($state, Get $get, $livewire) {
+                                        // Obtener los asientos seleccionados del nivel raíz del formulario
+                                        // Desde dentro de un repeater item, necesitamos subir dos niveles: ../../
+                                        $seatIds = $get('../../seat_ids') ?? [];
+                                        $returnSeatIds = $get('../../return_seat_ids') ?? [];
+                                        $isRoundTrip = $get('../../is_round_trip') ?? false;
+                                        
+                                        // Asegurar que sean arrays
+                                        if (!is_array($seatIds)) {
+                                            if (is_string($seatIds)) {
+                                                $seatIds = json_decode($seatIds, true) ?? [];
+                                            } else {
+                                                $seatIds = [];
+                                            }
+                                        }
+                                        
+                                        if (!is_array($returnSeatIds)) {
+                                            if (is_string($returnSeatIds)) {
+                                                $returnSeatIds = json_decode($returnSeatIds, true) ?? [];
+                                            } else {
+                                                $returnSeatIds = [];
+                                            }
+                                        }
+                                        
+                                        // Obtener todos los números de asientos para todos los pasajeros
+                                        $allSeatNumbers = [];
+                                        $allReturnSeatNumbers = [];
+                                        
+                                        foreach ($seatIds as $idx => $sid) {
+                                            $seat = Seat::find($sid);
+                                            if ($seat) {
+                                                $allSeatNumbers[$idx] = $seat->seat_number;
+                                            }
+                                        }
+                                        
+                                        if ($isRoundTrip) {
+                                            foreach ($returnSeatIds as $idx => $rsid) {
+                                                $returnSeat = Seat::find($rsid);
+                                                if ($returnSeat) {
+                                                    $allReturnSeatNumbers[$idx] = $returnSeat->seat_number;
+                                                }
+                                            }
+                                        }
+                                        
+                                        return [
+                                            'isRoundTrip' => $isRoundTrip,
+                                            'allSeatNumbers' => $allSeatNumbers,
+                                            'allReturnSeatNumbers' => $allReturnSeatNumbers,
+                                        ];
+                                    })
+                                    ->live()
+                                    ->columnSpanFull(),
+                                
+                                Grid::make(2)
+                                    ->schema([
+                                        TextInput::make('first_name')
+                                            ->label('Nombre')
+                                            ->required(),
+                                        TextInput::make('last_name')
+                                            ->label('Apellido')
+                                            ->required(),
+                                    ]),
+                                
+                                Grid::make(2)
+                                    ->schema([
+                                        TextInput::make('dni')
+                                            ->label('DNI')
+                                            ->required(),
+                                        DatePicker::make('birth_date')
+                                            ->label('Fecha de nacimiento')
+                                            ->required()
+                                            ->native(false)
+                                            ->displayFormat('d/m/Y'),
+                                    ]),
+                                
+                                Grid::make(2)
+                                    ->schema([
+                                        TextInput::make('phone_number')
+                                            ->label('Teléfono'),
+                                        TextInput::make('email')
+                                            ->label('Email'),
+                                    ]),
+                                
+                                Toggle::make('travels_with_child')
+                                    ->label('¿Viaja con un niño?')
+                                    ->default(false)
+                                    ->columnSpanFull(),
                             ])
                             ->minItems(fn(Get $get) => (int) $get('passengers_count'))
                             ->maxItems(fn(Get $get) => (int) $get('passengers_count'))

@@ -68,4 +68,10 @@
         <span class="font-medium text-primary-600" x-show="displayText" x-text="displayText"></span>
         <span class="text-gray-500 italic" x-show="!displayText">No se han asignado asientos</span>
     </div>
+
+    {{-- Estoy mejorando mi paso 4. Puse 3 pasajeros para probar, el primero me dice que sus asientos no se han asignado, y los otros dos me dicen asientos 1-3 que este deberia ser los asientos solo del primer pasajero. 
+
+Mi objetivo es hacer que en cada formulario diga los asientos que les corresponden. Y tambien quiero que por defecto haya la misma cantidad de formularios que de pasajeros --}}
 </div>
+
+

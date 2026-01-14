@@ -36,6 +36,20 @@ class CreateTicket extends CreateRecord
             ->label('Vender pasaje');
     }
 
+    protected function getRedirectUrl(): string
+{
+    return $this->getResource()::getUrl('index');
+}
+
+protected function getCreatedNotification(): ?Notification
+{
+    return Notification::make()
+        ->success()
+        ->title('Pasaje(s) vendido(s) correctamente')
+        ->body('Se estan descargando los tickets. Espere un momento por favor.')
+        ;
+}
+
     protected function handleRecordCreation(array $data): Model
     {
         // 1. Crear la venta usando el método del modelo
@@ -57,20 +71,34 @@ class CreateTicket extends CreateRecord
             }
         }
 
+        // Log para depuración: qué seat_ids recibimos
+        logger()->info('Creating tickets (ida) - seat_ids', [
+            'seat_ids' => $seatIds,
+            'passengers_count' => $passengers->count(),
+        ]);
+
         foreach ($passengers as $index => $passenger) {
             $seatId = $seatIds[$index] ?? null;
             $passengerData = $data['passengers'][$index] ?? [];
             $travelsWithChild = $passengerData['travels_with_child'] ?? false;
 
-            $sale->tickets()->create([
+            $ticket = $sale->tickets()->create([
                 'trip_id' => $data['trip_id'],
                 'seat_id' => $seatId,
                 'passenger_id' => $passenger->id,
                 'is_round_trip' => $data['is_round_trip'] ?? false,
+                'return_trip_id' => $data['return_trip_id'] ?? null,
                 'travels_with_child' => $travelsWithChild,
                 'origin_location_id' => $data['origin_location_id'],
                 'destination_location_id' => $data['destination_location_id'],
                 'price' => 0,
+            ]);
+
+            logger()->info('Ticket creado (ida)', [
+                'passenger_index' => $index,
+                'passenger_id' => $passenger->id,
+                'seat_id_assigned' => $seatId,
+                'ticket' => $ticket->toArray(),
             ]);
         }
 

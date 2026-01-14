@@ -12,13 +12,8 @@ class Passenger extends Model
         'first_name',
         'last_name',
         'dni',
-        'birth_date',
         'phone_number',
         'email',
-    ];
-
-    protected $casts = [
-        'birth_date' => 'date',
     ];
 
     public function tickets(): HasMany

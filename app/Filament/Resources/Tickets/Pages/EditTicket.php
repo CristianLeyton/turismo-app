@@ -19,7 +19,7 @@ class EditTicket extends EditRecord
             ViewAction::make(),
             DeleteAction::make(),
             ForceDeleteAction::make(),
-            RestoreAction::make(),
+            RestoreAction::make(), 
         ];
     }
 }

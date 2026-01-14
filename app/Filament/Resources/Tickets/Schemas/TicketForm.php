@@ -18,11 +18,11 @@ use App\Models\Seat;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\ViewField;
 use Filament\Forms\Components\Button;
-use Filament\Forms\Components\Placeholder;
 use Filament\Notifications\Notification;
 use Filament\Schemas\Components\Fieldset;
 use Illuminate\Support\HtmlString;
 use Filament\Schemas\Components\Grid;
+use Filament\Schemas\Components\Text;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Components\Wizard;
@@ -453,7 +453,6 @@ class TicketForm
                         Hidden::make('return_trip_available_seats')
                             ->live(),
 
-                        // Información del viaje y botón de búsqueda
                         // Información del viaje y botón de búsqueda
                         ViewField::make('search_trip_section')
                             ->label('')
@@ -892,7 +891,7 @@ class TicketForm
                             ->visible(fn(Get $get) => blank($get('trip_id')) || !Trip::find($get('trip_id')) || Trip::find($get('trip_id'))?->remainingSeats() < (int) $get('passengers_count')),
 
 
-                        CheckboxList::make('seat_ids')
+                        /* CheckboxList::make('seat_ids')
                             ->options(
                                 fn(Get $get) =>
                                 Trip::find($get('trip_id'))
@@ -900,7 +899,7 @@ class TicketForm
                                     ->pluck('seat_number', 'id')
                                     ?? []
                             )
-                            ->hidden() // NO se muestra, solo estado
+                            //->hidden() // NO se muestra, solo estado
                             ->dehydrated()
                             ->required(
                                 fn(Get $get) =>
@@ -911,6 +910,22 @@ class TicketForm
                             ->rule(fn(Get $get) => function ($attribute, $value, $fail) use ($get) {
                                 $required = (int) $get('passengers_count');
 
+                                if (count($value ?? []) !== $required) {
+                                    $fail("Debe seleccionar exactamente {$required} asiento(s).");
+                                }
+                            }), */
+
+                        Hidden::make('seat_ids')
+                            ->default([])
+                            ->dehydrated()
+                            ->required(
+                                fn(Get $get) =>
+                                !blank($get('trip_id')) &&
+                                    Trip::find($get('trip_id')) &&
+                                    Trip::find($get('trip_id'))?->remainingSeats() >= (int) $get('passengers_count')
+                            )
+                            ->rule(fn(Get $get) => function ($attribute, $value, $fail) use ($get) {
+                                $required = (int) $get('passengers_count');
                                 if (count($value ?? []) !== $required) {
                                     $fail("Debe seleccionar exactamente {$required} asiento(s).");
                                 }
@@ -998,7 +1013,7 @@ class TicketForm
                                     Trip::find($get('return_trip_id'))?->remainingSeats() < (int) $get('passengers_count')
                             ),
 
-                        CheckboxList::make('return_seat_ids')
+                        /* CheckboxList::make('return_seat_ids')
                             ->options(
                                 fn(Get $get) =>
                                 Trip::find($get('return_trip_id'))
@@ -1006,7 +1021,24 @@ class TicketForm
                                     ->pluck('seat_number', 'id')
                                     ?? []
                             )
-                            ->hidden()
+                            //->hidden()
+                            ->dehydrated()
+                            ->required(
+                                fn(Get $get) =>
+                                !blank($get('return_trip_id')) &&
+                                    Trip::find($get('return_trip_id')) &&
+                                    Trip::find($get('return_trip_id'))?->remainingSeats() >= (int) $get('passengers_count')
+                            )
+                            ->rule(fn(Get $get) => function ($attribute, $value, $fail) use ($get) {
+                                $required = (int) $get('passengers_count');
+
+                                if (count($value ?? []) !== $required) {
+                                    $fail("Debe seleccionar exactamente {$required} asiento(s) de vuelta.");
+                                }
+                            }), */
+
+                        Hidden::make('return_seat_ids')
+                            ->default([])
                             ->dehydrated()
                             ->required(
                                 fn(Get $get) =>
@@ -1059,66 +1091,14 @@ class TicketForm
 
                 Step::make('Pasajeros')
                     ->schema([
+                        /*                         Text::make('Pasajeros seleccionados')
+                            ->content(fn(Get $get) => $get('passengers_count') . ' pasajero(s) seleccionado(s).'),
+                        Text::make('Asientos de ida seleccionados')
+                            ->content(fn(Get $get) => implode(', ', $get('seat_ids'))),
+                        Text::make('Asientos de vuelta seleccionados')
+                            ->content(fn(Get $get) => implode(', ', $get('return_seat_ids'))), */
                         Repeater::make('passengers')
-                            ->label('Datos de pasajeros')
-                            ->defaultItems(fn(Get $get) => (int) $get('passengers_count') ?: 1)
                             ->schema([
-                                ViewField::make('assigned_seats')
-                                    ->label('Asientos asignados')
-                                    ->view('tickets.passenger-assigned-seats')
-                                    ->viewData(function ($state, Get $get, $livewire) {
-                                        // Obtener los asientos seleccionados del nivel raíz del formulario
-                                        // Desde dentro de un repeater item, necesitamos subir dos niveles: ../../
-                                        $seatIds = $get('../../seat_ids') ?? [];
-                                        $returnSeatIds = $get('../../return_seat_ids') ?? [];
-                                        $isRoundTrip = $get('../../is_round_trip') ?? false;
-                                        
-                                        // Asegurar que sean arrays
-                                        if (!is_array($seatIds)) {
-                                            if (is_string($seatIds)) {
-                                                $seatIds = json_decode($seatIds, true) ?? [];
-                                            } else {
-                                                $seatIds = [];
-                                            }
-                                        }
-                                        
-                                        if (!is_array($returnSeatIds)) {
-                                            if (is_string($returnSeatIds)) {
-                                                $returnSeatIds = json_decode($returnSeatIds, true) ?? [];
-                                            } else {
-                                                $returnSeatIds = [];
-                                            }
-                                        }
-                                        
-                                        // Obtener todos los números de asientos para todos los pasajeros
-                                        $allSeatNumbers = [];
-                                        $allReturnSeatNumbers = [];
-                                        
-                                        foreach ($seatIds as $idx => $sid) {
-                                            $seat = Seat::find($sid);
-                                            if ($seat) {
-                                                $allSeatNumbers[$idx] = $seat->seat_number;
-                                            }
-                                        }
-                                        
-                                        if ($isRoundTrip) {
-                                            foreach ($returnSeatIds as $idx => $rsid) {
-                                                $returnSeat = Seat::find($rsid);
-                                                if ($returnSeat) {
-                                                    $allReturnSeatNumbers[$idx] = $returnSeat->seat_number;
-                                                }
-                                            }
-                                        }
-                                        
-                                        return [
-                                            'isRoundTrip' => $isRoundTrip,
-                                            'allSeatNumbers' => $allSeatNumbers,
-                                            'allReturnSeatNumbers' => $allReturnSeatNumbers,
-                                        ];
-                                    })
-                                    ->live()
-                                    ->columnSpanFull(),
-                                
                                 Grid::make(2)
                                     ->schema([
                                         TextInput::make('first_name')
@@ -1128,36 +1108,97 @@ class TicketForm
                                             ->label('Apellido')
                                             ->required(),
                                     ]),
-                                
+
                                 Grid::make(2)
                                     ->schema([
                                         TextInput::make('dni')
                                             ->label('DNI')
                                             ->required(),
-                                        DatePicker::make('birth_date')
-                                            ->label('Fecha de nacimiento')
-                                            ->required()
-                                            ->native(false)
-                                            ->displayFormat('d/m/Y'),
-                                    ]),
-                                
-                                Grid::make(2)
-                                    ->schema([
                                         TextInput::make('phone_number')
                                             ->label('Teléfono'),
-                                        TextInput::make('email')
-                                            ->label('Email'),
                                     ]),
-                                
+
                                 Toggle::make('travels_with_child')
                                     ->label('¿Viaja con un niño?')
                                     ->default(false)
                                     ->columnSpanFull(),
+
+                                Hidden::make('passenger_number')
+                                    ->dehydrated(),
+
+                                /*                                 Text::make('datos')
+                                    ->content(
+                                        function ($state, $component) {
+                                            return var_dump($state);
+                                        }
+                                    ) */
                             ])
+
+                            ->extraAttributes(
+                                ['class' => '[&_.fi-fo-repeater-item-header-label]:text-fuchsia-600']
+                            )
                             ->minItems(fn(Get $get) => (int) $get('passengers_count'))
                             ->maxItems(fn(Get $get) => (int) $get('passengers_count'))
-                            ->required(),
-                    ]) ,
+                            ->required()
+                            ->addActionLabel('Agregar pasajero')
+                            ->validationMessages([
+                                'minItems' => 'Debe agregar al menos {min} pasajero(s).',
+                                'maxItems' => 'No puede agregar más de {max} pasajero(s).',
+                                'required' => 'Debe agregar al menos un pasajero.',
+                            ])
+                            ->afterStateHydrated(function ($state, callable $set, Get $get) {
+                                $required = (int) $get('passengers_count');
+
+                                if (count($state ?? []) !== $required) {
+                                    $passengers = [];
+
+                                    for ($i = 0; $i < $required; $i++) {
+                                        $passengers[$i] = [
+                                            'passenger_number' => $i + 1, // 1, 2, 3...
+                                        ];
+                                    }
+
+                                    $set('passengers', $passengers);
+                                }
+                            })
+
+                            ->afterStateUpdated(function ($state, callable $set, Get $get) {
+                                $set('passengers', array_slice(
+                                    $get('passengers') ?? [],
+                                    0,
+                                    (int) $get('passengers_count')
+                                ));
+                            })
+                            ->deletable(false)
+                            ->reorderable(false)
+                            ->grid(2)
+                            ->itemLabel(function (array $state, ?string $uuid, $component): ?string {
+                                // Obtener número de pasajero
+                                $passengerNumber = $state['passenger_number'] ?? 0;
+
+                                // Obtener todos los datos del formulario
+                                $formData = $component->getContainer()->getRawState();
+
+                                // Obtener arrays de asientos
+                                $seatIds = $formData['seat_ids'] ?? [];
+                                $returnSeatIds = $formData['return_seat_ids'] ?? [];
+
+                                // Construir label
+                                $label = 'Pasajero ' . $passengerNumber;
+
+                                // Agregar asiento de ida si existe
+                                if (isset($seatIds[$passengerNumber - 1]) && $seatIds[$passengerNumber - 1] !== null) {
+                                    $label .= ' | Asiento ida: ' . $seatIds[$passengerNumber - 1];
+                                }
+
+                                // Agregar asiento de vuelta si existe
+                                if (isset($returnSeatIds[$passengerNumber - 1]) && $returnSeatIds[$passengerNumber - 1] !== null) {
+                                    $label .= ' | Asiento vuelta: ' . $returnSeatIds[$passengerNumber - 1];
+                                }
+
+                                return $label;
+                            }),
+                    ]),
 
                 Step::make('Resumen')
                     ->schema([

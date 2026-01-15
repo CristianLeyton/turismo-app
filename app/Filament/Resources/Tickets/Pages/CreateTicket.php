@@ -55,14 +55,39 @@ protected function getCreatedNotification(): ?Notification
         // 1. Crear la venta usando el método del modelo
         $sale = Sale::createNew(Auth::id());
 
-        // 2. Crear pasajeros
-        $passengers = collect($data['passengers'])->map(
-            fn($p) =>
-            Passenger::create($p)
-        );
+        // 2. Crear todos los pasajeros (adultos y niños)
+        $allPassengers = collect();
+        $adultPassengers = collect();
+        
+        foreach ($data['passengers'] as $index => $passengerData) {
+            // Crear pasajero adulto
+            $adultPassenger = Passenger::create([
+                'first_name' => $passengerData['first_name'],
+                'last_name' => $passengerData['last_name'],
+                'dni' => $passengerData['dni'],
+                'phone_number' => $passengerData['phone_number'] ?? null,
+                'email' => $passengerData['email'] ?? null,
+                'passenger_type' => 'adult',
+            ]);
+            
+            $allPassengers->push($adultPassenger);
+            $adultPassengers->push($adultPassenger);
+            
+            // Crear pasajero niño si existe
+            if ($passengerData['travels_with_child'] && isset($passengerData['child_data'])) {
+                $childPassenger = Passenger::create([
+                    'first_name' => $passengerData['child_data']['first_name'],
+                    'last_name' => $passengerData['child_data']['last_name'],
+                    'dni' => $passengerData['child_data']['dni'],
+                    'parent_passenger_id' => $adultPassenger->id,
+                    'passenger_type' => 'child',
+                ]);
+                $allPassengers->push($childPassenger);
+            }
+        }
 
-        // 3. Crear tickets de IDA
-        $seatIds = $data['seat_ids'] ?? ($this->seat_ids ?? []);
+        // 3. Crear tickets SOLO para adultos
+        $seatIds = $data['seat_ids'] ?? [];
         if (!is_array($seatIds)) {
             if (is_string($seatIds)) {
                 $seatIds = json_decode($seatIds, true) ?? [];
@@ -74,10 +99,10 @@ protected function getCreatedNotification(): ?Notification
         // Log para depuración: qué seat_ids recibimos
         logger()->info('Creating tickets (ida) - seat_ids', [
             'seat_ids' => $seatIds,
-            'passengers_count' => $passengers->count(),
+            'adult_passengers_count' => $adultPassengers->count(),
         ]);
 
-        foreach ($passengers as $index => $passenger) {
+        foreach ($adultPassengers as $index => $passenger) {
             $seatId = $seatIds[$index] ?? null;
             $passengerData = $data['passengers'][$index] ?? [];
             $travelsWithChild = $passengerData['travels_with_child'] ?? false;
@@ -98,13 +123,14 @@ protected function getCreatedNotification(): ?Notification
                 'passenger_index' => $index,
                 'passenger_id' => $passenger->id,
                 'seat_id_assigned' => $seatId,
+                'travels_with_child' => $travelsWithChild,
                 'ticket' => $ticket->toArray(),
             ]);
         }
 
-        // 4. Crear tickets de VUELTA
+        // 4. Crear tickets de VUELTA (solo para adultos)
         if ($data['is_round_trip'] ?? false) {
-            $returnSeatIds = $data['return_seat_ids'] ?? ($this->return_seat_ids ?? []);
+            $returnSeatIds = $data['return_seat_ids'] ?? [];
             if (!is_array($returnSeatIds)) {
                 if (is_string($returnSeatIds)) {
                     $returnSeatIds = json_decode($returnSeatIds, true) ?? [];
@@ -113,7 +139,7 @@ protected function getCreatedNotification(): ?Notification
                 }
             }
 
-            foreach ($passengers as $index => $passenger) {
+            foreach ($adultPassengers as $index => $passenger) {
                 $seatId = $returnSeatIds[$index] ?? null;
                 $passengerData = $data['passengers'][$index] ?? [];
                 $travelsWithChild = $passengerData['travels_with_child'] ?? false;
@@ -134,7 +160,7 @@ protected function getCreatedNotification(): ?Notification
         // 5. Recalcular el total de la venta
         $sale->recalculateTotal();
 
-        return $passengers->first()->tickets()->first();
+        return $adultPassengers->first()->tickets()->first();
     }
 
     public function searchTrip(): void

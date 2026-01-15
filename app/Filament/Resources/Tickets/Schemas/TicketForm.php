@@ -1121,7 +1121,44 @@ class TicketForm
                                 Toggle::make('travels_with_child')
                                     ->label('¿Viaja con un niño?')
                                     ->default(false)
+                                    ->live()
+                                    ->afterStateUpdated(function ($state, callable $set, $get) {
+                                        $passengerIndex = $get('..');
+                                        if (!$state) {
+                                            $set('child_data', null);
+                                        }
+                                    })
                                     ->columnSpanFull(),
+
+                                // Sección de datos del niño (condicional)
+                                Grid::make(2)
+                                    ->schema([
+                                        TextInput::make('child_data.first_name')
+                                            ->label('Nombre del niño')
+                                            ->required(fn($get) => $get('travels_with_child'))
+                                            ->visible(fn($get) => $get('travels_with_child')),
+                                        
+                                        TextInput::make('child_data.last_name')
+                                            ->label('Apellido del niño')
+                                            ->required(fn($get) => $get('travels_with_child'))
+                                            ->visible(fn($get) => $get('travels_with_child')),
+                                        
+                                        TextInput::make('child_data.dni')
+                                            ->label('DNI del niño')
+                                            ->required(fn($get) => $get('travels_with_child'))
+                                            ->visible(fn($get) => $get('travels_with_child')),
+                                        
+                                        /* TextInput::make('child_data.age')
+                                            ->label('Edad del niño')
+                                            ->numeric()
+                                            ->minValue(0)
+                                            ->maxValue(4)
+                                            ->required(fn($get) => $get('travels_with_child'))
+                                            ->visible(fn($get) => $get('travels_with_child'))
+                                            ->helperText('Edad entre 0 y 4 años'), */
+                                    ])
+                                    ->visible(fn($get) => $get('travels_with_child'))
+                                    ->reactive(),
 
                                 Hidden::make('passenger_number')
                                     ->dehydrated(),
@@ -1174,7 +1211,7 @@ class TicketForm
                             ->grid(2)
                             ->itemLabel(function (array $state, ?string $uuid, $component): ?string {
                                 // Obtener número de pasajero
-                                $passengerNumber = $state['passenger_number'] ?? 0;
+                                $passengerNumber = $state['passenger_number'] ?? 1;
 
                                 // Obtener todos los datos del formulario
                                 $formData = $component->getContainer()->getRawState();

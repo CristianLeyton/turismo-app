@@ -71,7 +71,7 @@
         </div>
 
         <h3 class="text-lg font-semibold text-primary text-fuchsia-600">Seleccionar asientos de
-            {{ strpos($fieldId, 'return') !== false ? 'Vuelta' : 'Ida' }}</h3>
+            {{ strpos($fieldId, 'return') !== false ? 'vuelta' : 'ida' }}</h3>
 
         <!-- Contenedor de pisos con flexbox para cambiar orden -->
         <div class="flex flex-col-reverse md:flex-row-reverse md:justify-center items-end *:w-full gap-4">

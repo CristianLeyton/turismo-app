@@ -347,7 +347,7 @@
         }
     }
 
-    @media (max-width: 640px) {
+    /* @media (max-width: 640px) {
         .seat-grid {
             grid-template-columns: repeat(var(--grid-columns, 4), 35px) !important;
         }
@@ -371,5 +371,5 @@
             min-height: 24px;
             font-size: 0.55rem;
         }
-    }
+    } */
 </style>

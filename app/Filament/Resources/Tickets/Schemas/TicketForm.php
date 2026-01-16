@@ -1098,6 +1098,7 @@ class TicketForm
                         Text::make('Asientos de vuelta seleccionados')
                             ->content(fn(Get $get) => implode(', ', $get('return_seat_ids'))), */
                         Repeater::make('passengers')
+                            ->label('Pasajeros')
                             ->schema([
                                 Grid::make(2)
                                     ->schema([
@@ -1137,17 +1138,17 @@ class TicketForm
                                             ->label('Nombre del niño')
                                             ->required(fn($get) => $get('travels_with_child'))
                                             ->visible(fn($get) => $get('travels_with_child')),
-                                        
+
                                         TextInput::make('child_data.last_name')
                                             ->label('Apellido del niño')
                                             ->required(fn($get) => $get('travels_with_child'))
                                             ->visible(fn($get) => $get('travels_with_child')),
-                                        
+
                                         TextInput::make('child_data.dni')
                                             ->label('DNI del niño')
                                             ->required(fn($get) => $get('travels_with_child'))
                                             ->visible(fn($get) => $get('travels_with_child')),
-                                        
+
                                         /* TextInput::make('child_data.age')
                                             ->label('Edad del niño')
                                             ->numeric()
@@ -1208,7 +1209,7 @@ class TicketForm
                             })
                             ->deletable(false)
                             ->reorderable(false)
-                            ->grid(2)
+                            /* ->grid(2) */
                             ->itemLabel(function (array $state, ?string $uuid, $component): ?string {
                                 // Obtener número de pasajero
                                 $passengerNumber = $state['passenger_number'] ?? 1;

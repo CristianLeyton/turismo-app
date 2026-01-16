@@ -15,6 +15,8 @@ use Filament\Notifications\Notification;
 use Illuminate\Database\Eloquent\Model;
 use Filament\Forms\Contracts\HasForms;
 use Filament\Forms\Concerns\InteractsWithForms;
+use Filament\Schemas\Components\Utilities\Get;
+use Filament\Support\Icons\Heroicon;
 
 class CreateTicket extends CreateRecord
 {
@@ -30,25 +32,26 @@ class CreateTicket extends CreateRecord
 
     public array $return_seat_ids = [];
 
-    protected function getCreateFormAction(): Action
-    {
-        return parent::getCreateFormAction()
-            ->label('Vender pasaje');
-    }
+protected function getCreateFormAction(): Action
+{
+    return parent::getCreateFormAction()
+        ->label('Vender pasaje')
+        ->hidden();
+}
 
     protected function getRedirectUrl(): string
-{
-    return $this->getResource()::getUrl('index');
-}
+    {
+        return $this->getResource()::getUrl('index');
+    }
 
-protected function getCreatedNotification(): ?Notification
-{
-    return Notification::make()
-        ->success()
-        ->title('Pasaje(s) vendido(s) correctamente')
-        ->body('Se estan descargando los tickets. Espere un momento por favor.')
+    protected function getCreatedNotification(): ?Notification
+    {
+        return Notification::make()
+            ->success()
+            ->title('Pasaje(s) vendido(s) correctamente')
+            ->body('Se estan descargando los tickets. Espere un momento por favor.')
         ;
-}
+    }
 
     protected function handleRecordCreation(array $data): Model
     {
@@ -58,7 +61,7 @@ protected function getCreatedNotification(): ?Notification
         // 2. Crear todos los pasajeros (adultos y niños)
         $allPassengers = collect();
         $adultPassengers = collect();
-        
+
         foreach ($data['passengers'] as $index => $passengerData) {
             // Crear pasajero adulto
             $adultPassenger = Passenger::create([
@@ -69,10 +72,10 @@ protected function getCreatedNotification(): ?Notification
                 'email' => $passengerData['email'] ?? null,
                 'passenger_type' => 'adult',
             ]);
-            
+
             $allPassengers->push($adultPassenger);
             $adultPassengers->push($adultPassenger);
-            
+
             // Crear pasajero niño si existe
             if ($passengerData['travels_with_child'] && isset($passengerData['child_data'])) {
                 $childPassenger = Passenger::create([

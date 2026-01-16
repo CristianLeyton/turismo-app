@@ -29,6 +29,8 @@ use Filament\Schemas\Components\Wizard;
 use Filament\Schemas\Components\Wizard\Step;
 use Filament\Support\Exceptions\Halt;
 use Filament\Tables\Columns\Column;
+use Illuminate\Support\Facades\Blade;
+
 
 class TicketForm
 {
@@ -1246,7 +1248,7 @@ class TicketForm
                                 'get' => $get,
                             ]),
                     ]),
-            ]),
+            ])->submitAction(new HtmlString('<button type="submit" class="fi-color fi-color-primary fi-bg-color-600 hover:fi-bg-color-500 dark:fi-bg-color-600 dark:hover:fi-bg-color-500 fi-text-color-0 hover:fi-text-color-0 dark:fi-text-color-0 dark:hover:fi-text-color-0 fi-btn fi-size-md  fi-ac-btn-action">Vender pasaje </button>')),
         ])->columns(0);
     }
 }

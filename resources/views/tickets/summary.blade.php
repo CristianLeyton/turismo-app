@@ -143,7 +143,7 @@
                                  <span
                             class="self-start md:self-center
                                  px-3 py-1 rounded-full text-xs font-medium
-                                 bg-gray-100 dark:bg-gray-800
+                                 bg-gray-100 dark:bg-gray-900
                                  text-fuchsia-600 dark:text-fuchsia-400 mr-3">
                             Niño
                         </span>

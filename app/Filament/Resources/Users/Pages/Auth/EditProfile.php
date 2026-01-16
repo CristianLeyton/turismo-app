@@ -13,7 +13,15 @@ class EditProfile extends BaseEditProfile
     {
         return $schema
             ->components([
-                $this->getNameFormComponent(),
+                TextInput::make('name')
+                    ->label('Nombre')
+                    ->disabled(fn() => !Auth::user()?->is_admin)
+                    ->maxLength(255)
+                    ->required()
+                    ->validationMessages([
+                        'required' => 'El nombre es obligatorio.',
+                        'max' => 'El nombre no debe exceder los :max caracteres.',
+                    ]),
                 TextInput::make('surname')
                     ->label('Apellido')
                     ->disabled(fn() => !Auth::user()?->is_admin)

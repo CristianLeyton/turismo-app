@@ -8,6 +8,7 @@ use App\Models\Ticket;
 use App\Models\Trip;
 use App\Models\Route;
 use App\Models\Sale;
+use App\Services\TicketPdfService;
 use Filament\Resources\Pages\CreateRecord;
 use Illuminate\Support\Facades\Auth;
 use Filament\Actions\Action;
@@ -32,16 +33,32 @@ class CreateTicket extends CreateRecord
 
     public array $return_seat_ids = [];
 
-protected function getCreateFormAction(): Action
-{
-    return parent::getCreateFormAction()
-        ->label('Vender pasaje')
-        ->hidden();
-}
+    protected function getCreateFormAction(): Action
+    {
+        return parent::getCreateFormAction()
+            ->label('Vender pasaje')
+            ->hidden();
+    }
 
     protected function getRedirectUrl(): string
     {
+        // Si hay una descarga de ticket pendiente, será manejada por afterCreate
+        if (session()->has('auto_download_url')) {
+            return $this->getResource()::getUrl('index');
+        }
         return $this->getResource()::getUrl('index');
+    }
+
+    protected function afterCreate(): void
+    {
+        // Si hay una descarga de ticket pendiente, abrir en nueva pestaña
+        if (session()->has('auto_download_url')) {
+            $url = session('auto_download_url');
+            session()->forget('auto_download_url');
+
+            // Usar Filament para ejecutar JavaScript que abra la URL en nueva pestaña
+            $this->js("window.open('{$url}', '_blank');");
+        }
     }
 
     protected function getCreatedNotification(): ?Notification
@@ -163,7 +180,182 @@ protected function getCreateFormAction(): Action
         // 5. Recalcular el total de la venta
         $sale->recalculateTotal();
 
+        // 6. Generar y descargar PDFs automáticamente
+        $this->generateAndDownloadTickets($sale);
+
         return $adultPassengers->first()->tickets()->first();
+    }
+
+    /**
+     * Generar y descargar PDFs para todos los pasajeros
+     */
+    private function generateAndDownloadTickets(Sale $sale): void
+    {
+        try {
+            $ticketsByPassenger = $sale->tickets()
+                ->with(['passenger', 'trip', 'returnTrip', 'origin', 'destination', 'seat'])
+                ->get()
+                ->groupBy('passenger_id');
+
+            if ($ticketsByPassenger->count() === 1) {
+                // Un solo pasajero - generar PDF y guardar en sesión
+                $passengerTickets = $ticketsByPassenger->first();
+                $passenger = $passengerTickets->first()->passenger;
+                $trip = $passengerTickets->first()->trip;
+                $seat = $passengerTickets->first()->seat;
+
+                $passengerName = str_replace(' ', '_', $passenger->full_name);
+                $tripId = $trip->id;
+                $seatNumber = $seat ? $seat->number : 'SinAsiento';
+                $filename = "{$passengerName}_Viaje{$tripId}_Asiento{$seatNumber}.pdf";
+
+                $data = [
+                    'sale' => $sale,
+                    'tickets' => $passengerTickets,
+                    'passenger' => $passenger,
+                    'hasChild' => $passengerTickets->contains('travels_with_child', true),
+                ];
+
+                // Generar PDF
+                $dompdf = new \Dompdf\Dompdf();
+                $dompdf->loadHtml(view('tickets.pdf.passenger-tickets', $data)->render());
+                $dompdf->setPaper('A4', 'portrait');
+                $dompdf->render();
+                $pdfContent = $dompdf->output();
+
+                // Guardar en sesión para descarga
+                session(['ticket_pdf_content' => base64_encode($pdfContent)]);
+                session(['ticket_pdf_filename' => $filename]);
+
+                // Mostrar notificación con descarga automática
+                $downloadUrl = route('tickets.download');
+                Notification::make()
+                    ->title('✅ Ticket Generado')
+                    ->body("El ticket para {$passenger->full_name} se está descargando automáticamente...")
+                    ->success()
+                    ->send();
+
+                // Guardar URL de descarga para redirección automática
+                session()->put('auto_download_url', $downloadUrl);
+            } else {
+                // Múltiples pasajeros - generar todos los PDFs
+                $downloads = [];
+
+                foreach ($ticketsByPassenger as $passengerId => $passengerTickets) {
+                    $passenger = $passengerTickets->first()->passenger;
+                    $trip = $passengerTickets->first()->trip;
+                    $seat = $passengerTickets->first()->seat;
+
+                    $passengerName = str_replace(' ', '_', $passenger->full_name);
+                    $tripId = $trip->id;
+                    $seatNumber = $seat ? $seat->number : 'SinAsiento';
+                    $filename = "{$passengerName}_Viaje{$tripId}_Asiento{$seatNumber}.pdf";
+
+                    $data = [
+                        'sale' => $sale,
+                        'tickets' => $passengerTickets,
+                        'passenger' => $passenger,
+                        'hasChild' => $passengerTickets->contains('travels_with_child', true),
+                    ];
+
+                    // Generar PDF
+                    $dompdf = new \Dompdf\Dompdf();
+                    $dompdf->loadHtml(view('tickets.pdf.passenger-tickets', $data)->render());
+                    $dompdf->setPaper('A4', 'portrait');
+                    $dompdf->render();
+                    $pdfContent = $dompdf->output();
+
+                    $downloads[] = [
+                        'filename' => $filename,
+                        'content' => base64_encode($pdfContent)
+                    ];
+                }
+
+                // Guardar en sesión para descarga múltiple
+                session(['ticket_pdfs_data' => $downloads]);
+
+                // Mostrar notificación con descarga automática
+                $passengerCount = count($downloads);
+                $downloadUrl = route('tickets.download.multiple');
+                Notification::make()
+                    ->title('✅ Tickets Generados')
+                    ->body("Se generaron {$passengerCount} tickets. Se están descargando automáticamente...")
+                    ->success()
+                    ->send();
+
+                // Guardar URL de descarga para redirección automática
+                session()->put('auto_download_url', $downloadUrl);
+            }
+        } catch (\Exception $e) {
+            logger()->error('Error al generar PDFs de tickets', [
+                'sale_id' => $sale->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            Notification::make()
+                ->title('Error al generar tickets PDF')
+                ->body('Se generaron los tickets pero hubo un error al crear los PDFs. Contacte al administrador.')
+                ->warning()
+                ->send();
+        }
+    }
+
+    /**
+     * Crear página HTML para descarga múltiple de archivos
+     */
+    private function createMultipleDownloadPage(array $downloads): string
+    {
+        return "
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Descargando Tickets...</title>
+            <meta charset='utf-8'>
+            <style>
+                body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
+                .message { font-size: 18px; color: #333; margin-bottom: 20px; }
+                .files { margin: 20px 0; }
+                .file { margin: 10px 0; padding: 10px; background: #f5f5f5; border-radius: 5px; }
+            </style>
+        </head>
+        <body>
+            <div class='message'>
+                <h2>🎫 Descargando tus tickets...</h2>
+                <p>Los archivos se descargarán automáticamente. Si no se descargan, haz clic en los enlaces:</p>
+            </div>
+            <div class='files'>
+                " . implode('', array_map(function ($download) {
+            return "<div class='file'>
+                        <strong>{$download['filename']}</strong>
+                        <br><a href='data:application/pdf;base64,{$download['content']}' 
+                               download='{$download['filename']}' 
+                               style='color: #007bff; text-decoration: none;'>
+                            📥 Descargar
+                        </a>
+                    </div>";
+        }, $downloads)) . "
+            </div>
+            <script>
+                // Descargar automáticamente cada archivo
+                setTimeout(function() {
+                    " . implode('', array_map(function ($download) {
+            $filename = str_replace([' ', '-'], ['_', '_'], $download['filename']);
+            return "
+                    const link{$filename} = document.createElement('a');
+                    link{$filename}.href = 'data:application/pdf;base64,{$download['content']}';
+                    link{$filename}.download = '{$download['filename']}';
+                    link{$filename}.click();";
+        }, $downloads)) . "
+                }, 1000);
+                
+                // Cerrar la ventana después de 5 segundos
+                setTimeout(function() {
+                    window.close();
+                }, 5000);
+            </script>
+        </body>
+        </html>";
     }
 
     public function searchTrip(): void

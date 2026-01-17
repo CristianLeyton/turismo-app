@@ -83,6 +83,107 @@ class Trip extends Model
             ->exists();
     }
 
+    /**
+     * Verificar y reservar asientos usando bloqueo pesimista para evitar condiciones de carrera
+     * 
+     * @param array $seatIds Array de IDs de asientos a reservar
+     * @return array ['success' => bool, 'message' => string, 'failed_seats' => array]
+     */
+    public function reserveSeatsWithLock(array $seatIds): array
+    {
+        if (empty($seatIds)) {
+            return ['success' => true, 'message' => 'No hay asientos que reservar', 'failed_seats' => []];
+        }
+
+        return \DB::transaction(function () use ($seatIds) {
+            // Bloquear el viaje actual para evitar modificaciones concurrentes
+            $lockedTrip = self::where('id', $this->id)->lockForUpdate()->first();
+
+            if (!$lockedTrip) {
+                return ['success' => false, 'message' => 'Viaje no encontrado', 'failed_seats' => $seatIds];
+            }
+
+            $failedSeats = [];
+            $availableSeats = $lockedTrip->availableSeats()->pluck('id')->toArray();
+
+            foreach ($seatIds as $seatId) {
+                if (!in_array($seatId, $availableSeats)) {
+                    $failedSeats[] = $seatId;
+                }
+            }
+
+            if (!empty($failedSeats)) {
+                return [
+                    'success' => false, 
+                    'message' => 'Algunos asientos ya no están disponibles', 
+                    'failed_seats' => $failedSeats
+                ];
+            }
+
+            return ['success' => true, 'message' => 'Asientos disponibles', 'failed_seats' => []];
+        });
+    }
+
+    /**
+     * Crear tickets con bloqueo para evitar duplicados
+     * 
+     * @param array $ticketsData Array de datos para crear tickets
+     * @return array ['success' => bool, 'message' => string, 'tickets' => Collection]
+     */
+    public function createTicketsWithLock(array $ticketsData): array
+    {
+        return \DB::transaction(function () use ($ticketsData) {
+            $createdTickets = collect();
+            $failedTickets = [];
+
+            foreach ($ticketsData as $index => $ticketData) {
+                try {
+                    // Verificar que el asiento esté disponible antes de crear
+                    if (isset($ticketData['seat_id']) && !$this->canAssignSeat($ticketData['seat_id'])) {
+                        $failedTickets[] = [
+                            'index' => $index,
+                            'seat_id' => $ticketData['seat_id'],
+                            'error' => 'Asiento ya no disponible'
+                        ];
+                        continue;
+                    }
+
+                    $ticket = $this->tickets()->create($ticketData);
+                    $createdTickets->push($ticket);
+
+                } catch (\Illuminate\Database\QueryException $e) {
+                    // Capturar error de constraint unique (duplicate entry)
+                    if ($e->getCode() == 23000 && str_contains($e->getMessage(), 'tickets_trip_seat_unique')) {
+                        $failedTickets[] = [
+                            'index' => $index,
+                            'seat_id' => $ticketData['seat_id'] ?? null,
+                            'error' => 'Asiento acaba de ser vendido por otro usuario'
+                        ];
+                    } else {
+                        // Re-lanzar otros errores de base de datos
+                        throw $e;
+                    }
+                }
+            }
+
+            if (!empty($failedTickets)) {
+                return [
+                    'success' => false,
+                    'message' => 'Algunos asientos no pudieron ser vendidos',
+                    'tickets' => $createdTickets,
+                    'failed_tickets' => $failedTickets
+                ];
+            }
+
+            return [
+                'success' => true,
+                'message' => 'Todos los tickets fueron creados exitosamente',
+                'tickets' => $createdTickets,
+                'failed_tickets' => []
+            ];
+        });
+    }
+
     public function remainingSeats(): int
     {
         return max(

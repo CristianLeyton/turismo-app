@@ -13,15 +13,19 @@ return new class extends Migration
     {
         Schema::create('passengers', function (Blueprint $table) {
             $table->id();
+            $table->unsignedBigInteger('parent_passenger_id')->nullable();
             $table->string('first_name');
             $table->string('last_name');
             $table->string('dni')->nullable();
-            $table->timestamps();
-
             $table->string('phone_number')->nullable();
             $table->string('email')->nullable();
+            $table->enum('passenger_type', ['adult', 'child'])->default('adult');
+            
+            $table->timestamps();
 
+            $table->foreign('parent_passenger_id')->references('id')->on('passengers')->onDelete('cascade');
             $table->index(['last_name', 'dni']);
+            $table->index('passenger_type');
             $table->softDeletes();
         });
     }

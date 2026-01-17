@@ -55,6 +55,11 @@ class Ticket extends Model
         return $this->belongsTo(Seat::class);
     }
 
+    public function returnSeat(): BelongsTo
+    {
+        return $this->belongsTo(Seat::class, 'return_seat_id');
+    }
+
     /**
      * ¿Ocupa asiento?
      */

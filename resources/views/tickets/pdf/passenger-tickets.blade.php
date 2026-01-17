@@ -58,6 +58,7 @@
             font-size: 12px;
             font-weight: bold;
             color: #d946ef;
+            text-transform: uppercase;
         }
 
         .section-title {
@@ -199,7 +200,7 @@
                                 @if ($hasChild)
                                     @foreach ($ticket->passenger->children as $child)
                                         <div class='child-box'>
-                                            <strong class="color: #d946ef;">VIAJA CON NIÑO</strong><br>
+                                            <strong style="color: #d946ef;">ACOMPAÑANTE</strong><br>
                                             <strong>Nombre:</strong> {{ $child->full_name }}<br>
                                             <strong>Documento:</strong> {{ $child->dni }}
                                         </div>
@@ -208,13 +209,13 @@
 
                                 <div class='section-title'>VIAJE</div>
                                 <div class='box'>
-                                    <strong>Fecha:</strong>
-                                    {{ $ticket->trip->schedule->departure_time->format('d/m/Y') }}<br>
+                                    <strong>Fecha del viaje:</strong>
+                                    {{ $ticket->trip->trip_date->format('d/m/Y') }}<br>
                                     <strong>Hora de salida:</strong>
                                     {{ $ticket->trip->schedule->departure_time->format('H:i') }} hs<br>
                                     <strong>Hora de llegada:</strong>
                                     {{ $ticket->trip->schedule->arrival_time->format('H:i') }} hs<br>
-                                    <strong>Servicio:</strong> {{ $ticket->trip->route->name ?? 'Regular' }}
+                                    <strong>Ruta:</strong> {{ $ticket->trip->route->name ?? 'Regular' }}
                                 </div>
 
 

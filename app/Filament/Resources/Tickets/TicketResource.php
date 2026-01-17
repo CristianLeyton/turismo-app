@@ -30,9 +30,14 @@ class TicketResource extends Resource
     protected static bool $hasTitleCaseModelLabel = false;
     protected static ?int $navigationSort = 1;
 
-    protected static ?string $recordTitleAttribute = 'trip_id';
+    protected static ?string $recordTitleAttribute = 'id';
 
-        protected static bool $canCreateAnother = false;
+    protected static bool $canCreateAnother = false;
+
+    public static function getRecordTitle($record): string
+{
+    return "Pasaje #{$record->id}";
+}
 
     public static function form(Schema $schema): Schema
     {

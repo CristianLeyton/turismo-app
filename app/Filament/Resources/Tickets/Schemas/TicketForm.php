@@ -933,6 +933,37 @@ class TicketForm
                                 }
                             }),
 
+/*                         ViewField::make('seat_stats')
+                            ->label('')
+                            ->view('tickets.seat-stats')
+                            ->viewData(function (Get $get) {
+                                $tripId = $get('trip_id');
+                                $trip = $tripId ? Trip::find($tripId) : null;
+                                $availableSeats = $trip ? $trip->remainingSeats() : 0;
+                                $requiredSeats = (int) $get('passengers_count');
+
+                                return [
+                                    'trip' => $trip,
+                                    'availableSeats' => $availableSeats,
+                                    'requiredSeats' => $requiredSeats,
+                                ];
+                            })
+                            ->visible(
+                                fn(Get $get) =>
+                                !blank($get('trip_id')) &&
+                                    Trip::find($get('trip_id'))
+                            ), */
+
+                        ViewField::make('refresh_availability')
+                            ->label('')
+                            ->view('tickets.refresh-availability')
+                            ->visible(
+                                fn(Get $get) =>
+                                !blank($get('trip_id')) &&
+                                    Trip::find($get('trip_id')) &&
+                                    Trip::find($get('trip_id'))?->remainingSeats() >= (int) $get('passengers_count')
+                            ),
+
                         ViewField::make('seat_selector')
                             ->label('Seleccione los asientos')
                             ->view('tickets.seat-selector')
@@ -992,6 +1023,15 @@ class TicketForm
                         }
                     })
                     ->schema([
+                                                ViewField::make('refresh_availability')
+                            ->label('')
+                            ->view('tickets.refresh-availability')
+                            ->visible(
+                                fn(Get $get) =>
+                                !blank($get('trip_id')) &&
+                                    Trip::find($get('trip_id')) &&
+                                    Trip::find($get('trip_id'))?->remainingSeats() >= (int) $get('passengers_count')
+                            ),
                         ViewField::make('return_trip_required_info')
                             ->label('')
                             ->view('tickets.return-trip-required-info')

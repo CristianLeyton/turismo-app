@@ -50,6 +50,7 @@ return new class extends Migration
             $table->timestamps();
             $table->softDeletes();
             $table->index(['trip_id', 'seat_id']);
+            $table->unique(['trip_id', 'seat_id'], 'tickets_trip_seat_unique');
         });
     }
 

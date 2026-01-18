@@ -1146,19 +1146,50 @@ class TicketForm
                                     ->schema([
                                         TextInput::make('first_name')
                                             ->label('Nombre')
-                                            ->required(),
+                                            ->minLength(2)
+                                            ->maxLength(80)
+                                            ->required()
+                                            ->validationMessages([
+                                                'required' => 'Debe ingresar un nombre.',
+                                                'min' => 'El nombre debe tener al menos :min caracteres.',
+                                                'max' => 'El nombre no puede tener más de :max caracteres.',
+                                            ]),
                                         TextInput::make('last_name')
                                             ->label('Apellido')
-                                            ->required(),
+                                            ->minLength(2)
+                                            ->maxLength(80)
+                                            ->required()
+                                            ->validationMessages([
+                                                'required' => 'Debe ingresar un apellido.',
+                                                'min' => 'El apellido debe tener al menos :min caracteres.',
+                                                'maxLength' => 'El apellido no puede tener más de :max caracteres.',
+                                            ]),
                                     ]),
 
                                 Grid::make(2)
                                     ->schema([
                                         TextInput::make('dni')
                                             ->label('DNI')
-                                            ->required(),
+                                            ->required()
+                                            ->numeric()
+                                            ->minValue(999999)
+                                            ->maxValue(99999999)
+                                            ->validationMessages([
+                                                'required' => 'Debe ingresar un DNI.',
+                                                'numeric' => 'El DNI debe ser numérico.',
+                                                'min' => 'El DNI debe tener al menos 7 dígitos.',
+                                                'max' => 'El DNI no puede tener más de 8 dígitos.',397805205
+                                            ]),
                                         TextInput::make('phone_number')
-                                            ->label('Teléfono'),
+                                            ->label('Teléfono')
+                                            ->numeric()
+                                            ->minValue(999999)
+                                            ->maxValue(999999999999999)
+                                            ->validationMessages([
+                                                'numeric' => 'El teléfono debe ser numérico.',
+                                                'min' => 'El teléfono debe tener al menos 7 caracteres.',
+                                                'max' => 'El teléfono no puede tener más de 16 caracteres.',
+                                            ]),
                                     ]),
 
                                 Toggle::make('travels_with_child')
@@ -1179,17 +1210,42 @@ class TicketForm
                                         TextInput::make('child_data.first_name')
                                             ->label('Nombre del niño')
                                             ->required(fn($get) => $get('travels_with_child'))
-                                            ->visible(fn($get) => $get('travels_with_child')),
+                                            ->visible(fn($get) => $get('travels_with_child'))
+                                            ->minLength(2)
+                                            ->maxLength(80)
+                                            ->required()
+                                            ->validationMessages([
+                                                'required' => 'Debe ingresar un nombre.',
+                                                'min' => 'El nombre debe tener al menos :min caracteres.',
+                                                'max' => 'El nombre no puede tener más de :max caracteres.',
+                                            ]),
 
                                         TextInput::make('child_data.last_name')
                                             ->label('Apellido del niño')
                                             ->required(fn($get) => $get('travels_with_child'))
-                                            ->visible(fn($get) => $get('travels_with_child')),
+                                            ->visible(fn($get) => $get('travels_with_child'))
+                                            ->minLength(2)
+                                            ->maxLength(80)
+                                            ->required()
+                                            ->validationMessages([
+                                                'required' => 'Debe ingresar un apellido.',
+                                                'min' => 'El apellido debe tener al menos :min caracteres.',
+                                                'max' => 'El apellido no puede tener más de :max caracteres.',
+                                            ]),
 
                                         TextInput::make('child_data.dni')
                                             ->label('DNI del niño')
                                             ->required(fn($get) => $get('travels_with_child'))
-                                            ->visible(fn($get) => $get('travels_with_child')),
+                                            ->visible(fn($get) => $get('travels_with_child'))
+                                            ->numeric()
+                                            ->minValue(999999)
+                                            ->maxValue(99999999)
+                                            ->validationMessages([
+                                                'required' => 'Debe ingresar un DNI.',
+                                                'numeric' => 'El DNI debe ser numérico.',
+                                                'min' => 'El DNI debe tener al menos 7 dígitos.',
+                                                'max' => 'El DNI no puede tener más de 8 dígitos.',397805205
+                                            ]),
 
                                         /* TextInput::make('child_data.age')
                                             ->label('Edad del niño')

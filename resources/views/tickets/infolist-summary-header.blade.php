@@ -79,7 +79,7 @@
 
         @if ($record?->is_round_trip)
             @if ($record->return_trip_id && $returnTrip)
-                <div class="flex justify-between border-t border-gray-200 dark:border-gray-700 items-center mt-3 pt-3">
+                <div class="flex flex-col md:flex-row gap-3 justify-between border-t border-gray-200 dark:border-gray-700 md:items-center mt-3 pt-3">
                     <div class="text-sm text-gray-600 dark:text-gray-400 mt-1">
                         <strong class="font-semibold"> Vuelta: </strong>
                         {{ $returnTrip->trip_date ? Carbon::parse($returnTrip->trip_date)->format('d/m/Y') : '--/--/----' }}

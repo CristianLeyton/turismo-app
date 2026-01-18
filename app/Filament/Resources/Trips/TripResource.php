@@ -9,11 +9,14 @@ use BackedEnum;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
+use App\Services\TripPdfService;
+use Filament\Actions\Action;
 use Filament\Actions\EditAction;
 use Filament\Actions\ForceDeleteAction;
 use Filament\Actions\ForceDeleteBulkAction;
 use Filament\Actions\RestoreAction;
 use Filament\Actions\RestoreBulkAction;
+use Filament\Actions\ViewAction;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Select;
 use Filament\Resources\Resource;
@@ -44,11 +47,13 @@ class TripResource extends Resource
                 Select::make('bus_id')
                     ->label('Colectivo')
                     ->relationship('bus', 'name')
-                    ->required(),
+                    ->required()
+                    ->visibleOn('create'),
                 Select::make('route_id')
                     ->label('Ruta')
                     ->relationship('route', 'name')
                     ->required()
+                    ->visibleOn('create')
                     ->reactive(),
                 Select::make('schedule_id')
                     ->label('Horario')
@@ -64,6 +69,7 @@ class TripResource extends Resource
                     ->required()
                     ->preload()
                     ->reactive()
+                    ->visibleOn('create')
                     ->afterStateUpdated(function ($state, callable $set) {
                         if ($state) {
                             $schedule = Schedule::find($state);
@@ -76,6 +82,7 @@ class TripResource extends Resource
                 DatePicker::make('trip_date')
                     ->label('Fecha del viaje')
                     ->required()
+                    ->visibleOn('create')
                     ->displayFormat('d/m/Y')
                     ->native(false),
             ]);
@@ -88,20 +95,63 @@ class TripResource extends Resource
                 TextColumn::make('bus.name')
                     ->label('Colectivo')
                     ->sortable()
-                    ->searchable(),
+                    ->searchable()
+                    ->badge()
+                    ->color('gray')
+                    ->toggleable(isToggledHiddenByDefault: false),
                 TextColumn::make('trip_date')
-                    ->label('Fecha')
-                    ->date()
+                    ->label('Fecha de salida')
+                    ->date('d/m/Y')
+                    ->badge()
+                    ->color('info')
+                    ->searchable()
                     ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: false)
                     ->alignCenter(),
                 TextColumn::make('schedule.name')
                     ->label('Horario')
                     ->searchable()
-                    ->alignCenter(),
+                    ->alignCenter()
+                    ->toggleable(isToggledHiddenByDefault: true),
+                TextColumn::make('departure_time')
+                    ->label('Hora salida')
+                    ->dateTime('H:i')
+                    ->sortable()
+                    ->badge()
+                    ->color('info')
+                    ->alignCenter()
+                    ->toggleable(isToggledHiddenByDefault: false),
+                TextColumn::make('arrival_time')
+                    ->label('Hora llegada')
+                    ->dateTime('H:i')
+                    ->badge()
+                    ->color('info')
+                    ->sortable()
+                    ->alignCenter()
+                    ->toggleable(isToggledHiddenByDefault: false),
                 TextColumn::make('route.name')
                     ->label('Ruta')
                     ->sortable()
-                    ->searchable(),
+                    ->badge()
+                    ->color('warning')
+                    ->searchable()
+                    ->toggleable(isToggledHiddenByDefault: false),
+                TextColumn::make('occupiedSeatsCount')
+                    ->label('Asientos vendidos')
+                    ->getStateUsing(fn ($record) => $record->occupiedSeatsCount())
+                    ->sortable()
+                    ->badge()
+                    ->color('primary')
+                    ->alignCenter()
+                    ->toggleable(isToggledHiddenByDefault: false),
+                TextColumn::make('total_passengers')
+                    ->label('Total pasajeros')
+                    ->getStateUsing(fn ($record) => $record->total_passengers)
+                    ->sortable()
+                    ->badge()
+                    ->color('success')
+                    ->alignCenter()
+                    ->toggleable(isToggledHiddenByDefault: false),
                 TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable()
@@ -115,6 +165,8 @@ class TripResource extends Resource
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
+            ->recordAction('view_details')
+            ->defaultSort('trip_date', 'desc')
             ->filters([
                 SelectFilter::make('route')
                     ->relationship('route', 'name')
@@ -123,18 +175,73 @@ class TripResource extends Resource
                 TrashedFilter::make(),
             ])
             ->recordActions([
-/*                 EditAction::make()->button()->hiddenLabel()->extraAttributes([
-                    'title' => 'Editar',
-                ]),
-                DeleteAction::make()->button()->hiddenLabel()->extraAttributes([
-                    'title' => 'Eliminar',
-                ]),
-                ForceDeleteAction::make()->button()->hiddenLabel()->extraAttributes([
-                    'title' => 'Eliminar permanentemente',
-                ]),
-                RestoreAction::make()->button()->hiddenLabel()->extraAttributes([
-                    'title' => 'Restaurar',
-                ]), */
+                ViewAction::make('view_details')
+                    ->label('Ver detalles')
+                    ->modalHeading(fn ($record) => "Detalles del viaje - {$record->bus->name} ({$record->trip_date->format('d/m/Y')})")
+                    ->modalContent(function ($record) {
+                        $passengers = $record->getPassengersWithDetails();
+                        
+                        return view('filament.trips.trip-details', [
+                            'trip' => $record,
+                            'passengers' => $passengers
+                        ]);
+                    })
+                    ->modalWidth('7xl')
+                    ->extraModalFooterActions(function ($record) {
+                        return [
+                            Action::make('download_pdf_modal')
+                                ->label('PDF')
+                                ->icon('heroicon-m-arrow-down-tray')
+                                ->color('primary')
+                                ->url(route('trips.pdf.download', $record))
+                                ->openUrlInNewTab()
+                                ->disabled($record->tickets()->count() === 0)
+                                ->extraAttributes([
+                                    'title' => 'Descargar PDF'
+                                ]),
+                            Action::make('download_excel_modal')
+                                ->label('Excel')
+                                ->icon('heroicon-m-arrow-down-tray')
+                                ->color('success')
+                                ->url(route('trips.excel.download', $record))
+                                ->openUrlInNewTab()
+                                ->disabled($record->tickets()->count() === 0)
+                                ->extraAttributes([
+                                    'title' => 'Descargar Excel'
+                                ]),
+                            
+                        ];
+                    })
+                    ->disabled(fn ($record) => $record->tickets()->count() === 0)
+                    ->button()
+                    ->hiddenLabel()
+                    ->extraAttributes([
+                        'title' => 'Ver detalles'
+                    ]),
+                Action::make('download_pdf')
+                    ->label('Descargar PDF')
+                    ->icon('heroicon-m-arrow-down-tray')
+                    ->color('primary')
+                    ->url(fn ($record) => route('trips.pdf.download', $record))
+                    ->openUrlInNewTab()
+                    ->disabled(fn ($record) => $record->tickets()->count() === 0)
+                    ->button()
+                    ->hiddenLabel()
+                    ->extraAttributes([
+                        'title' => 'Descargar PDF'
+                    ]),
+                Action::make('download_excel')
+                    ->label('Descargar Excel')
+                    ->icon('heroicon-m-arrow-down-tray')
+                    ->color('success')
+                    ->url(fn ($record) => route('trips.excel.download', $record))
+                    ->openUrlInNewTab()
+                    ->disabled(fn ($record) => $record->tickets()->count() === 0)
+                    ->button()
+                    ->hiddenLabel()
+                    ->extraAttributes([
+                        'title' => 'Descargar Excel'
+                    ]),
             ])
             ->toolbarActions([
 /*                 BulkActionGroup::make([

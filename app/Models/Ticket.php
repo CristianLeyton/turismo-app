@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Facades\Auth;
 
 
 class Ticket extends Model
@@ -23,12 +24,25 @@ class Ticket extends Model
         'price',
         'origin_location_id',
         'destination_location_id',
+        'deleted_by',
     ];
 
     protected $casts = [
         'is_round_trip' => 'boolean',
         'travels_with_child' => 'boolean',
     ];
+
+    protected static function boot()
+    {
+        parent::boot();
+
+        static::deleting(function ($ticket) {
+            if (Auth::check()) {
+                $ticket->deleted_by = Auth::id();
+                $ticket->save();
+            }
+        });
+    }
 
     public function sale(): BelongsTo
     {
@@ -76,6 +90,11 @@ class Ticket extends Model
     public function destination(): BelongsTo
     {
         return $this->belongsTo(Location::class, 'destination_location_id');
+    }
+
+    public function deletedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'deleted_by');
     }
 
     public static function validateTicketCreation(array $data): void

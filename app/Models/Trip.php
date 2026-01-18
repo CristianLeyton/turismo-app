@@ -437,4 +437,97 @@ class Trip extends Model
             'occupied_seats' => $this->occupiedSeatsCount(),
         ];
     }
+
+    /**
+     * Obtener total de pasajeros (incluyendo niños)
+     */
+    public function getTotalPassengersAttribute(): int
+    {
+        $total = $this->tickets()->count();
+        
+        // Sumar niños adicionales
+        $childrenCount = $this->tickets()->where('travels_with_child', true)->count();
+        
+        return $total + $childrenCount;
+    }
+
+    /**
+     * Obtener tickets con toda la información para la vista de detalles
+     */
+    public function getTicketsWithDetails()
+    {
+        return $this->tickets()
+            ->with(['passenger', 'seat', 'origin', 'destination', 'sale'])
+            ->get()
+            ->map(function ($ticket) {
+                return [
+                    'id' => $ticket->id,
+                    'passenger_name' => $ticket->passenger?->full_name ?? 'N/A',
+                    'passenger_dni' => $ticket->passenger?->dni ?? 'N/A',
+                    'seat_number' => $ticket->seat?->seat_number ?? 'N/A',
+                    'travels_with_child' => $ticket->travels_with_child,
+                    'origin' => $ticket->origin?->name ?? 'N/A',
+                    'destination' => $ticket->destination?->name ?? 'N/A',
+                    'route' => $this->route?->name ?? 'N/A',
+                    'is_round_trip' => $ticket->is_round_trip,
+                    'trip_date' => $this->trip_date?->format('d/m/Y') ?? 'N/A',
+                    'departure_time' => $this->departure_time?->format('H:i') ?? 'N/A',
+                    'arrival_time' => $this->arrival_time?->format('H:i') ?? 'N/A',
+                    'bus_name' => $this->bus?->name ?? 'N/A',
+                    'price' => $ticket->price,
+                    'created_at' => $ticket->created_at?->format('d/m/Y H:i') ?? 'N/A',
+                ];
+            });
+    }
+
+    /**
+     * Obtener todos los pasajeros del viaje (incluyendo niños)
+     */
+    public function getPassengersWithDetails()
+    {
+        $passengers = collect();
+        
+        // Obtener pasajeros adultos de los tickets
+        $this->tickets()
+            ->with(['passenger', 'seat', 'origin', 'destination'])
+            ->get()
+            ->each(function ($ticket) use ($passengers) {
+                // Agregar pasajero adulto
+                if ($ticket->passenger) {
+                    $passengers->push([
+                        'type' => 'adult',
+                        'name' => $ticket->passenger->full_name,
+                        'dni' => $ticket->passenger->dni ?? 'N/A',
+                        'phone' => $ticket->passenger->phone_number ?? 'N/A',
+                        'seat_number' => $ticket->seat?->seat_number ?? 'N/A',
+                        'origin' => $ticket->origin?->name ?? 'N/A',
+                        'destination' => $ticket->destination?->name ?? 'N/A',
+                        'ticket_id' => $ticket->id,
+                        'price' => $ticket->price,
+                        'is_round_trip' => $ticket->is_round_trip,
+                    ]);
+                }
+                
+                // Si viaja con niño, agregar al niño como pasajero adicional
+                if ($ticket->travels_with_child && $ticket->passenger && $ticket->passenger->children->isNotEmpty()) {
+                    $ticket->passenger->children->each(function ($child) use ($passengers, $ticket) {
+                        $passengers->push([
+                            'type' => 'child',
+                            'name' => $child->full_name,
+                            'dni' => $child->dni ?? 'N/A',
+                            'phone' => $child->phone_number ?? 'N/A',
+                            'seat_number' => 'Acompañante',
+                            'origin' => $ticket->origin?->name ?? 'N/A',
+                            'destination' => $ticket->destination?->name ?? 'N/A',
+                            'ticket_id' => $ticket->id,
+                            'price' => 0, // Los niños通常 no pagan
+                            'is_round_trip' => $ticket->is_round_trip,
+                            'parent_name' => $ticket->passenger->full_name,
+                        ]);
+                    });
+                }
+            });
+        
+        return $passengers;
+    }
 }

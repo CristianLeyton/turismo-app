@@ -75,18 +75,24 @@ class TicketsTable
                 TextColumn::make('trip.route.name')
                     ->label('Ruta')
                     ->sortable()
+                    ->badge()
+                    ->color('warning')
                     ->searchable()
                     ->toggleable(isToggledHiddenByDefault: true),
 
                 TextColumn::make('origin.name')
                     ->label('Origen')
                     ->sortable()
+                    ->badge()
+                    ->color('warning')
                     ->searchable()
                     ->toggleable(isToggledHiddenByDefault: false),
 
                 TextColumn::make('destination.name')
                     ->label('Destino')
                     ->sortable()
+                    ->badge()
+                    ->color('warning')
                     ->searchable()
                     ->toggleable(isToggledHiddenByDefault: false),
 
@@ -123,6 +129,11 @@ class TicketsTable
                 TextColumn::make('updated_at')
                     ->label('Actualizado')
                     ->dateTime('d/m/Y H:i')
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
+                TextColumn::make('deleted_by')
+                    ->getStateUsing(fn ($record) => $record->deletedBy ? $record->deletedBy->name . ' ' . $record->deletedBy->surname : '')
+                    ->label('Eliminado por')
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
             ])

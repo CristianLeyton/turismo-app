@@ -48,6 +48,7 @@ return new class extends Migration
             $table->decimal('price', 10, 2)->nullable();
 
             $table->timestamps();
+            $table->foreignId('deleted_by')->nullable()->constrained('users')->nullOnDelete();
             $table->softDeletes();
             $table->index(['trip_id', 'seat_id']);
             $table->unique(['trip_id', 'seat_id'], 'tickets_trip_seat_unique');

@@ -422,7 +422,7 @@ class CreateTicket extends CreateRecord
 
                 $passengerName = str_replace(' ', '_', $passenger->full_name);
                 $tripId = $trip->id;
-                $seatNumber = $seat ? $seat->number : 'SinAsiento';
+                $seatNumber = $seat ? $seat->seat_number : 'SinAsiento';
                 $filename = "{$passengerName}_Viaje{$tripId}_Asiento{$seatNumber}.pdf";
 
                 $data = [
@@ -465,7 +465,7 @@ class CreateTicket extends CreateRecord
 
                     $passengerName = str_replace(' ', '_', $passenger->full_name);
                     $tripId = $trip->id;
-                    $seatNumber = $seat ? $seat->number : 'SinAsiento';
+                    $seatNumber = $seat ? $seat->seat_number : 'SinAsiento';
                     $filename = "{$passengerName}_Viaje{$tripId}_Asiento{$seatNumber}.pdf";
 
                     $data = [

@@ -51,61 +51,61 @@
     </div>
 
     <!-- Tabla de pasajeros -->
-    <div class="bg-white rounded-lg shadow-sm border border-gray-200">
-        <div class="px-6 py-4 border-b border-gray-200">
-            <h3 class="text-lg font-semibold text-gray-900">Pasajeros del Viaje ({{ $passengers->count() }})</h3>
+    <div class="bg-white dark:bg-gray-900 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+        <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+            <h3 class="text-lg font-semibold text-gray-900 dark:text-gray-100">Pasajeros del Viaje ({{ $passengers->count() }})</h3>
         </div>
 
         @if ($passengers->count() > 0)
-            <div class="overflow-x-auto">
+            <div class="overflow-x-scroll max-w-[83dvw] sm:max-w-[90dvw] md:max-w-full md:overflow-x-auto">
                 <table class="min-w-full">
-                    <thead class="bg-gray-50">
+                    <thead class="bg-gray-50 dark:bg-gray-800">
                         <tr>
-                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Tipo</th>
-                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Nombre</th>
-                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">DNI</th>
-                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Teléfono</th>
-                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Asiento</th>
-                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Origen</th>
-                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Destino</th>
-                            <!-- <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Diferido</th> -->
-                            <!-- <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Precio</th> -->
+                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Tipo</th>
+                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Nombre</th>
+                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">DNI</th>
+                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Teléfono</th>
+                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Asiento</th>
+                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Origen</th>
+                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Destino</th>
+                            <!-- <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Diferido</th> -->
+                            <!-- <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Precio</th> -->
                         </tr>
                     </thead>
-                    <tbody class="divide-y divide-gray-200">
+                    <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
                         @foreach ($passengers as $passenger)
-                            <tr class="hover:bg-gray-50">
+                            <tr class="hover:bg-gray-50 dark:hover:bg-gray-800">
                                 <td class="px-4 py-2 text-sm">
                                     @if ($passenger['type'] === 'adult')
                                         <span
-                                            class="inline-block px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded-lg">Adulto</span>
+                                            class="inline-block px-2 py-1 text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300 rounded-lg">Adulto</span>
                                     @else
                                         <span
-                                            class="inline-block px-2 py-1 text-xs bg-green-100 text-green-800 rounded-lg">Niño</span>
+                                            class="inline-block px-2 py-1 text-xs bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300 rounded-lg">Niño</span>
                                     @endif
                                 </td>
-                                <td class="px-4 py-2 text-sm">
+                                <td class="px-4 py-2 text-sm text-gray-900 dark:text-gray-100">
                                     {{ $passenger['name'] }}
                                     @if ($passenger['type'] === 'child' && isset($passenger['parent_name']))
-                                        <div class="text-xs text-gray-500 mt-1">Viaja con:
+                                        <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">Viaja con:
                                             {{ $passenger['parent_name'] }}</div>
                                     @endif
                                 </td>
-                                <td class="px-4 py-2 text-sm">{{ $passenger['dni'] }}</td>
-                                <td class="px-4 py-2 text-sm">
+                                <td class="px-4 py-2 text-sm text-gray-900 dark:text-gray-100">{{ $passenger['dni'] }}</td>
+                                <td class="px-4 py-2 text-sm text-gray-900 dark:text-gray-100">
                                     {{ $passenger['phone'] == 'N/A' ? '-' : $passenger['phone'] }}</td>
-                                <td class="px-4 py-2 text-sm">
+                                <td class="px-4 py-2 text-sm text-gray-900 dark:text-gray-100">
                                     <span
-                                        class="inline-block px-2 py-1 text-xs bg-fuchsia-100 text-fuchsia-800 rounded-lg">{{ is_numeric($passenger['seat_number']) ? $passenger['seat_number'] : 'No ocupa' }}
+                                        class="inline-block px-2 py-1 text-xs bg-fuchsia-100 dark:bg-fuchsia-900/30 text-fuchsia-800 dark:text-fuchsia-300 rounded-lg">{{ is_numeric($passenger['seat_number']) ? $passenger['seat_number'] : 'No ocupa' }}
                                     </span>
                                 </td>
-                                <td class="px-4 py-2 text-sm">
+                                <td class="px-4 py-2 text-sm text-gray-900 dark:text-gray-100">
                                     <span
-                                        class="inline-block px-2 py-1 text-xs bg-orange-100 text-orange-800 rounded-lg">{{ $passenger['origin'] }}</span>
+                                        class="inline-block px-2 py-1 text-xs bg-orange-100 dark:bg-orange-900/30 text-orange-800 dark:text-orange-300 rounded-lg">{{ $passenger['origin'] }}</span>
                                 </td>
-                                <td class="px-4 py-2 text-sm">
+                                <td class="px-4 py-2 text-sm text-gray-900 dark:text-gray-100">
                                     <span
-                                        class="inline-block px-2 py-1 text-xs bg-orange-100 text-orange-800 rounded-lg">{{ $passenger['destination'] }}</span>
+                                        class="inline-block px-2 py-1 text-xs bg-orange-100 dark:bg-orange-900/30 text-orange-800 dark:text-orange-300 rounded-lg">{{ $passenger['destination'] }}</span>
                                 </td>
                             </tr>
                         @endforeach
@@ -114,7 +114,7 @@
             </div>
         @else
             <div class="px-6 py-8">
-                <p class="text-gray-500">No hay pasajeros registrados para este viaje.</p>
+                <p class="text-gray-500 dark:text-gray-400">No hay pasajeros registrados para este viaje.</p>
             </div>
         @endif
     </div>

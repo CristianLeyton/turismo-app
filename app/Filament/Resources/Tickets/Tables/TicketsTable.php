@@ -138,6 +138,7 @@ class TicketsTable
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->defaultSort('id', 'desc')
+            ->persistSortInSession()
             ->paginated([5, 10, 25, 50, 100])
             ->defaultPaginationPageOption(50)
             ->filters([

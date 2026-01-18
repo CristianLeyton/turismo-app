@@ -48,7 +48,7 @@
             </p>
         </div>
     @else
-        <div class="mb-6 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 w-full">
+        <div class="mb-0 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 w-full">
             <div class="flex flex-wrap gap-4 w-full">
                 <div class="flex items-center gap-2">
                     <div class="w-6 h-6 bg-gray-300 dark:bg-gray-600 rounded border border-gray-400"></div>

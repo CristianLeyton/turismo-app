@@ -126,7 +126,7 @@
                 </div>
             @else
                 <div class="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-                    <div class="bg-sky-100 border border-sky-400 text-sky-700 px-4 py-3 rounded">
+                    <div class="bg-sky-100 border border-sky-400 text-sky-700 px-4 py-3 rounded dark:bg-sky-800 dark:border-sky-700 dark:text-sky-300">
                         <strong class="font-semibold">Viaje de vuelta</strong><br>
                         <span class="text-sm">Este ticket es el viaje de vuelta de un pasaje diferido. </span>
                     </div>
@@ -168,7 +168,7 @@
                 </span>
             </div>
         @endif
-        {{-- Información del niño acompañante --}}
+        {{-- Información del menor acompañante --}}
         @if ($record->travels_with_child && $record->passenger && $record->passenger->children->isNotEmpty())
             <div class="mt-4">
                 @foreach ($record->passenger->children as $child)
@@ -183,7 +183,7 @@
                                  px-3 py-1 rounded-full text-xs font-medium
                                  bg-gray-100 dark:bg-gray-900
                                  text-fuchsia-600 dark:text-fuchsia-400 mr-3">
-                                Niño
+                                Menor
                             </span>
                         </div>
                         <div class="text-sm text-gray-700 dark:text-gray-300">

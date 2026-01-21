@@ -18,13 +18,14 @@ use Filament\Forms\Contracts\HasForms;
 use Filament\Forms\Concerns\InteractsWithForms;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Support\Icons\Heroicon;
+use Illuminate\Contracts\Support\Htmlable;
 
 class CreateTicket extends CreateRecord
 {
     protected static string $resource = TicketResource::class;
 
-    protected static ?string $title = 'Vender pasaje';
-
+/*     protected static ?string $title = ' '; //alt + 255 */
+    protected ?string $heading = 'Vender boleto';
     protected static ?string $breadcrumb = 'Vender';
 
     protected static bool $canCreateAnother = false;
@@ -33,10 +34,43 @@ class CreateTicket extends CreateRecord
 
     public array $return_seat_ids = [];
 
+    public function getTitle(): string | Htmlable
+    {
+        return __('');
+    }
+
+    protected function getCancelFormAction(): Action
+    {
+        return Action::make('cancelWizard')
+            ->label('Cancelar')
+            ->color('gray')
+            ->requiresConfirmation()
+            ->modalHeading('Los cambios se perderan.')
+            ->modalDescription('¿Desea continuar?')
+            // Botón CONFIRMAR
+            ->modalSubmitAction(
+                fn(Action $action) =>
+                $action
+                    ->label('Cancelar')
+                    ->color('gray')
+                    ->close()
+            )
+
+            // Botón CANCELAR
+            ->modalCancelAction(
+                fn(Action $action) =>
+                $action
+                    ->label('Aceptar')
+                    ->color('primary')
+                    ->action(fn() => redirect()->route('filament.admin.resources.tickets.index'))
+            )
+            ->modalIconColor('primary');
+    }
+
     protected function getCreateFormAction(): Action
     {
         return parent::getCreateFormAction()
-            ->label('Vender pasaje')
+            ->label('Finalizar')
             ->hidden();
     }
 
@@ -44,9 +78,9 @@ class CreateTicket extends CreateRecord
     {
         // Si hay una descarga de ticket pendiente, será manejada por afterCreate
         if (session()->has('auto_download_url')) {
-            return $this->getResource()::getUrl('index');
+            return $this->url('/admin');
         }
-        return $this->getResource()::getUrl('index');
+        return $this->url('/admin');
     }
 
     protected function afterCreate(): void
@@ -65,11 +99,11 @@ class CreateTicket extends CreateRecord
     {
         /* return Notification::make()
             ->success()
-            ->title('Pasaje(s) vendido(s) correctamente')
+            ->title('Boleto(s) vendido(s) correctamente')
             ->body('Se estan descargando los tickets. Espere un momento por favor.')
         ; */
         return null;
-    } 
+    }
 
     protected function mutateFormDataBeforeCreate(array $data): array
     {
@@ -87,7 +121,7 @@ class CreateTicket extends CreateRecord
                 if (!$reservationResult['success']) {
                     $failedSeats = $reservationResult['failed_seats'];
                     $seatNumbers = [];
-                    
+
                     foreach ($failedSeats as $seatId) {
                         $seat = \App\Models\Seat::find($seatId);
                         if ($seat) {
@@ -106,7 +140,7 @@ class CreateTicket extends CreateRecord
                     // Limpiar asientos no disponibles
                     $availableSeats = array_diff($seatIds, $failedSeats);
                     $data['seat_ids'] = array_values($availableSeats);
-                    
+
                     if (count($availableSeats) < (int) $data['passengers_count']) {
                         // En lugar de lanzar excepción, retornamos null para cancelar la creación
                         Notification::make()
@@ -116,7 +150,7 @@ class CreateTicket extends CreateRecord
                             ->danger()
                             ->persistent()
                             ->send();
-                        
+
                         // Cancelar la creación del registro
                         $this->halt();
                         return $data;
@@ -139,7 +173,7 @@ class CreateTicket extends CreateRecord
                 if (!$returnReservationResult['success']) {
                     $failedSeats = $returnReservationResult['failed_seats'];
                     $seatNumbers = [];
-                    
+
                     foreach ($failedSeats as $seatId) {
                         $seat = \App\Models\Seat::find($seatId);
                         if ($seat) {
@@ -158,7 +192,7 @@ class CreateTicket extends CreateRecord
                     // Limpiar asientos no disponibles
                     $availableSeats = array_diff($returnSeatIds, $failedSeats);
                     $data['return_seat_ids'] = array_values($availableSeats);
-                    
+
                     if (count($availableSeats) < (int) $data['passengers_count']) {
                         // En lugar de lanzar excepción, cancelamos la creación
                         Notification::make()
@@ -168,7 +202,7 @@ class CreateTicket extends CreateRecord
                             ->danger()
                             /* ->persistent() */
                             ->send();
-                        
+
                         // Cancelar la creación del registro
                         $this->halt();
                         return $data;
@@ -186,7 +220,7 @@ class CreateTicket extends CreateRecord
             // 1. Crear la venta usando el método del modelo
             $sale = Sale::createNew(Auth::id());
 
-            // 2. Crear todos los pasajeros (adultos y niños)
+            // 2. Crear todos los pasajeros (adultos y menores)
             $allPassengers = collect();
             $adultPassengers = collect();
 
@@ -204,7 +238,7 @@ class CreateTicket extends CreateRecord
                 $allPassengers->push($adultPassenger);
                 $adultPassengers->push($adultPassenger);
 
-                // Crear pasajero niño si existe
+                // Crear pasajero del menor si existe
                 if ($passengerData['travels_with_child'] && isset($passengerData['child_data'])) {
                     $childPassenger = Passenger::create([
                         'first_name' => $passengerData['child_data']['first_name'],
@@ -233,14 +267,14 @@ class CreateTicket extends CreateRecord
             if (!$reservationResult['success']) {
                 $failedSeatIds = $reservationResult['failed_seats'];
                 $seatNumbers = [];
-                
+
                 foreach ($failedSeatIds as $seatId) {
                     $seat = \App\Models\Seat::find($seatId);
                     if ($seat) {
                         $seatNumbers[] = $seat->seat_number;
                     }
                 }
-                
+
                 Notification::make()
                     ->title('Asientos de ida no disponibles')
                     ->icon('heroicon-m-exclamation-triangle')
@@ -248,7 +282,7 @@ class CreateTicket extends CreateRecord
                     ->warning()
                     ->persistent()
                     ->send();
-                
+
                 throw new \Exception('Algunos asientos seleccionados ya no están disponibles.');
             }
 
@@ -277,7 +311,7 @@ class CreateTicket extends CreateRecord
             if (!$result['success']) {
                 $failedTickets = $result['failed_tickets'];
                 $seatNumbers = [];
-                
+
                 foreach ($failedTickets as $failedTicket) {
                     if (isset($failedTicket['seat_id'])) {
                         $seat = \App\Models\Seat::find($failedTicket['seat_id']);
@@ -286,7 +320,7 @@ class CreateTicket extends CreateRecord
                         }
                     }
                 }
-                
+
                 Notification::make()
                     ->title('No se pudo completar la venta')
                     ->icon('heroicon-m-x-circle')
@@ -294,7 +328,7 @@ class CreateTicket extends CreateRecord
                     ->danger()
                     ->persistent()
                     ->send();
-                
+
                 throw new \Exception('No se pudieron vender todos los asientos seleccionados.');
             }
 
@@ -315,14 +349,14 @@ class CreateTicket extends CreateRecord
                 if (!$returnReservationResult['success']) {
                     $failedSeatIds = $returnReservationResult['failed_seats'];
                     $seatNumbers = [];
-                    
+
                     foreach ($failedSeatIds as $seatId) {
                         $seat = \App\Models\Seat::find($seatId);
                         if ($seat) {
                             $seatNumbers[] = $seat->seat_number;
                         }
                     }
-                    
+
                     Notification::make()
                         ->title('Asientos de vuelta no disponibles')
                         ->icon('heroicon-m-exclamation-triangle')
@@ -330,7 +364,7 @@ class CreateTicket extends CreateRecord
                         ->warning()
                         ->persistent()
                         ->send();
-                    
+
                     throw new \Exception('Algunos asientos de vuelta seleccionados ya no están disponibles.');
                 }
 
@@ -358,7 +392,7 @@ class CreateTicket extends CreateRecord
                 if (!$returnResult['success']) {
                     $failedTickets = $returnResult['failed_tickets'];
                     $seatNumbers = [];
-                    
+
                     foreach ($failedTickets as $failedTicket) {
                         if (isset($failedTicket['seat_id'])) {
                             $seat = \App\Models\Seat::find($failedTicket['seat_id']);
@@ -367,7 +401,7 @@ class CreateTicket extends CreateRecord
                             }
                         }
                     }
-                    
+
                     Notification::make()
                         ->title('No se pudo completar la venta de vuelta')
                         ->icon('heroicon-m-x-circle')
@@ -375,7 +409,7 @@ class CreateTicket extends CreateRecord
                         ->danger()
                         ->persistent()
                         ->send();
-                    
+
                     throw new \Exception('No se pudieron vender todos los asientos de vuelta seleccionados.');
                 }
             }
@@ -387,12 +421,11 @@ class CreateTicket extends CreateRecord
             $this->generateAndDownloadTickets($sale);
 
             return $result['tickets']->first();
-
         } catch (\Exception $e) {
             // Manejar errores y mostrar notificación adecuada
             Notification::make()
                 ->icon('heroicon-m-x-circle')
-                ->title('Error al vender pasaje')
+                ->title('Error al vender boleto')
                 ->body($e->getMessage())
                 ->danger()
                 ->send();
@@ -421,9 +454,9 @@ class CreateTicket extends CreateRecord
                 $seat = $passengerTickets->first()->seat;
 
                 $passengerName = str_replace(' ', '_', $passenger->full_name);
-                $tripId = $trip->id;
-                $seatNumber = $seat ? $seat->number : 'SinAsiento';
-                $filename = "{$passengerName}_Viaje{$tripId}_Asiento{$seatNumber}.pdf";
+                $ticketId = $passengerTickets->first()->id;
+                $colectivo = str_replace(' ', '_', $trip->bus->name);
+                $filename = "Boleto_N°{$ticketId}_{$colectivo}.pdf";
 
                 $data = [
                     'sale' => $sale,
@@ -464,9 +497,9 @@ class CreateTicket extends CreateRecord
                     $seat = $passengerTickets->first()->seat;
 
                     $passengerName = str_replace(' ', '_', $passenger->full_name);
-                    $tripId = $trip->id;
-                    $seatNumber = $seat ? $seat->number : 'SinAsiento';
-                    $filename = "{$passengerName}_Viaje{$tripId}_Asiento{$seatNumber}.pdf";
+                    $ticketId = $passengerTickets->first()->id;
+                    $colectivo = str_replace(' ', '_', $trip->bus->name);
+                    $filename = "Boleto_N°{$ticketId}_{$colectivo}.pdf";
 
                     $data = [
                         'sale' => $sale,
@@ -687,7 +720,7 @@ class CreateTicket extends CreateRecord
                 if ($trip) {
                     $availableSeats = $trip->remainingSeats();
                     $passengersCount = (int) ($this->data['passengers_count'] ?? 1);
-                    
+
                     // Obtener asientos actualmente seleccionados
                     $currentSeatIds = $this->data['seat_ids'] ?? [];
                     if (!is_array($currentSeatIds)) {
@@ -697,13 +730,13 @@ class CreateTicket extends CreateRecord
                             $currentSeatIds = [];
                         }
                     }
-                    
+
                     // Obtener asientos realmente disponibles
                     $availableSeatIds = $trip->availableSeats()->pluck('id')->toArray();
-                    
+
                     // Filtrar solo los asientos seleccionados que aún están disponibles
                     $validSelectedSeats = array_intersect($currentSeatIds, $availableSeatIds);
-                    
+
                     // Si se eliminaron algunos asientos de la selección, notificar al usuario
                     $removedSeats = array_diff($currentSeatIds, $validSelectedSeats);
                     if (!empty($removedSeats)) {
@@ -714,7 +747,7 @@ class CreateTicket extends CreateRecord
                                 $removedSeatNumbers[] = $seat->seat_number;
                             }
                         }
-                        
+
                         Notification::make()
                             ->title('Asientos de ida no disponibles')
                             ->icon('heroicon-m-exclamation-triangle')
@@ -761,7 +794,7 @@ class CreateTicket extends CreateRecord
                 if ($returnTrip) {
                     $availableSeats = $returnTrip->remainingSeats();
                     $passengersCount = (int) ($this->data['passengers_count'] ?? 1);
-                    
+
                     // Obtener asientos actualmente seleccionados para vuelta
                     $currentSeatIds = $this->data['return_seat_ids'] ?? [];
                     if (!is_array($currentSeatIds)) {
@@ -771,13 +804,13 @@ class CreateTicket extends CreateRecord
                             $currentSeatIds = [];
                         }
                     }
-                    
+
                     // Obtener asientos realmente disponibles para vuelta
                     $availableSeatIds = $returnTrip->availableSeats()->pluck('id')->toArray();
-                    
+
                     // Filtrar solo los asientos seleccionados que aún están disponibles
                     $validSelectedSeats = array_intersect($currentSeatIds, $availableSeatIds);
-                    
+
                     // Si se eliminaron algunos asientos de la selección de vuelta, notificar
                     $removedSeats = array_diff($currentSeatIds, $validSelectedSeats);
                     if (!empty($removedSeats)) {
@@ -788,7 +821,7 @@ class CreateTicket extends CreateRecord
                                 $removedSeatNumbers[] = $seat->seat_number;
                             }
                         }
-                        
+
                         Notification::make()
                             ->title('Asientos de vuelta no disponibles')
                             ->icon('heroicon-m-exclamation-triangle')

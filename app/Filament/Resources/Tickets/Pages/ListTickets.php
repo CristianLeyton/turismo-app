@@ -10,11 +10,14 @@ class ListTickets extends ListRecords
 {
     protected static string $resource = TicketResource::class;
 
+    protected static ?string $title = '';
+    protected ?string $heading = 'Boletos';
+
     protected function getHeaderActions(): array
     {
         return [
             CreateAction::make()
-                ->label('Vender pasaje')
+                ->label('Vender boleto')
                 ->createAnother(false),
         ];
     }

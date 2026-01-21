@@ -25,8 +25,13 @@ class TicketResource extends Resource
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::Ticket;
 
-    protected static ?string $modelLabel = 'pasaje';
-    protected static ?string $pluralModelLabel = 'Pasajes';
+    public static function shouldRegisterNavigation(): bool
+    {
+        return false;
+    }
+
+    protected static ?string $modelLabel = 'boleto';
+    protected static ?string $pluralModelLabel = 'Boletos';
     protected static bool $hasTitleCaseModelLabel = false;
     protected static ?int $navigationSort = 1;
 
@@ -35,9 +40,9 @@ class TicketResource extends Resource
     protected static bool $canCreateAnother = false;
 
     public static function getRecordTitle($record): string
-{
-    return "Pasaje #{$record->id}";
-}
+    {
+        return "Boleto N°{$record->id}";
+    }
 
     public static function form(Schema $schema): Schema
     {
@@ -78,6 +83,4 @@ class TicketResource extends Resource
                 SoftDeletingScope::class,
             ]);
     }
-
-
 }

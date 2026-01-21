@@ -83,9 +83,10 @@ class TripExcelService
         $export = $this->generateTripDetailsExcel($trip);
         
         // Generar nombre del archivo
-        $busName = $trip->bus->name;
+        $tripId = $trip->id;
+        $colectivo = str_replace(' ', '_', $trip->bus->name);
         $date = $trip->trip_date->format('d-m-Y');
-        $filename = 'viaje_' . preg_replace('/[^a-zA-Z0-9_-]/', '_', $busName) . '_' . $date . '.xlsx';
+        $filename = "Viaje_N°{$tripId}_{$colectivo}_{$date}.xlsx";
         
         return Excel::download($export, $filename);
     }

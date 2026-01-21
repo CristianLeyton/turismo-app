@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="es">
+
 <head>
     <meta charset="utf-8">
     <title>Detalles del Viaje</title>
@@ -167,146 +168,158 @@
         }
     </style>
 </head>
+
 <body>
 
-@php
-    $stops = $trip->route->stops()->with('location')->get();
-    $firstStop = $stops->first();
-    $lastStop  = $stops->last();
-@endphp
+    @php
+        $stops = $trip->route->stops()->with('location')->get();
+        $firstStop = $stops->first();
+        $lastStop = $stops->last();
+    @endphp
 
-<!-- ===== ENCABEZADO DEL VIAJE ===== -->
+    <!-- ===== ENCABEZADO DEL VIAJE ===== -->
 
-<div style="margin-bottom: 3mm;">
-    <h1 style="font-size: 12px; color: #2b2b2b; margin: 0; text-align: left;">
-        Detalles del viaje - {{ $trip->bus->name}} - ({{ $trip->trip_date->format('d/m/Y') }}) - ({{ $trip->route->name ?? 'Ruta sin nombre' }})
-    </h1>
-</div>
+    <div style="margin-bottom: 3mm;">
+        <h1 style="font-size: 12px; color: #2b2b2b; margin: 0; text-align: left;">
+            Detalles del viaje N° {{ $trip->id }} - {{ $trip->bus->name }} -
+            ({{ $trip->trip_date->format('d/m/Y') }}) {{-- ({{ $trip->route->name ?? 'Ruta sin nombre' }}) --}}
+        </h1>
+    </div>
 
-<div class="card">
-    <table width="100%" style="border-collapse: collapse;">
-        <tr>
-            <!-- Columna izquierda -->
-            <td style="vertical-align: top; width: 75%;">
+    <div class="card">
+        <table width="100%" style="border-collapse: collapse;">
+            <tr>
+                <!-- Columna izquierda -->
+                <td style="vertical-align: top; width: 75%;">
 
-                <div class="trip-title">
-                    <span class="text-fuchsia">
-                        {{ $firstStop?->location->name ?? 'Origen' }}
-                    </span>
-                    >
-                    <span class="text-fuchsia">
-                        {{ $lastStop?->location->name ?? 'Destino' }}
-                    </span>
-                </div>
+                    <div class="trip-title">
+                        <span class="text-fuchsia">
+                            {{ $firstStop?->location->name ?? 'Origen' }}
+                        </span>
+                        >
+                        <span class="text-fuchsia">
+                            {{ $lastStop?->location->name ?? 'Destino' }}
+                        </span>
+                    </div>
 
-                <div class="trip-sub">
-                    <strong>Fecha:</strong> {{ $trip->trip_date->format('d/m/Y') }}
-                    • {{ $trip->departure_time?->format('H:i') ?? '--:--' }}
-                    > {{ $trip->arrival_time?->format('H:i') ?? '--:--' }}
-                </div>
+                    <div class="trip-sub">
+                        <strong>Fecha:</strong> {{ $trip->trip_date->format('d/m/Y') }}
+                        • {{ $trip->departure_time?->format('H:i') ?? '--:--' }}
+                        > {{ $trip->arrival_time?->format('H:i') ?? '--:--' }}
+                    </div>
 
-                <div class="trip-sub">
+                    {{--                 <div class="trip-sub">
                     <strong>Ruta:</strong>
                     <span class="text-fuchsia">
                         {{ $trip->route?->name ?? 'No especificada' }}
                     </span>
-                </div>
+                </div> --}}
 
-                <div class="trip-sub">
-                    <strong>Colectivo:</strong>
-                    {{ $trip->bus?->name ?? 'No especificado' }}
-                </div>
+                    <div class="trip-sub">
+                        <strong>Colectivo:</strong>
+                        {{ $trip->bus?->name ?? 'No especificado' }}
+                    </div>
 
-            </td>
+                </td>
 
-            <!-- Columna derecha -->
-            <td style="vertical-align: top; width: 25%; text-align: right;">
+                <!-- Columna derecha -->
+                <td style="vertical-align: top; width: 25%; text-align: right;">
 
-                <div class="stats-label">ASIENTOS VENDIDOS</div>
+                    <div class="stats-label">ASIENTOS VENDIDOS</div>
 
-                <div class="stats-value">
-                    {{ $trip->occupiedSeatsCount() }}
-                </div>
+                    <div class="stats-value">
+                        {{ $trip->occupiedSeatsCount() }}
+                    </div>
 
-                <div class="stats-sub">
+                    {{--                 <div class="stats-sub">
                     {{ $trip->total_passengers }} PASAJEROS
-                </div>
+                </div> --}}
 
-            </td>
-        </tr>
-    </table>
-</div>
-
-<!-- ===== TABLA PASAJEROS ===== -->
-<div class="table-card">
-    <div class="table-header">
-        Pasajeros del Viaje ({{ $passengersCount ?? 0 }})
+                </td>
+            </tr>
+        </table>
     </div>
 
-    @if(($passengersCount ?? 0) > 0)
-        <table>
-            <thead>
-                <tr>
-                    <th width="8%">Tipo</th>
-                    <th width="22%">Nombre</th>
-                    <th width="12%">DNI</th>
-                    <th width="12%">Teléfono</th>
-                    <th width="10%">Asiento</th>
-                    <th width="18%">Origen</th>
-                    <th width="18%">Destino</th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach($passengers as $passenger)
-                    <tr>
-                        <td>
-                            @if($passenger['type'] === 'adult')
-                                <span class="badge badge-adult">Adulto</span>
-                            @else
-                                <span class="badge badge-child">Niño</span>
-                            @endif
-                        </td>
+    <!-- ===== TABLA PASAJEROS ===== -->
+    <div class="table-card">
 
-                        <td>
-                            {{ $passenger['name'] }}
-                            @if($passenger['type'] === 'child' && isset($passenger['parent_name']))
-                                <div class="child-info">
-                                    Viaja con: {{ $passenger['parent_name'] }}
-                                </div>
-                            @endif
-                        </td>
-
-                        <td>{{ $passenger['dni'] }}</td>
-
-                        <td>{{ $passenger['phone'] == 'N/A' ? '-' : $passenger['phone'] }}</td>
-
-                        <td>
-                            <span class="badge badge-seat">
-                                {{ is_numeric($passenger['seat_number']) ? $passenger['seat_number'] : 'No ocupa' }}
-                            </span>
-                        </td>
-
-                        <td>
-                            <span class="badge badge-location">{{ $passenger['origin'] }}</span>
-                        </td>
-
-                        <td>
-                            <span class="badge badge-location">{{ $passenger['destination'] }}</span>
-                        </td>
-                    </tr>
-                @endforeach
-            </tbody>
+        <table style="font-size: 16px; font-weight: bold; padding-left: 2mm; padding-right: 2mm;">
+            <tr>
+                <td>
+                    <div style="text-align: left;">
+                        Pasajeros
+                    </div>
+                </td>
+                <td>
+                    <div style="text-align: right;">
+                        ({{ $passengersCount ?? 0 }})
+                    </div>
+                </td>
+            </tr>
         </table>
-    @else
-        <div class="empty">
-            No hay pasajeros registrados para este viaje.
-        </div>
-    @endif
-</div>
 
-<div class="footer">
-    Generado el {{ now()->format('d/m/Y H:i') }}
-</div>
+
+
+        @if (($passengersCount ?? 0) > 0)
+            <table>
+                <thead>
+                    <tr>
+                        <th width="8%">Boleto</th>
+                        <th width="22%">Nombre</th>
+                        <th width="12%">DNI</th>
+                        <th width="12%">Teléfono</th>
+                        <th width="10%" style="text-align: center;">Asiento</th>
+                        <th width="18%" style="text-align: center;">Origen</th>
+                        <th width="18%" style="text-align: center;">Destino</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach ($passengers as $passenger)
+                        <tr>
+                            <td style="text-align: center;">
+                                {{ $passenger['ticket_id'] }}
+                            </td>
+                            <td>
+                                {{ $passenger['name'] }}
+                                @if ($passenger['type'] === 'child' && isset($passenger['parent_name']))
+                                    <div class="child-info">
+                                        Viaja con: {{ $passenger['parent_name'] }}
+                                    </div>
+                                @endif
+                            </td>
+
+                            <td>{{ $passenger['dni'] }}</td>
+
+                            <td>{{ $passenger['phone'] == 'N/A' ? '-' : $passenger['phone'] }}</td>
+
+                            <td style="text-align: center;">
+                                <span class="badge badge-seat">
+                                    {{ is_numeric($passenger['seat_number']) ? $passenger['seat_number'] : 'No ocupa' }}
+                                </span>
+                            </td>
+
+                            <td style="text-align: center;">
+                                <span class="badge badge-location">{{ $passenger['origin'] }}</span>
+                            </td>
+
+                            <td style="text-align: center;">
+                                <span class="badge badge-location">{{ $passenger['destination'] }}</span>
+                            </td>
+                        </tr>
+                    @endforeach
+                </tbody>
+            </table>
+        @else
+            <div class="empty">
+                No hay pasajeros registrados para este viaje.
+            </div>
+        @endif
+    </div>
+
+{{--     <div class="footer">
+        Generado el {{ now()->format('d/m/Y H:i') }}
+    </div> --}}
 
 </body>
+
 </html>

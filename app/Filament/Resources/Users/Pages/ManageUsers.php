@@ -9,6 +9,9 @@ use Filament\Resources\Pages\ManageRecords;
 class ManageUsers extends ManageRecords
 {
     protected static string $resource = UserResource::class;
+    
+    protected static ?string $title = '';
+    protected ?string $heading = 'Usuarios';
 
     protected function getHeaderActions(): array
     {

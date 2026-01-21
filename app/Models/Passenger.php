@@ -57,7 +57,7 @@ class Passenger extends Model
     }
 
     /**
-     * Scope para obtener solo niños
+     * Scope para obtener solo menores
      */
     public function scopeChildren($query)
     {
@@ -73,7 +73,7 @@ class Passenger extends Model
     }
 
     /**
-     * Verificar si es un pasajero niño
+     * Verificar si es un pasajero menor de edad
      */
     public function isChild(): bool
     {

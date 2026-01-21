@@ -1,7 +1,7 @@
 <table>
     <thead>
         <tr>
-            <th>Tipo</th>
+            <th>Boleto</th>
             <th>Nombre</th>
             <th>DNI</th>
             <th>Teléfono</th>
@@ -15,7 +15,7 @@
         @if($passengersCount > 0)
             @foreach($passengers as $passenger)
                 <tr>
-                    <td>{{ $passenger['type'] === 'adult' ? 'Adulto' : 'Niño' }}</td>
+                    <td>{{ $passenger['ticket_id'] }}</td>
                     <td>{{ $passenger['name'] }}</td>
                     <td>{{ $passenger['dni'] }}</td>
                     <td>{{ $passenger['phone'] == 'N/A' ? '-' : $passenger['phone'] }}</td>

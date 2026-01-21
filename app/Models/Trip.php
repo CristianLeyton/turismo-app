@@ -439,13 +439,13 @@ class Trip extends Model
     }
 
     /**
-     * Obtener total de pasajeros (incluyendo niños)
+     * Obtener total de pasajeros (incluyendo menores)
      */
     public function getTotalPassengersAttribute(): int
     {
         $total = $this->tickets()->count();
         
-        // Sumar niños adicionales
+        // Sumar menores adicionales
         $childrenCount = $this->tickets()->where('travels_with_child', true)->count();
         
         return $total + $childrenCount;
@@ -481,7 +481,7 @@ class Trip extends Model
     }
 
     /**
-     * Obtener todos los pasajeros del viaje (incluyendo niños)
+     * Obtener todos los pasajeros del viaje (incluyendo menores)
      */
     public function getPassengersWithDetails()
     {
@@ -508,7 +508,7 @@ class Trip extends Model
                     ]);
                 }
                 
-                // Si viaja con niño, agregar al niño como pasajero adicional
+                // Si viaja con menor, agregar al menor como pasajero adicional
                 if ($ticket->travels_with_child && $ticket->passenger && $ticket->passenger->children->isNotEmpty()) {
                     $ticket->passenger->children->each(function ($child) use ($passengers, $ticket) {
                         $passengers->push([
@@ -520,7 +520,7 @@ class Trip extends Model
                             'origin' => $ticket->origin?->name ?? 'N/A',
                             'destination' => $ticket->destination?->name ?? 'N/A',
                             'ticket_id' => $ticket->id,
-                            'price' => 0, // Los niños通常 no pagan
+                            'price' => 0, // Los menores no pagan
                             'is_round_trip' => $ticket->is_round_trip,
                             'parent_name' => $ticket->passenger->full_name,
                         ]);

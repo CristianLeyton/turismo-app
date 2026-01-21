@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\Tickets\Schemas;
 
+use App\Filament\Resources\Tickets\TicketResource;
 use App\Models\Route;
 use App\Models\RouteStop;
 use App\Models\Schedule;
@@ -15,6 +16,7 @@ use Carbon\Carbon;
 use Filament\Forms\Components\Repeater;
 use App\Models\Trip;
 use App\Models\Seat;
+use Filament\Actions\Action;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\ViewField;
 use Filament\Forms\Components\Button;
@@ -30,7 +32,6 @@ use Filament\Schemas\Components\Wizard\Step;
 use Filament\Support\Exceptions\Halt;
 use Filament\Tables\Columns\Column;
 use Illuminate\Support\Facades\Blade;
-
 
 class TicketForm
 {
@@ -178,6 +179,7 @@ class TicketForm
                                     ->native(false)
                                     ->displayFormat('d/m/Y')
                                     ->minDate(now()->startOfDay())
+                                    ->closeOnDateSelection()
                                     ->disabledDates(function (): array {
                                         // Generar array de fechas de sábados y domingos para los próximos 2 años
                                         $disabledDates = [];
@@ -414,24 +416,37 @@ class TicketForm
                                     ->validationMessages([
                                         'required' => 'Seleccione un horario',
                                     ]),
+
+                                Select::make('passengers_count')
+                                    ->label('Cantidad de pasajeros')
+                                    ->required()
+                                    ->default(1)
+                                    ->live()
+                                    ->options(
+                                        [
+                                            '1' => '1',
+                                            '2' => '2',
+                                            '3' => '3',
+                                            '4' => '4',
+                                            '5' => '5',
+                                            '6' => '6',
+                                            '7' => '7',
+                                            '8' => '8',
+                                        ]
+                                    )
+                                    ->afterStateUpdated(fn($set) => [
+                                        $set('trip_id', null),
+                                        $set('trip_search_status', null),
+                                        $set('trip_available_seats', null),
+                                        $set('is_round_trip', false),
+                                    ])
+                                    ->validationMessages([
+                                        'required' => 'Ingrese la cantidad de pasajeros',
+                                        'in' => 'La cantidad de pasajeros debe ser entre 1 y 8',
+                                    ]),
                             ]),
 
-                        TextInput::make('passengers_count')
-                            ->label('Cantidad de pasajeros')
-                            ->numeric()
-                            ->minValue(1)
-                            ->default(1)
-                            ->required()
-                            ->live()
-                            ->afterStateUpdated(fn($set) => [
-                                $set('trip_id', null),
-                                $set('trip_search_status', null),
-                                $set('trip_available_seats', null),
-                                $set('is_round_trip', false),
-                            ])
-                            ->validationMessages([
-                                'required' => 'Ingrese la cantidad de pasajeros',
-                            ]),
+
 
                         // Campos Hidden para almacenar el estado de la búsqueda
                         Hidden::make('trip_id')
@@ -501,9 +516,7 @@ class TicketForm
                             ),
 
                         Toggle::make('is_round_trip')
-                            /* ->label('¿Viaje de ida y vuelta?') */
                             ->label('Diferido')
-                            /*                             ->helperText('Si es seleccionado, se mostrarán los campos de fecha y horario de vuelta') */
                             ->live()
                             ->disabled(fn(Get $get) => blank($get('trip_id')))
                             ->afterStateUpdated(function ($state, Get $get, Set $set) {
@@ -548,6 +561,7 @@ class TicketForm
                                     ->required()
                                     ->native(false)
                                     ->displayFormat('d/m/Y')
+                                    ->closeOnDateSelection()
                                     ->minDate(function (Get $get) {
                                         $departureDate = $get('departure_date');
                                         if (!$departureDate) {
@@ -892,31 +906,6 @@ class TicketForm
                             })
                             ->visible(fn(Get $get) => blank($get('trip_id')) || !Trip::find($get('trip_id')) || Trip::find($get('trip_id'))?->remainingSeats() < (int) $get('passengers_count')),
 
-
-                        /* CheckboxList::make('seat_ids')
-                            ->options(
-                                fn(Get $get) =>
-                                Trip::find($get('trip_id'))
-                                    ?->availableSeats()
-                                    ->pluck('seat_number', 'id')
-                                    ?? []
-                            )
-                            //->hidden() // NO se muestra, solo estado
-                            ->dehydrated()
-                            ->required(
-                                fn(Get $get) =>
-                                !blank($get('trip_id')) &&
-                                    Trip::find($get('trip_id')) &&
-                                    Trip::find($get('trip_id'))?->remainingSeats() >= (int) $get('passengers_count')
-                            )
-                            ->rule(fn(Get $get) => function ($attribute, $value, $fail) use ($get) {
-                                $required = (int) $get('passengers_count');
-
-                                if (count($value ?? []) !== $required) {
-                                    $fail("Debe seleccionar exactamente {$required} asiento(s).");
-                                }
-                            }), */
-
                         Hidden::make('seat_ids')
                             ->default([])
                             ->dehydrated()
@@ -932,27 +921,6 @@ class TicketForm
                                     $fail("Debe seleccionar exactamente {$required} asiento(s).");
                                 }
                             }),
-
-/*                         ViewField::make('seat_stats')
-                            ->label('')
-                            ->view('tickets.seat-stats')
-                            ->viewData(function (Get $get) {
-                                $tripId = $get('trip_id');
-                                $trip = $tripId ? Trip::find($tripId) : null;
-                                $availableSeats = $trip ? $trip->remainingSeats() : 0;
-                                $requiredSeats = (int) $get('passengers_count');
-
-                                return [
-                                    'trip' => $trip,
-                                    'availableSeats' => $availableSeats,
-                                    'requiredSeats' => $requiredSeats,
-                                ];
-                            })
-                            ->visible(
-                                fn(Get $get) =>
-                                !blank($get('trip_id')) &&
-                                    Trip::find($get('trip_id'))
-                            ), */
 
                         ViewField::make('refresh_availability')
                             ->label('')
@@ -1023,7 +991,7 @@ class TicketForm
                         }
                     })
                     ->schema([
-                                                ViewField::make('refresh_availability')
+                        ViewField::make('refresh_availability')
                             ->label('')
                             ->view('tickets.refresh-availability')
                             ->visible(
@@ -1054,30 +1022,6 @@ class TicketForm
                                     !Trip::find($get('return_trip_id')) ||
                                     Trip::find($get('return_trip_id'))?->remainingSeats() < (int) $get('passengers_count')
                             ),
-
-                        /* CheckboxList::make('return_seat_ids')
-                            ->options(
-                                fn(Get $get) =>
-                                Trip::find($get('return_trip_id'))
-                                    ?->availableSeats()
-                                    ->pluck('seat_number', 'id')
-                                    ?? []
-                            )
-                            //->hidden()
-                            ->dehydrated()
-                            ->required(
-                                fn(Get $get) =>
-                                !blank($get('return_trip_id')) &&
-                                    Trip::find($get('return_trip_id')) &&
-                                    Trip::find($get('return_trip_id'))?->remainingSeats() >= (int) $get('passengers_count')
-                            )
-                            ->rule(fn(Get $get) => function ($attribute, $value, $fail) use ($get) {
-                                $required = (int) $get('passengers_count');
-
-                                if (count($value ?? []) !== $required) {
-                                    $fail("Debe seleccionar exactamente {$required} asiento(s) de vuelta.");
-                                }
-                            }), */
 
                         Hidden::make('return_seat_ids')
                             ->default([])
@@ -1172,28 +1116,29 @@ class TicketForm
                                             ->label('DNI')
                                             ->required()
                                             ->numeric()
-                                            ->minValue(999999)
-                                            ->maxValue(99999999)
+                                            ->rules([
+                                                'digits_between:7,8',
+                                            ])
                                             ->validationMessages([
                                                 'required' => 'Debe ingresar un DNI.',
                                                 'numeric' => 'El DNI debe ser numérico.',
-                                                'min' => 'El DNI debe tener al menos 7 dígitos.',
-                                                'max' => 'El DNI no puede tener más de 8 dígitos.',397805205
+                                                'digits_between' => 'El DNI debe tener entre 7 y 8 dígitos.',
                                             ]),
                                         TextInput::make('phone_number')
                                             ->label('Teléfono')
                                             ->numeric()
-                                            ->minValue(999999)
-                                            ->maxValue(999999999999999)
+                                            ->rules([
+                                                'digits_between:7,12',
+                                            ])
                                             ->validationMessages([
-                                                'numeric' => 'El teléfono debe ser numérico.',
-                                                'min' => 'El teléfono debe tener al menos 7 caracteres.',
-                                                'max' => 'El teléfono no puede tener más de 16 caracteres.',
+                                                'required' => 'Debe ingresar un número de teléfono.',
+                                                'numeric' => 'El número de teléfono debe ser numérico.',
+                                                'digits_between' => 'El número de teléfono debe tener entre 7 y 12 dígitos.',
                                             ]),
                                     ]),
 
                                 Toggle::make('travels_with_child')
-                                    ->label('¿Viaja con un niño?')
+                                    ->label('¿Viaja con un menor?')
                                     ->default(false)
                                     ->live()
                                     ->afterStateUpdated(function ($state, callable $set, $get) {
@@ -1204,11 +1149,11 @@ class TicketForm
                                     })
                                     ->columnSpanFull(),
 
-                                // Sección de datos del niño (condicional)
+                                // Sección de datos del menor (condicional)
                                 Grid::make(2)
                                     ->schema([
                                         TextInput::make('child_data.first_name')
-                                            ->label('Nombre del niño')
+                                            ->label('Nombre del menor')
                                             ->required(fn($get) => $get('travels_with_child'))
                                             ->visible(fn($get) => $get('travels_with_child'))
                                             ->minLength(2)
@@ -1221,7 +1166,7 @@ class TicketForm
                                             ]),
 
                                         TextInput::make('child_data.last_name')
-                                            ->label('Apellido del niño')
+                                            ->label('Apellido del menor')
                                             ->required(fn($get) => $get('travels_with_child'))
                                             ->visible(fn($get) => $get('travels_with_child'))
                                             ->minLength(2)
@@ -1234,21 +1179,21 @@ class TicketForm
                                             ]),
 
                                         TextInput::make('child_data.dni')
-                                            ->label('DNI del niño')
+                                            ->label('DNI del menor')
                                             ->required(fn($get) => $get('travels_with_child'))
                                             ->visible(fn($get) => $get('travels_with_child'))
                                             ->numeric()
-                                            ->minValue(999999)
-                                            ->maxValue(99999999)
+                                            ->rules([
+                                                'digits_between:7,8',
+                                            ])
                                             ->validationMessages([
                                                 'required' => 'Debe ingresar un DNI.',
                                                 'numeric' => 'El DNI debe ser numérico.',
-                                                'min' => 'El DNI debe tener al menos 7 dígitos.',
-                                                'max' => 'El DNI no puede tener más de 8 dígitos.',397805205
+                                                'digits_between' => 'El DNI debe tener entre 7 y 8 dígitos.',
                                             ]),
 
                                         /* TextInput::make('child_data.age')
-                                            ->label('Edad del niño')
+                                            ->label('Edad del menor')
                                             ->numeric()
                                             ->minValue(0)
                                             ->maxValue(4)
@@ -1344,7 +1289,9 @@ class TicketForm
                                 'get' => $get,
                             ]),
                     ]),
-            ])->submitAction(new HtmlString('<button type="submit" class="fi-color fi-color-primary fi-bg-color-600 hover:fi-bg-color-500 dark:fi-bg-color-600 dark:hover:fi-bg-color-500 fi-text-color-0 hover:fi-text-color-0 dark:fi-text-color-0 dark:hover:fi-text-color-0 fi-btn fi-size-md  fi-ac-btn-action">Vender pasaje </button>')),
+            ])
+                ->submitAction(new HtmlString('<button type="submit" class="fi-color fi-color-primary fi-bg-color-600 hover:fi-bg-color-500 dark:fi-bg-color-600 dark:hover:fi-bg-color-500 fi-text-color-0 hover:fi-text-color-0 dark:fi-text-color-0 dark:hover:fi-text-color-0 fi-btn fi-size-md  fi-ac-btn-action">Finalizar</button>'))
+                ->skippable(false)
         ])->columns(0);
     }
 }

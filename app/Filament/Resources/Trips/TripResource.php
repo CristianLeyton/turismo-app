@@ -10,6 +10,7 @@ use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
 use App\Services\TripPdfService;
+use Carbon\Carbon;
 use Filament\Actions\Action;
 use Filament\Actions\EditAction;
 use Filament\Actions\ForceDeleteAction;
@@ -92,67 +93,62 @@ class TripResource extends Resource
     {
         return $table
             ->columns([
-                TextColumn::make('bus.name')
-                    ->label('Colectivo')
+                TextColumn::make('id')
+                    ->label('Viaje Nº')
                     ->sortable()
                     ->searchable()
                     ->badge()
-                    ->color('gray')
-                    ->toggleable(isToggledHiddenByDefault: false),
+                    ->alignCenter()
+                    ->color('gray'),
                 TextColumn::make('trip_date')
                     ->label('Fecha de salida')
                     ->date('d/m/Y')
                     ->badge()
                     ->color('info')
-                    ->searchable()
                     ->sortable()
-                    ->toggleable(isToggledHiddenByDefault: false)
                     ->alignCenter(),
-                TextColumn::make('schedule.name')
+/*                 TextColumn::make('schedule.name')
                     ->label('Horario')
-                    ->searchable()
                     ->alignCenter()
-                    ->toggleable(isToggledHiddenByDefault: true),
+                    ->toggleable(isToggledHiddenByDefault: true), */
                 TextColumn::make('departure_time')
-                    ->label('Hora salida')
-                    ->dateTime('H:i')
+                    ->label('Horario')
                     ->sortable()
                     ->badge()
                     ->color('info')
                     ->alignCenter()
-                    ->toggleable(isToggledHiddenByDefault: false),
-                TextColumn::make('arrival_time')
-                    ->label('Hora llegada')
-                    ->dateTime('H:i')
-                    ->badge()
-                    ->color('info')
-                    ->sortable()
-                    ->alignCenter()
-                    ->toggleable(isToggledHiddenByDefault: false),
+                    ->getStateUsing(
+                        fn($record) =>
+
+                        Carbon::parse($record->departure_time)->format('H:i') .
+                            ' - ' .
+                            Carbon::parse($record->arrival_time)->format('H:i')
+                    ),
+                    //->toggleable(isToggledHiddenByDefault: false),
                 TextColumn::make('route.name')
                     ->label('Ruta')
                     ->sortable()
                     ->badge()
                     ->color('warning')
-                    ->searchable()
-                    ->toggleable(isToggledHiddenByDefault: false),
+                    ->searchable(),
+                    //->toggleable(isToggledHiddenByDefault: false),
                 TextColumn::make('occupiedSeatsCount')
                     ->label('Asientos vendidos')
-                    ->getStateUsing(fn ($record) => $record->occupiedSeatsCount())
+                    ->getStateUsing(fn($record) => $record->occupiedSeatsCount())
                     ->sortable()
                     ->badge()
                     ->color('primary')
-                    ->alignCenter()
-                    ->toggleable(isToggledHiddenByDefault: false),
+                    ->alignCenter(),
+                    //->toggleable(isToggledHiddenByDefault: false),
                 TextColumn::make('total_passengers')
                     ->label('Total pasajeros')
-                    ->getStateUsing(fn ($record) => $record->total_passengers)
+                    ->getStateUsing(fn($record) => $record->total_passengers)
                     ->sortable()
                     ->badge()
                     ->color('success')
-                    ->alignCenter()
-                    ->toggleable(isToggledHiddenByDefault: false),
-                TextColumn::make('created_at')
+                    ->alignCenter(),
+                    //->toggleable(isToggledHiddenByDefault: false),
+/*                 TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
@@ -163,24 +159,25 @@ class TripResource extends Resource
                 TextColumn::make('deleted_at')
                     ->dateTime()
                     ->sortable()
-                    ->toggleable(isToggledHiddenByDefault: true),
+                    ->toggleable(isToggledHiddenByDefault: true), */
             ])
             ->recordAction('view_details')
             ->defaultSort('trip_date', 'desc')
+            ->persistSortInSession()
             ->filters([
-                SelectFilter::make('route')
+/*                 SelectFilter::make('route')
                     ->relationship('route', 'name')
                     ->label('Ruta')
-                    ->preload(),
-                TrashedFilter::make(),
+                    ->preload(), */
+                //TrashedFilter::make(),
             ])
             ->recordActions([
                 ViewAction::make('view_details')
                     ->label('Ver detalles')
-                    ->modalHeading(fn ($record) => "Detalles del viaje - {$record->bus->name} ({$record->trip_date->format('d/m/Y')})")
+                    ->modalHeading(fn($record) => "Detalles del viaje N° {$record->id } - {$record->bus->name} - ({$record->trip_date->format('d/m/Y')})")
                     ->modalContent(function ($record) {
                         $passengers = $record->getPassengersWithDetails();
-                        
+
                         return view('filament.trips.trip-details', [
                             'trip' => $record,
                             'passengers' => $passengers
@@ -193,8 +190,19 @@ class TripResource extends Resource
                                 ->label('PDF')
                                 ->icon('heroicon-m-arrow-down-tray')
                                 ->color('primary')
-                                ->url(route('trips.pdf.download', $record))
-                                ->openUrlInNewTab()
+                                ->action(function ($record) {
+                                    $service = app(\App\Services\TripPdfService::class);
+                                    $pdf = $service->generateTripDetailsPdf($record);
+
+                                    $filename = 'Viaje_N°' . $record->id . '_' . preg_replace('/[^a-zA-Z0-9_-]/', '_', $record->bus->name) . '_' . $record->trip_date->format('d-m-Y') . '.pdf';
+
+                                    return response()->streamDownload(function () use ($pdf) {
+                                        echo $pdf->output();
+                                    }, $filename, [
+                                        'Content-Type' => 'application/pdf',
+                                        'Content-Disposition' => 'attachment; filename="' . $filename . '"'
+                                    ]);
+                                })
                                 ->disabled($record->tickets()->count() === 0)
                                 ->extraAttributes([
                                     'title' => 'Descargar PDF'
@@ -203,16 +211,27 @@ class TripResource extends Resource
                                 ->label('Excel')
                                 ->icon('heroicon-m-arrow-down-tray')
                                 ->color('success')
-                                ->url(route('trips.excel.download', $record))
-                                ->openUrlInNewTab()
+                                ->action(function ($record) {
+                                    $service = app(\App\Services\TripExcelService::class);
+                                    $export = $service->generateTripDetailsExcel($record);
+
+                                    $tripId = $record->id;
+                                    $colectivo = str_replace(' ', '_', $record->bus->name);
+                                    $date = $record->trip_date->format('d-m-Y');
+
+                                    return \Maatwebsite\Excel\Facades\Excel::download(
+                                        $export,
+                                        "Viaje_N°{$tripId}_{$colectivo}_{$date}.xlsx"
+                                    );
+                                })
                                 ->disabled($record->tickets()->count() === 0)
                                 ->extraAttributes([
                                     'title' => 'Descargar Excel'
                                 ]),
-                            
+
                         ];
                     })
-                    ->disabled(fn ($record) => $record->tickets()->count() === 0)
+                    ->disabled(fn($record) => $record->tickets()->count() === 0)
                     ->button()
                     ->hiddenLabel()
                     ->extraAttributes([
@@ -222,9 +241,20 @@ class TripResource extends Resource
                     ->label('Descargar PDF')
                     ->icon('heroicon-m-arrow-down-tray')
                     ->color('primary')
-                    ->url(fn ($record) => route('trips.pdf.download', $record))
-                    ->openUrlInNewTab()
-                    ->disabled(fn ($record) => $record->tickets()->count() === 0)
+                    ->action(function ($record) {
+                        $service = app(\App\Services\TripPdfService::class);
+                        $pdf = $service->generateTripDetailsPdf($record);
+
+                        $filename = 'Viaje_N°' . $record->id . '_' . preg_replace('/[^a-zA-Z0-9_-]/', '_', $record->bus->name) . '_' . $record->trip_date->format('d-m-Y') . '.pdf';
+
+                        return response()->streamDownload(function () use ($pdf) {
+                            echo $pdf->output();
+                        }, $filename, [
+                            'Content-Type' => 'application/pdf',
+                            'Content-Disposition' => 'attachment; filename="' . $filename . '"'
+                        ]);
+                    })
+                    ->disabled(fn($record) => $record->tickets()->count() === 0)
                     ->button()
                     ->hiddenLabel()
                     ->extraAttributes([
@@ -234,9 +264,20 @@ class TripResource extends Resource
                     ->label('Descargar Excel')
                     ->icon('heroicon-m-arrow-down-tray')
                     ->color('success')
-                    ->url(fn ($record) => route('trips.excel.download', $record))
-                    ->openUrlInNewTab()
-                    ->disabled(fn ($record) => $record->tickets()->count() === 0)
+                    ->action(function ($record) {
+                        $service = app(\App\Services\TripExcelService::class);
+                        $export = $service->generateTripDetailsExcel($record);
+
+                        $tripId = $record->id;
+                        $colectivo = str_replace(' ', '_', $record->bus->name);
+                        $date = $record->trip_date->format('d-m-Y');
+
+                        return \Maatwebsite\Excel\Facades\Excel::download(
+                            $export,
+                            "Viaje_N°{$tripId}_{$colectivo}_{$date}.xlsx"
+                        );
+                    })
+                    ->disabled(fn($record) => $record->tickets()->count() === 0)
                     ->button()
                     ->hiddenLabel()
                     ->extraAttributes([
@@ -244,12 +285,11 @@ class TripResource extends Resource
                     ]),
             ])
             ->toolbarActions([
-/*                 BulkActionGroup::make([
+                /*                 BulkActionGroup::make([
                     DeleteBulkAction::make(),
                     ForceDeleteBulkAction::make(),
                     RestoreBulkAction::make(),
-                ]), */
-            ]);
+                ]), */]);
     }
 
     public static function getPages(): array

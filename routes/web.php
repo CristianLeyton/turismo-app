@@ -5,6 +5,7 @@ use App\Http\Controllers\TicketDownloadController;
 use App\Models\Trip;
 use App\Services\TripPdfService;
 use App\Services\TripExcelService;
+use App\Filament\Resources\Tickets\TicketResource;
 
 Route::get('/', function () {
     return redirect('/admin');

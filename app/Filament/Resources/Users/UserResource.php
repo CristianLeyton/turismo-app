@@ -44,7 +44,7 @@ class UserResource extends Resource
     protected static ?string $modelLabel = 'usuario';
     protected static ?string $pluralModelLabel = 'Usuarios';
     protected static bool $hasTitleCaseModelLabel = false;
-/*     protected static string | UnitEnum | null $navigationGroup = 'Sistema'; */
+    /*     protected static string | UnitEnum | null $navigationGroup = 'Sistema'; */
     protected static ?int $navigationSort = 3;
 
     protected static ?string $recordTitleAttribute = 'name';
@@ -65,7 +65,7 @@ class UserResource extends Resource
                         'max' => 'El apellido no debe exceder los :max caracteres.',
                     ]),
                 TextInput::make('username')
-                    ->label('Nombre de usuario')
+                    ->label('Usuario')
                     ->minLength(3)
                     ->maxLength(255)
                     ->required()
@@ -110,19 +110,19 @@ class UserResource extends Resource
     {
         return $table
             ->recordTitleAttribute('User')
-             ->modifyQueryUsing(fn (Builder $query) => $query->where('id', '!=', 1)) // Excluir el usuario con ID 1
+            ->modifyQueryUsing(fn(Builder $query) => $query->where('id', '!=', 1)) // Excluir el usuario con ID 1
             ->columns([
+                TextColumn::make('username')
+                    ->label('Usuario')
+                    ->searchable(),
                 TextColumn::make('name')
                     ->label('Nombre')
                     ->getStateUsing(fn(Model $record): string => $record->name . ' ' . ($record->surname ?? ''))
                     ->searchable(),
-/*                 TextColumn::make('surname')
+                /*                 TextColumn::make('surname')
                     ->label('Apellido')
                     ->searchable()
                     ->visibleFrom('md'), */
-                TextColumn::make('username')
-                    ->label('Nombre de usuario')
-                    ->searchable(),
                 /* TextColumn::make('email')
                     ->label('Email address')
                     ->searchable()
@@ -132,13 +132,13 @@ class UserResource extends Resource
                     ->disabled(fn(Model $record): bool => $record->id === 1)
                     ->sortable(), */
                 TextColumn::make('is_admin')
-                    ->label('Es administrador')
+                    ->label('Rol')
                     ->alignCenter()
-                    ->formatStateUsing(fn($state) => $state ? 'Sí' : 'No')
+                    ->formatStateUsing(fn($state) => $state ? 'Administrador' : 'Vendedor')
                     ->badge()
                     ->color(fn($state) => $state ? 'success' : 'info')
                     ->sortable(),
-                    /* IconColumn::make('is_admin')
+                /* IconColumn::make('is_admin')
                     ->label('Es administrador')
                     ->alignCenter()
                     ->boolean()
@@ -147,21 +147,21 @@ class UserResource extends Resource
                     ->trueColor('success')
                     ->falseColor('warning')
                     ->sortable(), */
-/*                     ->extraAttributes([
+                /*                     ->extraAttributes([
                         'class' => 'flex justify-center',
                         'style' => 'display: flex; justify-content: center; align-items: center;',
                     ]), */
-                TextColumn::make('created_at')
+/*                 TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('updated_at')
                     ->dateTime()
                     ->sortable()
-                    ->toggleable(isToggledHiddenByDefault: true),
+                    ->toggleable(isToggledHiddenByDefault: true), */
             ])
             ->filters([
-                TrashedFilter::make(),
+                //TrashedFilter::make(),
             ])
             ->recordActions([
                 EditAction::make()->disabled(fn(User $record): bool => $record->id === 2)->button()->hiddenLabel()->extraAttributes([

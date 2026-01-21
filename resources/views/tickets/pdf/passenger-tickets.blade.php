@@ -3,7 +3,9 @@
 
 <head>
     <meta charset='utf-8'>
-    <title>Boletos</title>
+     @foreach ($tickets->chunk(2) as $pair)
+            <title>Boleto N° {{ $pair[0]->id }} {{ isset($pair[1]) ? 'y ' . $pair[1]->id : ''}} </title>
+    @endforeach
 
     <style>
         @page {
@@ -55,7 +57,7 @@
         }
 
         .route-title {
-            font-size: 12px;
+            font-size: 14px;
             font-weight: bold;
             color: #d946ef;
             text-transform: uppercase;
@@ -108,13 +110,14 @@
 
         .barcode {
             font-family: monospace;
-            font-size: 11px;
+            font-size: 18px;
             background: #f3f4f6;
             padding: 2mm;
             text-align: center;
             border-radius: 4px;
             margin-top: 2mm;
             width: 100%;
+            font-weight: bold;
         }
 
         .conditions {
@@ -174,11 +177,11 @@
                                     <tr>
                                         <td valign='top'>
                                             <div class='company-name'>EXPRESSO SOFIA TURISMO</div>
-                                            <div class='company-subtitle'>EMPRESA DE TRANSPORTE</div>
+{{--                                             <div class='company-subtitle'>EMPRESA DE TRANSPORTE</div> --}}
                                         </td>
 
                                         <td align='right' valign='top'>
-                                            <div class='title'>BOLETO DE VIAJE</div>
+                                            {{-- <div class='title'>BOLETO DE VIAJE</div> --}}
                                             <div class='route-title'>
                                                 {{ $ticket->origin->name }} > {{ $ticket->destination->name }}
                                             </div>
@@ -269,7 +272,7 @@
 
                                     @if ($hasChild)
                                         <div class='child-warning'>
-                                            El pasajero adulto es responsable del niño durante todo el viaje. El niño/a
+                                            El pasajero adulto es responsable del menor durante todo el viaje. El menor
                                             no ocupa asiento.
                                         </div>
                                     @endif
@@ -287,7 +290,7 @@
                         </tr>
                     </table>
                     <div class='barcode'>
-                        #{{ str_pad($ticket->id, 8, '0', STR_PAD_LEFT) }}
+                        {{ str_pad($ticket->id, 10, '0', STR_PAD_LEFT) }}
                     </div>
 
                     <p style="color: #6b7280; font-size: 10px; text-align: center;">

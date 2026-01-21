@@ -133,7 +133,7 @@
                         </span>
                     </div>
 
-                    {{-- Niño acompañante --}}
+                    {{-- Menor acompañante --}}
                     @if (!empty($passenger['travels_with_child']) && !empty($passenger['child_data']))
                         <div
                             class="border-l-4 border-fuchsia-500 pl-4 py-2 my-2
@@ -145,7 +145,7 @@
                                  px-3 py-1 rounded-full text-xs font-medium
                                  bg-gray-100 dark:bg-gray-900
                                  text-fuchsia-600 dark:text-fuchsia-400 mr-3">
-                            Niño
+                            Menor
                         </span>
                             </div>
                             <div class="text-sm text-gray-700 dark:text-gray-300">

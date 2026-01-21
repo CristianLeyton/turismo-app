@@ -14,8 +14,6 @@ class Panel extends StatsOverviewWidget
 {
     protected int | string | array $columnSpan = '2';
     protected static bool $isLazy = false;
-    protected ?string $heading = 'Bienvenido al panel de administración';
-    protected ?string $description = 'Tambien puedes navegar entre las diferentes secciones usando el menú superior';
 
     protected function getColumns(): int | array
     {
@@ -27,26 +25,27 @@ class Panel extends StatsOverviewWidget
         ];
     }
 
+    
     protected function getStats(): array
     {
         return [
-            Stat::make('Venta de pasajes', 'Vender')
+            Stat::make('Venta de boletos', 'Vender')
                 ->icon('heroicon-o-ticket')
                 ->url(TicketResource::getUrl('create'))
-                ->description('Ir a vender pasajes')
+                ->description('Ir a vender boletos')
                 ->descriptionIcon('heroicon-m-arrow-up-right')
                 ->extraAttributes(['class' => 'group [&_.fi-wi-stats-overview-stat-value]:text-2xl [&_.fi-wi-stats-overview-stat-value]:group-hover:text-primary-600 [&_.fi-wi-stats-overview-stat-value]:transition
                 [&_.fi-icon:nth-child(2)]:group-hover:translate-x-0.5 [&_.fi-icon:nth-child(2)]:group-hover:-translate-y-0.5 [&_.fi-icon]:transition']),
 
-            Stat::make('Pasajes vendidos', 'Ver vendidos')
+            Stat::make('Boletos vendidos', 'Boletos')
                 ->icon('heroicon-o-clipboard-document-list')
                 ->url(TicketResource::getUrl())
-                ->description('Listado de pasajes vendidos')
+                ->description('Listado de boletos vendidos')
                 ->descriptionIcon('heroicon-m-arrow-up-right')
                 ->extraAttributes(['class' => 'group [&_.fi-wi-stats-overview-stat-value]:text-2xl [&_.fi-wi-stats-overview-stat-value]:group-hover:text-primary-600 [&_.fi-wi-stats-overview-stat-value]:transition
                 [&_.fi-icon:nth-child(2)]:group-hover:translate-x-0.5 [&_.fi-icon:nth-child(2)]:group-hover:-translate-y-0.5 [&_.fi-icon]:transition']),
 
-            Stat::make('Detalle de viajes', 'Ver viajes')
+            Stat::make('Detalle de viajes', 'Viajes')
                 ->icon('heroicon-o-calendar-days')
                 ->url(TripResource::getUrl())
                 ->description('Ver detalle de viajes')

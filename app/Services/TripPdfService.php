@@ -58,9 +58,10 @@ class TripPdfService
         $pdf = $this->generateTripDetailsPdf($trip);
         
         // Generar nombre del archivo
-        $busName = $trip->bus->name;
+        $tripId = $trip->id;
+        $busName = str_replace(' ', '_', $trip->bus->name);
         $date = $trip->trip_date->format('d-m-Y');
-        $filename = 'viaje_' . preg_replace('/[^a-zA-Z0-9_-]/', '_', $busName) . '_' . $date . '.pdf';
+        $filename = 'Viaje_N°' . $tripId . '_' . $busName . '_' . $date . '.pdf';
         
         return $pdf->download($filename);
     }
@@ -73,9 +74,10 @@ class TripPdfService
         $pdf = $this->generateTripDetailsPdf($trip);
         
         // Generar nombre del archivo
-        $busName = $trip->bus->name;
+        $busName = str_replace(' ', '_', $trip->bus->name);
+        $tripId = $trip->id;
         $date = $trip->trip_date->format('d-m-Y');
-        $filename = 'viaje_' . preg_replace('/[^a-zA-Z0-9_-]/', '_', $busName) . '_' . $date . '.pdf';
+         $filename = 'Viaje_N°' . $tripId . '_' . $busName . '_' . $date . '.pdf';
         
         return $pdf->stream($filename);
     }

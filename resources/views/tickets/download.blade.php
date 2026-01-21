@@ -12,8 +12,8 @@
     <div class="bg-white border border-gray-200 rounded-xl p-8 max-w-md w-full text-center shadow-sm">
 
         <div class="text-5xl mb-2 flex items-center justify-center ">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
-                stroke-width="1.5" stroke="currentColor" class="size-12 text-fuchsia-600">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
+                stroke="currentColor" class="size-12 text-fuchsia-600">
                 <path stroke-linecap="round" stroke-linejoin="round"
                     d="M16.5 6v.75m0 3v.75m0 3v.75m0 3V18m-9-5.25h5.25M7.5 15h3M3.375 5.25c-.621 0-1.125.504-1.125 1.125v3.026a2.999 2.999 0 0 1 0 5.198v3.026c0 .621.504 1.125 1.125 1.125h17.25c.621 0 1.125-.504 1.125-1.125v-3.026a2.999 2.999 0 0 1 0-5.198V6.375c0-.621-.504-1.125-1.125-1.125H3.375Z" />
             </svg>
@@ -34,6 +34,19 @@
         <p class="mt-1 text-sm text-gray-600">
             Si no se descarga, puedes hacerlo manualmente:
         </p>
+
+        <button onclick="window.close()"
+            class="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-lg
+                  bg-gray-100 hover:bg-gray-200
+                  text-gray-600 text-sm font-semibold transition-colors
+                  focus:outline-none focus:ring-2 focus:ring-gray-300 focus:ring-offset-2 cursor-pointer">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="size-5">
+                <path fill-rule="evenodd"
+                    d="M5.47 5.47a.75.75 0 0 1 1.06 0L12 10.94l5.47-5.47a.75.75 0 1 1 1.06 1.06L13.06 12l5.47 5.47a.75.75 0 1 1-1.06 1.06L12 13.06l-5.47 5.47a.75.75 0 0 1-1.06-1.06L10.94 12 5.47 6.53a.75.75 0 0 1 0-1.06Z"
+                    clip-rule="evenodd" />
+            </svg>
+            Cerrar ventana
+        </button>
 
         <a href="data:application/pdf;base64,{{ $pdfContent }}" download="{{ $filename }}"
             class="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-lg

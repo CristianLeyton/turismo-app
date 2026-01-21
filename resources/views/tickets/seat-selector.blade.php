@@ -70,13 +70,14 @@
             @endif
         </div>
 
-        <h3 class="text-lg font-semibold text-primary text-fuchsia-600">Seleccionar asientos de
-            {{ strpos($fieldId, 'return') !== false ? 'vuelta' : 'ida' }}</h3>
-
+        <h3 class="text-xl font-semibold text-primary text-fuchsia-600 flex justify-between">
+            <p>Seleccionar asientos</p> 
+            
+            <p class="font-bold text-xl uppercase">
+            {{ strpos($fieldId, 'return') !== false ? 'Vuelta ↓' : 'Ida ↑' }}</h3>
+            </p>
         <!-- Contenedor de pisos con flexbox para cambiar orden -->
         <div class="flex flex-col-reverse md:flex-row-reverse md:justify-center items-end *:w-full gap-4">
-
-
             @foreach ($floors as $floorKey => $seats)
                 @php
                     $floorNumber = str_replace('floor_', '', $floorKey);
@@ -88,9 +89,9 @@
                                 : "Piso {$floorNumber}");
                 @endphp
 
-                <div class="mb-8">
+                <div class="mb-2 -mt-6">
                     <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-200 mb-4">
-                        {{ $floorName }} ({{ count($seats) }} asientos)
+                        {{ $floorName }} {{-- ({{ count($seats) }} asientos) --}}
                     </h3>
 
                     @php
@@ -270,7 +271,7 @@
         </div>
 
         <div x-show="selected.length < required"
-            class="w-full mt-4 p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+            class="w-full mt-0 p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
             <p class="text-sm text-yellow-800 dark:text-yellow-200">
                 Debe seleccionar <span x-text="required - selected.length"></span> asiento(s) más.
             </p>

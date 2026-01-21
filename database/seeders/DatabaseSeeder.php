@@ -28,20 +28,20 @@ class DatabaseSeeder extends Seeder
 
         User::factory()->create([
             'id' => 2,
-            'name' => 'Administrador',
+            'name' => 'Casa Central',
             'email' => 'admin@mail.com',
             'password' => bcrypt('admin'),
-            'username' => 'admin',
+            'username' => 'CasaCentral',
             'is_admin' => true,
             'email_verified_at' => now(),
         ]);
 
         User::factory()->create([
             'id' => 3,
-            'name' => 'Usuario',
+            'name' => 'Vendedor 1',
             'email' => 'user@mail.com',
-            'password' => bcrypt('user'),
-            'username' => 'user',
+            'password' => bcrypt('vendedor1'),
+            'username' => 'Vendedor1',
             'is_admin' => false,
             'email_verified_at' => now(),
         ]);

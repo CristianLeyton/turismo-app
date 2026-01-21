@@ -90,8 +90,29 @@
 
             @foreach ($passengers as $index => $passenger)
                 @php
-                    $seatId = isset($seatIds[$index]) ? $seatIds[$index] : (is_array($seatIds) && count($seatIds) === 1 ? reset($seatIds) : null);
-                    $returnSeatId = isset($returnSeatIds[$index]) ? $returnSeatIds[$index] : (is_array($returnSeatIds) && count($returnSeatIds) === 1 ? reset($returnSeatIds) : null);
+                    // Asignar asientos por orden de llegada, no por índice
+                    $seatId = null;
+                    $returnSeatId = null;
+                    
+                    if (is_array($seatIds) && count($seatIds) > 0) {
+                        if (count($seatIds) === 1) {
+                            // Si hay un solo asiento, asignarlo a todos los pasajeros
+                            $seatId = reset($seatIds);
+                        } else {
+                            // Asignar por orden de pasajero
+                            $seatId = $seatIds[$index] ?? null;
+                        }
+                    }
+                    
+                    if (is_array($returnSeatIds) && count($returnSeatIds) > 0) {
+                        if (count($returnSeatIds) === 1) {
+                            // Si hay un solo asiento de vuelta, asignarlo a todos los pasajeros
+                            $returnSeatId = reset($returnSeatIds);
+                        } else {
+                            // Asignar por orden de pasajero
+                            $returnSeatId = $returnSeatIds[$index] ?? null;
+                        }
+                    }
                 @endphp
 
                 <div

@@ -75,9 +75,9 @@ class CreateTicket extends CreateRecord
     {
         // Si hay una descarga de ticket pendiente, será manejada por afterCreate
         if (session()->has('auto_download_url')) {
-            return $this->url('/admin');
+            return url('/admin');
         }
-        return $this->url('/admin');
+        return url('/admin');
     }
 
     protected function afterCreate(): void

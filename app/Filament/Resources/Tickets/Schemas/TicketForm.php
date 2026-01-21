@@ -20,6 +20,7 @@ use Filament\Actions\Action;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\ViewField;
 use Filament\Forms\Components\Button;
+use Filament\Forms\Components\Checkbox;
 use Filament\Notifications\Notification;
 use Filament\Schemas\Components\Fieldset;
 use Filament\Schemas\Components\Section;
@@ -597,46 +598,52 @@ class TicketForm
                                     ->required()
                                     ->default(1)
                                     ->live()
-                                    ->options(
-                                        [
-                                            '1' => '1',
-                                            '2' => '2',
-                                            '3' => '3',
-                                            '4' => '4',
-                                            '5' => '5',
-                                            '6' => '6',
-                                            '7' => '7',
-                                            '8' => '8',
-                                            /*  '61' => '61', */
-                                        ]
-                                    )
-                                    ->selectablePlaceholder(false)
-                                    ->afterStateUpdated(fn($set) => [
-                                        $set('trip_id', null),
-                                        $set('trip_search_status', null),
-                                        $set('trip_available_seats', null),
-                                        $set('is_round_trip', false),
+                                    ->options([
+                                        '1' => '1',
+                                        '2' => '2',
+                                        '3' => '3',
+                                        '4' => '4',
+                                        '5' => '5',
+                                        '6' => '6',
+                                        '7' => '7',
+                                        '8' => '8',
                                     ])
-                                    ->rule('in:1,2,3,4,5,6,7,8,61')
+                                    ->selectablePlaceholder(false)
+                                    ->rule('in:1,2,3,4,5,6,7,8')
                                     ->validationMessages([
                                         'required' => 'Ingrese la cantidad de pasajeros',
                                         'in' => 'La cantidad de pasajeros debe ser entre 1 y 8',
                                     ])
-                                    ->live()
                                     ->afterStateUpdated(function ($state, callable $set, Get $get) {
-                                        // Limpiar pasajeros cuando cambia la cantidad
+
+                                        // ---- Reset de búsqueda de viaje ----
+                                        $set('trip_id', null);
+                                        $set('trip_search_status', null);
+                                        $set('trip_available_seats', null);
+                                        $set('return_trip_id', null);
+                                        $set('return_trip_search_status', null);
+                                        $set('return_trip_available_seats', null);
+                                        $set('is_round_trip', false);
+
+                                        // ---- Ajustar array de pasajeros ----
                                         $required = (int) $state;
-                                        if ($required > 0) {
-                                            $passengers = [];
-                                            for ($i = 0; $i < $required; $i++) {
-                                                $passengers[] = [
-                                                    'passenger_number' => $i + 1
+                                        $current = $get('passengers') ?? [];
+
+                                        // Recortar si sobran
+                                        if (count($current) > $required) {
+                                            $current = array_slice($current, 0, $required);
+                                        }
+
+                                        // Expandir si faltan
+                                        if (count($current) < $required) {
+                                            for ($i = count($current); $i < $required; $i++) {
+                                                $current[$i] = [
+                                                    'passenger_number' => $i + 1,
                                                 ];
                                             }
-                                            $set('passengers', $passengers);
-                                        } else {
-                                            $set('passengers', []);
                                         }
+
+                                        $set('passengers', $current);
                                     }),
                             ]),
 
@@ -1481,155 +1488,208 @@ class TicketForm
 
                 Step::make('Pasajeros')
                     ->schema([
+                        /*                         Text::make('Pasajeros seleccionados')
+                            ->content(fn(Get $get) => $get('passengers_count') . ' pasajero(s) seleccionado(s).'),
+                        Text::make('Asientos de ida seleccionados')
+                            ->content(fn(Get $get) => implode(', ', $get('seat_ids'))),
+                        Text::make('Asientos de vuelta seleccionados')
+                            ->content(fn(Get $get) => implode(', ', $get('return_seat_ids'))), */
                         Repeater::make('passengers')
-                            ->label('')
+                            ->label('Pasajeros')
                             ->schema([
-                                Section::make()
-                                    ->schema(function (Get $get) {
-                                        $passengerNumber = $get('passenger_number');
-                                        $seatIds = $get('../../seat_ids') ?? [];
-                                        $returnSeatIds = $get('../../return_seat_ids') ?? [];
-                                        $isRoundTrip = $get('../../is_round_trip');
-                                        
-                                        // Construir el label con los asientos
-                                        $label = "Pasajero {$passengerNumber}";
-                                        $seatInfo = [];
-                                        
-                                        if (!empty($seatIds) && isset($seatIds[$passengerNumber - 1])) {
-                                            $seatInfo[] = "Asiento ida: {$seatIds[$passengerNumber - 1]}";
+                                Grid::make(2)
+                                    ->schema([
+                                        TextInput::make('first_name')
+                                            ->label('Nombre')
+                                            ->minLength(2)
+                                            ->maxLength(80)
+                                            ->required()
+                                            ->validationMessages([
+                                                'required' => 'Debe ingresar un nombre.',
+                                                'min' => 'El nombre debe tener al menos :min caracteres.',
+                                                'max' => 'El nombre no puede tener más de :max caracteres.',
+                                            ]),
+                                        TextInput::make('last_name')
+                                            ->label('Apellido')
+                                            ->minLength(2)
+                                            ->maxLength(80)
+                                            ->required()
+                                            ->validationMessages([
+                                                'required' => 'Debe ingresar un apellido.',
+                                                'min' => 'El apellido debe tener al menos :min caracteres.',
+                                                'maxLength' => 'El apellido no puede tener más de :max caracteres.',
+                                            ]),
+                                    ]),
+
+                                Grid::make(2)
+                                    ->schema([
+                                        TextInput::make('dni')
+                                            ->label('DNI')
+                                            ->required()
+                                            ->numeric()
+                                            ->rules([
+                                                'digits_between:7,8',
+                                            ])
+                                            ->validationMessages([
+                                                'required' => 'Debe ingresar un DNI.',
+                                                'numeric' => 'El DNI debe ser numérico.',
+                                                'digits_between' => 'El DNI debe tener entre 7 y 8 dígitos.',
+                                            ]),
+                                        TextInput::make('phone_number')
+                                            ->label('Teléfono')
+                                            ->numeric()
+                                            ->rules([
+                                                'digits_between:7,12',
+                                            ])
+                                            ->validationMessages([
+                                                'required' => 'Debe ingresar un número de teléfono.',
+                                                'numeric' => 'El número de teléfono debe ser numérico.',
+                                                'digits_between' => 'El número de teléfono debe tener entre 7 y 12 dígitos.',
+                                            ]),
+                                    ]),
+
+                                Checkbox::make('travels_with_child')
+                                    ->label('¿Viaja con un menor?')
+                                    ->default(false)
+                                    ->live()
+                                    ->extraAttributes([
+                                        'class' => 'toggle-checkbox'
+                                    ])
+                                    ->afterStateUpdated(function ($state, callable $set, $get) {
+                                        $passengerIndex = $get('..');
+                                        if (!$state) {
+                                            $set('child_data', null);
                                         }
-                                        
-                                        if ($isRoundTrip && !empty($returnSeatIds) && isset($returnSeatIds[$passengerNumber - 1])) {
-                                            $seatInfo[] = "Asiento vuelta: {$returnSeatIds[$passengerNumber - 1]}";
-                                        }
-                                        
-                                        if (!empty($seatInfo)) {
-                                            $label .= " (" . implode(', ', $seatInfo) . ")";
-                                        }
-                                        
-                                        return [
-                                            Section::make($label)
-                                                ->description('Complete los datos del pasajero')
-                                                ->schema([
-                                                    Grid::make(2)
-                                                        ->schema([
-                                                    TextInput::make('first_name')
-                                                        ->label('Nombre')
-                                                        ->required()
-                                                        ->validationMessages([
-                                                            'required' => 'El nombre es requerido',
-                                                        ]),
-                                                        
-                                                    TextInput::make('last_name')
-                                                        ->label('Apellido')
-                                                        ->required()
-                                                        ->validationMessages([
-                                                            'required' => 'El apellido es requerido',
-                                                        ]),
-                                                        
-                                                    TextInput::make('dni')
-                                                        ->label('DNI')
-                                                        ->required()
-                                                        ->rules(['digits:8'])
-                                                        ->validationMessages([
-                                                            'required' => 'El DNI es requerido',
-                                                            'digits' => 'El DNI debe tener 8 dígitos',
-                                                        ]),
-                                                        
-                                                    TextInput::make('phone_number')
-                                                        ->label('Teléfono')
-                                                        ->required()
-                                                        ->rules(['digits:9'])
-                                                        ->validationMessages([
-                                                            'required' => 'El teléfono es requerido',
-                                                            'digits' => 'El teléfono debe tener 9 dígitos',
-                                                        ]),
-                                                ]),
-                                                ]),
-                                            
-                                            Toggle::make('travels_with_child')
-                                                ->label('Viaja con acompañante menor de edad')
-                                                ->live()
-                                                ->afterStateUpdated(function ($state, Set $set, Get $get) {
-                                                    if (!$state) {
-                                                        $set('child_first_name', null);
-                                                        $set('child_last_name', null);
-                                                        $set('child_dni', null);
-                                                    }
-                                                }),
-                                            
-                                            Section::make('Datos del acompañante menor de edad')
-                                                ->schema([
-                                                    Grid::make(2)
-                                                        ->schema([
-                                                            TextInput::make('child_first_name')
-                                                                ->label('Nombre del menor')
-                                                                ->reactive()
-                                                                ->required(fn(Get $get) => $get('travels_with_child'))
-                                                                ->validationMessages([
-                                                                    'required' => 'El nombre del menor es requerido cuando viaja con acompañante',
-                                                                ]),
-                                                                
-                                                            TextInput::make('child_last_name')
-                                                                ->label('Apellido del menor')
-                                                                ->reactive()
-                                                                ->required(fn(Get $get) => $get('travels_with_child'))
-                                                                ->validationMessages([
-                                                                    'required' => 'El apellido del menor es requerido cuando viaja con acompañante',
-                                                                ]),
-                                                                
-                                                            TextInput::make('child_dni')
-                                                                ->label('DNI del menor')
-                                                                ->reactive()
-                                                                ->required(fn(Get $get) => $get('travels_with_child'))
-                                                                ->rules(['digits:8'])
-                                                                ->validationMessages([
-                                                                    'required' => 'El DNI del menor es requerido cuando viaja con acompañante',
-                                                                    'digits' => 'El DNI debe tener 8 dígitos',
-                                                                ]),
-                                                        ]),
-                                                ])
-                                                ->visible(fn(Get $get) => $get('travels_with_child'))
-                                                ->collapsed(false),
-                                        ];
                                     })
+                                    ->columnSpanFull(),
+
+                                // Sección de datos del menor (condicional)
+                                Grid::make(2)
+                                    ->schema([
+                                        TextInput::make('child_data.first_name')
+                                            ->label('Nombre del menor')
+                                            ->required()
+                                            ->minLength(2)
+                                            ->maxLength(80)
+                                            ->validationMessages([
+                                                'required' => 'Debe ingresar un nombre.',
+                                                'min' => 'El nombre debe tener al menos :min caracteres.',
+                                                'max' => 'El nombre no puede tener más de :max caracteres.',
+                                            ]),
+
+                                        TextInput::make('child_data.last_name')
+                                            ->label('Apellido del menor')
+                                            ->required()
+                                            ->minLength(2)
+                                            ->maxLength(80)
+                                            ->validationMessages([
+                                                'required' => 'Debe ingresar un apellido.',
+                                                'min' => 'El apellido debe tener al menos :min caracteres.',
+                                                'max' => 'El apellido no puede tener más de :max caracteres.',
+                                            ]),
+
+                                        TextInput::make('child_data.dni')
+                                            ->label('DNI del menor')
+                                            ->required()
+                                            ->numeric()
+                                            ->rules([
+                                                'digits_between:7,8',
+                                            ])
+                                            ->validationMessages([
+                                                'required' => 'Debe ingresar un DNI.',
+                                                'numeric' => 'El DNI debe ser numérico.',
+                                                'digits_between' => 'El DNI debe tener entre 7 y 8 dígitos.',
+                                            ]),
+
+                                        /* TextInput::make('child_data.age')
+                                            ->label('Edad del menor')
+                                            ->numeric()
+                                            ->minValue(0)
+                                            ->maxValue(4)
+                                            ->required(fn($get) => $get('travels_with_child'))
+                                            ->visible(fn($get) => $get('travels_with_child'))
+                                            ->helperText('Edad entre 0 y 4 años'), */
+                                    ])
+                                    ->visible(fn($get) => $get('travels_with_child'))
+                                    ->live(),
+
+                                Hidden::make('passenger_number')
+                                    ->dehydrated(),
+
+                                /*                                 Text::make('datos')
+                                    ->content(
+                                        function ($state, $component) {
+                                            return var_dump($state);
+                                        }
+                                    ) */
                             ])
-                            ->itemLabel(fn(array $state): ?string => 'Pasajero ' . ($state['passenger_number'] ?? ''))
-                            ->columns(1)
+
+                            ->extraAttributes(
+                                ['class' => '[&_.fi-fo-repeater-item-header-label]:text-fuchsia-600']
+                            )
+                            ->minItems(fn(Get $get) => (int) $get('passengers_count'))
+                            ->maxItems(fn(Get $get) => (int) $get('passengers_count'))
+                            ->required()
                             ->addActionLabel('Agregar pasajero')
-                            ->collapsible()
-                            ->cloneable()
-                            ->reorderableWithButtons(false)
-                            ->disableItemCreation(function (Get $get) {
-                                $passengersCount = (int) $get('passengers_count');
-                                $currentPassengers = count($get('passengers') ?? []);
-                                return $currentPassengers >= $passengersCount;
-                            })
-                            ->disableItemDeletion(function (Get $get) {
-                                $passengersCount = (int) $get('passengers_count');
-                                $currentPassengers = count($get('passengers') ?? []);
-                                return $currentPassengers <= $passengersCount;
-                            })
-                            ->defaultItems(1)
-                            ->live()
-                            ->afterStateUpdated(function ($state, Set $set, Get $get) {
-                                $requiredCount = (int) $get('passengers_count');
-                                $currentCount = count($state ?? []);
-                                
-                                if ($currentCount < $requiredCount) {
-                                    $passengers = $state ?? [];
-                                    for ($i = $currentCount; $i < $requiredCount; $i++) {
-                                        $passengers[] = [
-                                            'passenger_number' => $i + 1
+                            ->validationMessages([
+                                'minItems' => 'Debe agregar al menos {min} pasajero(s).',
+                                'maxItems' => 'No puede agregar más de {max} pasajero(s).',
+                                'required' => 'Debe agregar al menos un pasajero.',
+                            ])
+                            ->afterStateHydrated(function ($state, callable $set, Get $get) {
+                                $required = (int) $get('passengers_count');
+
+                                if (count($state ?? []) !== $required) {
+                                    $passengers = [];
+
+                                    for ($i = 0; $i < $required; $i++) {
+                                        $passengers[$i] = [
+                                            'passenger_number' => $i + 1, // 1, 2, 3...
                                         ];
                                     }
+
                                     $set('passengers', $passengers);
                                 }
                             })
-                            ->required()
-                            ->validationMessages([
-                                'required' => 'Debe completar los datos de todos los pasajeros',
-                            ]),
+
+                            ->deletable(false)
+                            ->reorderable(false)
+                            /* ->grid(2) */
+                            ->itemLabel(function (array $state, ?string $uuid, $component): ?string {
+                                // Obtener número de pasajero
+                                $passengerNumber = $state['passenger_number'] ?? 1;
+
+                                // Obtener todos los datos del formulario
+                                $formData = $component->getContainer()->getRawState();
+
+                                // Obtener arrays de asientos
+                                $seatIds = $formData['seat_ids'] ?? [];
+                                $returnSeatIds = $formData['return_seat_ids'] ?? [];
+
+                                // Depuración
+                                logger()->info('itemLabel debug', [
+                                    'passengerNumber' => $passengerNumber,
+                                    'seatIds' => $seatIds,
+                                    'returnSeatIds' => $returnSeatIds,
+                                    'seatAtIndex' => $seatIds[$passengerNumber - 1] ?? 'NOT_FOUND',
+                                    'returnSeatAtIndex' => $returnSeatIds[$passengerNumber - 1] ?? 'NOT_FOUND',
+                                ]);
+
+                                // Construir label
+                                $label = 'Pasajero ' . $passengerNumber;
+
+                                // Agregar asiento de ida si existe
+                                if (isset($seatIds[$passengerNumber - 1]) && $seatIds[$passengerNumber - 1] !== null) {
+                                    $label .= ' | Asiento ida: ' . $seatIds[$passengerNumber - 1];
+                                }
+
+                                // Agregar asiento de vuelta si existe
+                                if (isset($returnSeatIds[$passengerNumber - 1]) && $returnSeatIds[$passengerNumber - 1] !== null) {
+                                    $label .= ' | Asiento vuelta: ' . $returnSeatIds[$passengerNumber - 1];
+                                }
+
+                                return $label;
+                            }),
                     ]),
                 Step::make('Resumen')
                     ->schema([

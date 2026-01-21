@@ -90,7 +90,11 @@
 
             @foreach ($passengers as $index => $passenger)
                 @php
-                    // Asignar asientos por orden de llegada, no por índice
+                    // Contador para asignar asientos correctamente
+                    static $passengerCounter = 0;
+                    $currentPassengerIndex = $passengerCounter++;
+                    
+                    // Asignar asientos por orden de llegada
                     $seatId = null;
                     $returnSeatId = null;
                     
@@ -99,8 +103,8 @@
                             // Si hay un solo asiento, asignarlo a todos los pasajeros
                             $seatId = reset($seatIds);
                         } else {
-                            // Asignar por orden de pasajero
-                            $seatId = $seatIds[$index] ?? null;
+                            // Asignar por orden de pasajero usando contador numérico
+                            $seatId = $seatIds[$currentPassengerIndex] ?? null;
                         }
                     }
                     
@@ -109,10 +113,21 @@
                             // Si hay un solo asiento de vuelta, asignarlo a todos los pasajeros
                             $returnSeatId = reset($returnSeatIds);
                         } else {
-                            // Asignar por orden de pasajero
-                            $returnSeatId = $returnSeatIds[$index] ?? null;
+                            // Asignar por orden de pasajero usando contador numérico
+                            $returnSeatId = $returnSeatIds[$currentPassengerIndex] ?? null;
                         }
                     }
+                    
+                    // Depuración
+                    \Log::info('Summary passenger debug FIXED', [
+                        'foreachIndex' => $index,
+                        'currentPassengerIndex' => $currentPassengerIndex,
+                        'passengerNumber' => $passenger['passenger_number'] ?? 'NOT_FOUND',
+                        'seatIds' => $seatIds,
+                        'returnSeatIds' => $returnSeatIds,
+                        'seatId' => $seatId,
+                        'returnSeatId' => $returnSeatId,
+                    ]);
                 @endphp
 
                 <div

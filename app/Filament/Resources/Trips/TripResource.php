@@ -20,6 +20,7 @@ use Filament\Actions\RestoreBulkAction;
 use Filament\Actions\ViewAction;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Select;
+use Filament\Forms\Components\TextInput;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
@@ -27,6 +28,8 @@ use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\TrashedFilter;
 use Filament\Tables\Table;
+use Filament\Tables\Enums\FiltersLayout;
+use Filament\Tables\Filters\Filter;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
 
@@ -96,12 +99,11 @@ class TripResource extends Resource
                 TextColumn::make('id')
                     ->label('Viaje Nº')
                     ->sortable()
-                    ->searchable()
                     ->badge()
                     ->alignCenter()
                     ->color('gray'),
                 TextColumn::make('trip_date')
-                    ->label('Fecha de salida')
+                    ->label('Fecha')
                     ->date('d/m/Y')
                     ->badge()
                     ->color('info')
@@ -129,8 +131,7 @@ class TripResource extends Resource
                     ->label('Ruta')
                     ->sortable()
                     ->badge()
-                    ->color('warning')
-                    ->searchable(),
+                    ->color('warning'),
                     //->toggleable(isToggledHiddenByDefault: false),
                 TextColumn::make('occupiedSeatsCount')
                     ->label('Asientos vendidos')
@@ -141,7 +142,7 @@ class TripResource extends Resource
                     ->alignCenter(),
                     //->toggleable(isToggledHiddenByDefault: false),
                 TextColumn::make('total_passengers')
-                    ->label('Total pasajeros')
+                    ->label('Pasajeros')
                     ->getStateUsing(fn($record) => $record->total_passengers)
                     ->sortable()
                     ->badge()
@@ -165,12 +166,72 @@ class TripResource extends Resource
             ->defaultSort('trip_date', 'desc')
             ->persistSortInSession()
             ->filters([
-/*                 SelectFilter::make('route')
+                Filter::make('trip_id')
+                    ->label('Viaje Nº')
+                    ->form([
+                        TextInput::make('id')
+                            ->label('Viaje Nº')
+                            ->placeholder('Número de viaje')
+                            ->numeric()
+                            ->minValue(1)
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        return $query
+                            ->when(
+                                $data['id'],
+                                fn (Builder $query, int $id): Builder => $query->where('id', $id),
+                            );
+                    })
+                    ->indicateUsing(function (array $data): array {
+                        $indicators = [];
+                        if ($data['id'] ?? null) {
+                            $indicators[] = 'ID: ' . $data['id'];
+                        }
+                        return $indicators;
+                    }),
+
+                Filter::make('trip_date')
+                    ->label('Fecha de salida')
+                    ->form([
+                        DatePicker::make('date')
+                            ->label('Fecha')
+                            ->native(true)
+                            ->displayFormat('d/m/Y')
+                            ->closeOnDateSelection()
+                            /* ->default(now()->format('Y-m-d')) */,
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        return $query
+                            ->when(
+                                $data['date'],
+                                fn (Builder $query, $date): Builder => $query->whereDate('trip_date', '=', $date),
+                            );
+                    })
+                    ->indicateUsing(function (array $data): array {
+                        $indicators = [];
+                        if ($data['date'] ?? null) {
+                            $indicators[] = 'Fecha: ' . \Carbon\Carbon::parse($data['date'])->format('d/m/Y');
+                        }
+                        return $indicators;
+                    }),
+
+                SelectFilter::make('schedule')
+                    ->relationship('schedule', 'name')
+                    ->label('Horario')
+                    ->preload()
+                    ->getOptionLabelFromRecordUsing(function (Schedule $record) {
+                        return $record->display_name;
+                    }), 
+
+                SelectFilter::make('route')
                     ->relationship('route', 'name')
                     ->label('Ruta')
-                    ->preload(), */
-                //TrashedFilter::make(),
+                    ->preload(), 
             ])
+            ->filtersLayout(FiltersLayout::AboveContent)
+            ->deferFilters(false)
+            ->persistFiltersInSession()
+            ->hiddenFilterIndicators()
             ->recordActions([
                 ViewAction::make('view_details')
                     ->label('Ver detalles')

@@ -1,6 +1,9 @@
 @php
     $tripId = $trip_id ?? null;
     $requiredSeats = (int) ($passengers_count ?? 0);
+    $sessionId = $session_id ?? session()->getId();
+    $enableReservation = $enable_reservation ?? false;
+    $reservationTimeout = $reservation_timeout ?? 10;
 
     $trip = $trip ?? ($tripId ? \App\Models\Trip::find($tripId) : null);
     $layoutData = $trip ? $trip->getFullLayoutData() : null;
@@ -13,20 +16,38 @@
 <div x-data="{
     selected: @entangle('data.' . $fieldId),
     required: {{ (int) $passengers_count }},
+    tripId: {{ $tripId ?? 'null' }},
+    sessionId: '{{ $sessionId }}',
+    enableReservation: {{ $enableReservation ? 'true' : 'false' }},
+    reservationTimeout: {{ $reservationTimeout }},
+    keepAliveInterval: null,
+    reservationExpiresAt: null,
 
     init() {
         if (!Array.isArray(this.selected)) {
             this.selected = [];
         }
+        
+        // Iniciar keep-alive si las reservas están habilitadas
+        if (this.enableReservation && this.tripId) {
+            this.startKeepAlive();
+        }
+        
+        // Limpiar reservas al salir de la página
+        window.addEventListener('beforeunload', () => {
+            this.releaseReservations();
+        });
     },
 
-    toggleSeat(seatId) {
+    async toggleSeat(seatId) {
         if (!Array.isArray(this.selected)) {
             this.selected = [];
         }
 
         if (this.selected.includes(seatId)) {
+            // Deseleccionar asiento
             this.selected = this.selected.filter(id => id !== seatId);
+            await this.updateReservation();
             return;
         }
 
@@ -34,11 +55,104 @@
             return;
         }
 
+        // Seleccionar asiento
         this.selected = [...this.selected, seatId];
+        await this.updateReservation();
     },
 
     isSelected(seatId) {
         return Array.isArray(this.selected) && this.selected.includes(seatId);
+    },
+
+    async updateReservation() {
+        if (!this.enableReservation || !this.tripId) return;
+        
+        try {
+            const response = await fetch('/api/seat-reservations/reserve', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')
+                },
+                body: JSON.stringify({
+                    trip_id: this.tripId,
+                    seat_ids: this.selected,
+                    session_id: this.sessionId
+                })
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                this.reservationExpiresAt = new Date(result.expires_at);
+            } else {
+                // Si falla la reservación, mostrar notificación
+                this.$wire.dispatch('notify', {
+                    type: 'warning',
+                    title: 'Advertencia',
+                    body: result.message || 'No se pudieron reservar los asientos seleccionados'
+                });
+            }
+        } catch (error) {
+            console.error('Error al actualizar reservación:', error);
+        }
+    },
+
+    async releaseReservations() {
+        if (!this.enableReservation || !this.sessionId) return;
+        
+        try {
+            await fetch('/api/seat-reservations/release', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')
+                },
+                body: JSON.stringify({
+                    session_id: this.sessionId
+                })
+            });
+        } catch (error) {
+            console.error('Error al liberar reservas:', error);
+        }
+    },
+
+    startKeepAlive() {
+        // Enviar keep-alive cada 4 minutos (antes de que expiren las reservas de 10 minutos)
+        this.keepAliveInterval = setInterval(async () => {
+            try {
+                await fetch('/api/seat-reservations/keep-alive', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')
+                    },
+                    body: JSON.stringify({
+                        session_id: this.sessionId
+                    })
+                });
+            } catch (error) {
+                console.error('Error en keep-alive:', error);
+            }
+        }, 240000); // 4 minutos
+    },
+
+    stopKeepAlive() {
+        if (this.keepAliveInterval) {
+            clearInterval(this.keepAliveInterval);
+            this.keepAliveInterval = null;
+        }
+    },
+
+    get timeRemaining() {
+        if (!this.reservationExpiresAt) return null;
+        const now = new Date();
+        const diff = this.reservationExpiresAt - now;
+        if (diff <= 0) return null;
+        
+        const minutes = Math.floor(diff / 60000);
+        const seconds = Math.floor((diff % 60000) / 1000);
+        return `${minutes}:${seconds.toString().padStart(2, '0')}`;
     }
 }" class="seat-selector-container grid grid-cols-1 gap-4">
     @if (!$trip || !$layoutData)
@@ -62,10 +176,23 @@
                     <div class="w-6 h-6 bg-red-500 rounded border border-red-600"></div>
                     <span class="text-sm text-gray-700 dark:text-gray-300">Ocupado</span>
                 </div>
+                @if ($enableReservation)
+                    <div class="flex items-center gap-2">
+                        <div class="w-6 h-6 bg-orange-500 rounded border border-orange-600"></div>
+                        <span class="text-sm text-gray-700 dark:text-gray-300">Reservado</span>
+                    </div>
+                @endif
             </div>
             @if ($requiredSeats > 0)
                 <div class="mt-3 text-sm text-gray-600 dark:text-gray-400">
                     <span x-text="`Asientos seleccionados: ${selected.length} de ${required}`"></span>
+                    @if ($enableReservation)
+                        <template x-if="timeRemaining">
+                            <span class="ml-4 text-orange-600 font-semibold">
+                                Tiempo restante: <span x-text="timeRemaining"></span>
+                            </span>
+                        </template>
+                    @endif
                 </div>
             @endif
         </div>

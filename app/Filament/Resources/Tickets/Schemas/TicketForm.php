@@ -6,6 +6,7 @@ use App\Filament\Resources\Tickets\TicketResource;
 use App\Models\Route;
 use App\Models\RouteStop;
 use App\Models\Schedule;
+use App\Models\SeatReservation;
 use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
@@ -1204,6 +1205,12 @@ class TicketForm
                     ]),
 
                 Step::make('Asientos (Ida)')
+                    ->beforeValidation(function (Get $get, Set $set) {
+                        // Limpiar reservas expiradas y liberar reservas anteriores al entrar
+                        SeatReservation::cleanupExpired();
+                        $sessionId = session()->getId();
+                        SeatReservation::releaseBySession($sessionId);
+                    })
                     ->afterValidation(function (Get $get) {
                         $required = (int) $get('passengers_count');
                         $selected = $get('seat_ids') ?? [];
@@ -1334,6 +1341,9 @@ class TicketForm
                                     'seat_ids' => $selectedSeats,
                                     'passengers_count' => $requiredSeats,
                                     'fieldId' => 'seat_ids',
+                                    'session_id' => session()->getId(),
+                                    'enable_reservation' => true,
+                                    'reservation_timeout' => 10,
                                 ];
                             })
                             ->visible(
@@ -1345,6 +1355,17 @@ class TicketForm
                     ]),
                 Step::make('Asientos (Vuelta)')
                     ->visible(fn(Get $get) => $get('is_round_trip'))
+                    ->beforeValidation(function (Get $get, Set $set) {
+                        // Limpiar reservas expiradas y liberar reservas anteriores de vuelta al entrar
+                        SeatReservation::cleanupExpired();
+                        $sessionId = session()->getId();
+                        $returnTripId = $get('return_trip_id');
+                        if ($returnTripId) {
+                            SeatReservation::where('user_session_id', $sessionId)
+                                ->where('trip_id', $returnTripId)
+                                ->delete();
+                        }
+                    })
                     ->afterValidation(function (Get $get) {
                         $required = (int) $get('passengers_count');
                         $selected = $get('return_seat_ids') ?? [];
@@ -1476,6 +1497,9 @@ class TicketForm
                                     'seat_ids' => $selectedSeats,
                                     'passengers_count' => $requiredSeats,
                                     'fieldId' => 'return_seat_ids',
+                                    'session_id' => session()->getId(),
+                                    'enable_reservation' => true,
+                                    'reservation_timeout' => 10,
                                 ];
                             })
                             ->visible(

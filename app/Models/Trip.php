@@ -69,6 +69,12 @@ class Trip extends Model
                     ->from('tickets')
                     ->where('trip_id', $this->id)
                     ->whereNotNull('seat_id');
+            })
+            ->whereNotIn('id', function ($query) {
+                $query->select('seat_id')
+                    ->from('seat_reservations')
+                    ->where('trip_id', $this->id)
+                    ->where('expires_at', '>', now());
             });
     }
 

@@ -38,10 +38,10 @@ class DatabaseSeeder extends Seeder
 
         User::factory()->create([
             'id' => 3,
-            'name' => 'Vendedor 1',
+            'name' => 'Vendedor',
             'email' => 'user@mail.com',
-            'password' => bcrypt('vendedor1'),
-            'username' => 'Vendedor1',
+            'password' => bcrypt('vendedor'),
+            'username' => 'vendedor',
             'is_admin' => false,
             'email_verified_at' => now(),
         ]);

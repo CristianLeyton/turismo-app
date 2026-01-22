@@ -16,17 +16,16 @@ class DatabaseSeeder extends Seeder
     public function run(): void
     {
 
-        User::factory()->create([
+        User::create([
             'id' => 1,
-            'name' => 'Administrador Super',
-            'email' => 'superadmin@mail.com',
+            'name' => 'Super Administrador',
             'password' => bcrypt('superadmin'),
             'username' => 'superadmin',
             'is_admin' => true,
             'email_verified_at' => now(),
         ]);
 
-        User::factory()->create([
+        User::create([
             'id' => 2,
             'name' => 'Casa Central',
             'email' => 'admin@mail.com',
@@ -36,7 +35,7 @@ class DatabaseSeeder extends Seeder
             'email_verified_at' => now(),
         ]);
 
-        User::factory()->create([
+        User::create([
             'id' => 3,
             'name' => 'Vendedor',
             'email' => 'user@mail.com',

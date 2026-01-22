@@ -119,7 +119,7 @@ class TripResource extends Resource
                     ->toggleable(isToggledHiddenByDefault: true), */
                 TextColumn::make('departure_time')
                     ->label('Horario')
-                    ->sortable()
+/*                     ->sortable() */
                     ->badge()
                     ->color('info')
                     ->alignCenter()
@@ -140,7 +140,6 @@ class TripResource extends Resource
                 TextColumn::make('occupiedSeatsCount')
                     ->label('Asientos vendidos')
                     ->getStateUsing(fn($record) => $record->occupiedSeatsCount())
-                    ->sortable()
                     ->badge()
                     ->color('primary')
                     ->alignCenter(),
@@ -148,7 +147,6 @@ class TripResource extends Resource
                 TextColumn::make('total_passengers')
                     ->label('Pasajeros')
                     ->getStateUsing(fn($record) => $record->total_passengers)
-                    ->sortable()
                     ->badge()
                     ->color('success')
                     ->alignCenter(),
@@ -167,7 +165,7 @@ class TripResource extends Resource
                     ->toggleable(isToggledHiddenByDefault: true), */
             ])
             ->defaultSort('trip_date', 'desc')
-            ->persistSortInSession()
+/*             ->persistSortInSession() */
             ->filters([
                 Filter::make('trip_id')
                     ->label('Viaje Nº')

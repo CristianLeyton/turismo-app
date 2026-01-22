@@ -101,7 +101,7 @@ class TicketsTable
             ])
             ->defaultSort('sale.sale_date', 'desc')
             ->recordUrl(null)
-            ->persistSortInSession()
+            /* ->persistSortInSession() */
             ->paginated([5, 10, 25, 50, 100])
             ->defaultPaginationPageOption(50)
             ->filters([

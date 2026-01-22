@@ -53,18 +53,7 @@ class UserResource extends Resource
     {
         return $schema
             ->components([
-                TextInput::make('name')
-                    ->label('Nombre')
-                    ->required()
-                    ->validationMessages(['required' => 'El campo nombre es obligatorio.']),
-                TextInput::make('surname')
-                    ->label('Apellido')
-                    ->maxLength(255)
-                    ->nullable()
-                    ->validationMessages([
-                        'max' => 'El apellido no debe exceder los :max caracteres.',
-                    ]),
-                TextInput::make('username')
+                                TextInput::make('username')
                     ->label('Usuario')
                     ->minLength(3)
                     ->maxLength(255)
@@ -76,29 +65,23 @@ class UserResource extends Resource
                         'max' => 'El nombre de usuario no debe exceder los :max caracteres.',
                         'unique' => 'El nombre de usuario ya está en uso.',
                     ]),
-                TextInput::make('phone')
-                    ->tel()
-                    ->label('Número de teléfono')
-                    ->maxLength(15)
-                    ->nullable()
-                    ->unique()
-                    ->validationMessages([
-                        'unique' => 'El número de teléfono ya está en uso.',
-                        'max' => 'El número de teléfono no debe exceder los :max caracteres.',
-                    ]),
-                TextInput::make('email')
-                    ->label('Email')
-                    ->unique()
-                    ->email()
-                    ->validationMessages([
-                        'unique' => 'El email ya está en uso.',
-                        'email' => 'El campo email debe ser una dirección de correo electrónico válida.',
-                    ]),
-                TextInput::make('password')
-                    ->password()
+                                    TextInput::make('password')
+                    /* ->password() */
                     ->required()
+                    ->label('Contraseña')
                     ->hiddenOn('edit')
                     ->validationMessages(['required' => 'El campo contraseña es obligatorio.']),
+                TextInput::make('name')
+                    ->label('Nombre')
+                    ->required()
+                    ->validationMessages(['required' => 'El campo nombre es obligatorio.']),
+                TextInput::make('surname')
+                    ->label('Apellido')
+                    ->maxLength(255)
+                    ->nullable()
+                    ->validationMessages([
+                        'max' => 'El apellido no debe exceder los :max caracteres.',
+                    ]),
                 Toggle::make('is_admin')
                     ->label('Es administrador')
                     ->aboveLabel('Permisos de administrador')
@@ -119,18 +102,6 @@ class UserResource extends Resource
                     ->label('Nombre')
                     ->getStateUsing(fn(Model $record): string => $record->name . ' ' . ($record->surname ?? ''))
                     ->searchable(),
-                /*                 TextColumn::make('surname')
-                    ->label('Apellido')
-                    ->searchable()
-                    ->visibleFrom('md'), */
-                /* TextColumn::make('email')
-                    ->label('Email address')
-                    ->searchable()
-                    ->visibleFrom('md'), */
-                /*ToggleColumn::make('is_admin')
-                    ->label('Es administrador')
-                    ->disabled(fn(Model $record): bool => $record->id === 1)
-                    ->sortable(), */
                 TextColumn::make('is_admin')
                     ->label('Rol')
                     ->alignCenter()
@@ -138,27 +109,6 @@ class UserResource extends Resource
                     ->badge()
                     ->color(fn($state) => $state ? 'success' : 'info')
                     ->sortable(),
-                /* IconColumn::make('is_admin')
-                    ->label('Es administrador')
-                    ->alignCenter()
-                    ->boolean()
-                    ->trueIcon('heroicon-o-check-circle')
-                    ->falseIcon('heroicon-o-x-circle')
-                    ->trueColor('success')
-                    ->falseColor('warning')
-                    ->sortable(), */
-                /*                     ->extraAttributes([
-                        'class' => 'flex justify-center',
-                        'style' => 'display: flex; justify-content: center; align-items: center;',
-                    ]), */
-/*                 TextColumn::make('created_at')
-                    ->dateTime()
-                    ->sortable()
-                    ->toggleable(isToggledHiddenByDefault: true),
-                TextColumn::make('updated_at')
-                    ->dateTime()
-                    ->sortable()
-                    ->toggleable(isToggledHiddenByDefault: true), */
             ])
             ->filters([
                 //TrashedFilter::make(),

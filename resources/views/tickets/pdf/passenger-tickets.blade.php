@@ -177,11 +177,9 @@
                                     <tr>
                                         <td valign='top'>
                                             <div class='company-name'>EXPRESSO SOFIA TURISMO</div>
-{{--                                             <div class='company-subtitle'>EMPRESA DE TRANSPORTE</div> --}}
                                         </td>
 
                                         <td align='right' valign='top'>
-                                            {{-- <div class='title'>BOLETO DE VIAJE</div> --}}
                                             <div class='route-title'>
                                                 {{ $ticket->origin->name }} > {{ $ticket->destination->name }}
                                             </div>
@@ -225,24 +223,19 @@
                                 <table width='100%' cellspacing='0' cellpadding='0'>
                                     <tr>
                                         <td width='50%' valign='top'>
-                                            <div class='section-title'>ASIENTO</div>
+                                           {{--  <div class='section-title'>ASIENTO</div> --}}
                                             <div class='seat'>
-                                                {{ $ticket->seat?->seat_number ?? 'SIN ASIENTO' }}
+                                                <span style="color:#111827"> Asiento: </span> {{ $ticket->seat?->seat_number ?? 'SIN ASIENTO' }}
                                             </div>
                                         </td>
                                         <td width='50%' valign='top'>
-                                            <div class='section-title'>PISO</div>
-                                            <div class='seat'>
-                                                {{ $ticket->seat?->floor ?? 'N/A' }}
+                                            {{-- <div class='section-title'>PISO</div> --}}
+                                            <div class='seat' style="color:#111827">
+                                                {{ $ticket->seat?->floor == '1' ? 'Planta baja' : 'Planta alta' }}
                                             </div>
                                         </td>
                                     </tr>
                                 </table>
-                                {{--                                 <div class='price'>
-                                    $ {{ number_format($ticket->price, 2, ',', '.') }}
-                                </div>
- --}}
-
                             </td>
 
                             {{-- Columna derecha 1/3 --}}
@@ -290,7 +283,7 @@
                         </tr>
                     </table>
                     <div class='barcode'>
-                        {{ str_pad($ticket->id, 10, '0', STR_PAD_LEFT) }}
+                        BOLETO N°{{ str_pad($ticket->id, 10, '0', STR_PAD_LEFT) }}
                     </div>
 
                     <p style="color: #6b7280; font-size: 10px; text-align: center;">

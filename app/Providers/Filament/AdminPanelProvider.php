@@ -42,7 +42,7 @@ class AdminPanelProvider extends PanelProvider
             ->spa(hasPrefetching: true)
             /*             ->sidebarCollapsibleOnDesktop() */
             ->default()
-            
+            ->brandLogo(fn () => view('filament.admin.logo'))
             ->topNavigation()
             ->navigationItems([
                 NavigationItem::make('Vender')

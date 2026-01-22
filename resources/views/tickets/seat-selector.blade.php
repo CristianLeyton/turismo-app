@@ -83,9 +83,9 @@
                     $floorNumber = str_replace('floor_', '', $floorKey);
                     $floorName =
                         $floorNumber == '1'
-                            ? 'Primer Piso'
+                            ? 'Planta baja'
                             : ($floorNumber == '2'
-                                ? 'Segundo Piso'
+                                ? 'Planta alta'
                                 : "Piso {$floorNumber}");
                 @endphp
 

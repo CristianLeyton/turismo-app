@@ -108,6 +108,10 @@ class TripResource extends Resource
                     ->badge()
                     ->color('info')
                     ->sortable()
+                    ->url(fn ($record) => static::getUrl(parameters: [
+                        'tableAction' => 'view_details',
+                        'tableActionRecord' => $record->id,
+                    ]))
                     ->alignCenter(),
 /*                 TextColumn::make('schedule.name')
                     ->label('Horario')
@@ -162,7 +166,6 @@ class TripResource extends Resource
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true), */
             ])
-            ->recordAction('view_details')
             ->defaultSort('trip_date', 'desc')
             ->persistSortInSession()
             ->filters([
@@ -232,6 +235,7 @@ class TripResource extends Resource
             ->deferFilters(false)
             ->persistFiltersInSession()
             ->hiddenFilterIndicators()
+            ->recordClasses(fn ($record) => $record->tickets()->count() === 0 ? 'bg-gray-100 opacity-70 dark:bg-gray-800' : '')
             ->recordActions([
                 ViewAction::make('view_details')
                     ->label('Ver detalles')

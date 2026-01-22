@@ -28,12 +28,6 @@
                         {{ $trip->arrival_time?->format('H:i') ?? '--:--' }}
                     </div>
 
-{{--                     <div class="text-sm text-gray-600 dark:text-gray-400">
-                        <strong>Ruta:</strong>
-                        <span
-                            class="text-fuchsia-600 dark:text-fuchsia-400">{{ $trip->route?->name ?? 'No especificada' }}</span>
-                    </div> --}}
-
                     <div class="text-sm text-gray-600 dark:text-gray-400">
                         <strong>Colectivo:</strong> {{ $trip->bus?->name ?? 'No especificado' }}
                     </div>
@@ -44,8 +38,6 @@
                 <div class="text-sm text-gray-500 dark:text-gray-400 uppercase">Asientos vendidos</div>
                 <div class="text-3xl font-bold text-fuchsia-600 dark:text-fuchsia-400">{{ $trip->occupiedSeatsCount() }}
                 </div>
-{{--                 <div class="text-sm text-gray-500 dark:text-gray-400 mt-1 font-semibold">{{ $trip->total_passengers }}
-                    PASAJEROS</div> --}}
             </div>
         </div>
     </div>
@@ -54,7 +46,7 @@
     <div class="bg-white dark:bg-gray-900 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
         <div class="px-6 py-2 border-b border-gray-200 dark:border-gray-700 flex justify-between">
             <h3 class="text-lg font-semibold text-gray-900 dark:text-gray-100">Pasajeros</h3>
-            <div class="text-lg font-semibold text-gray-900 dark:text-gray-100 text-right">{{ ($passengers->count()) }} </div>
+            <div class="text-lg font-semibold text-gray-900 dark:text-gray-100 text-right">({{ $passengers->count() }}) </div>
         </div>
 
         @if ($passengers->count() > 0)
@@ -69,8 +61,6 @@
                             <th class="px-4 py-2 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Asiento</th>
                             <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Origen</th>
                             <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Destino</th>
-                            <!-- <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Diferido</th> -->
-                            <!-- <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Precio</th> -->
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-gray-200 dark:divide-gray-700">

@@ -16,9 +16,9 @@ class ListTickets extends ListRecords
     protected function getHeaderActions(): array
     {
         return [
-            CreateAction::make()
-                ->label('Vender boleto')
-                ->createAnother(false),
+            //CreateAction::make()
+                //->label('Vender boleto')
+                //->createAnother(false),
         ];
     }
 }

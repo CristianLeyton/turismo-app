@@ -90,8 +90,44 @@
 
             @foreach ($passengers as $index => $passenger)
                 @php
-                    $seatId = isset($seatIds[$index]) ? $seatIds[$index] : (is_array($seatIds) && count($seatIds) === 1 ? reset($seatIds) : null);
-                    $returnSeatId = isset($returnSeatIds[$index]) ? $returnSeatIds[$index] : (is_array($returnSeatIds) && count($returnSeatIds) === 1 ? reset($returnSeatIds) : null);
+                    // Contador para asignar asientos correctamente
+                    static $passengerCounter = 0;
+                    $currentPassengerIndex = $passengerCounter++;
+                    
+                    // Asignar asientos por orden de llegada
+                    $seatId = null;
+                    $returnSeatId = null;
+                    
+                    if (is_array($seatIds) && count($seatIds) > 0) {
+                        if (count($seatIds) === 1) {
+                            // Si hay un solo asiento, asignarlo a todos los pasajeros
+                            $seatId = reset($seatIds);
+                        } else {
+                            // Asignar por orden de pasajero usando contador numérico
+                            $seatId = $seatIds[$currentPassengerIndex] ?? null;
+                        }
+                    }
+                    
+                    if (is_array($returnSeatIds) && count($returnSeatIds) > 0) {
+                        if (count($returnSeatIds) === 1) {
+                            // Si hay un solo asiento de vuelta, asignarlo a todos los pasajeros
+                            $returnSeatId = reset($returnSeatIds);
+                        } else {
+                            // Asignar por orden de pasajero usando contador numérico
+                            $returnSeatId = $returnSeatIds[$currentPassengerIndex] ?? null;
+                        }
+                    }
+                    
+                    // Depuración
+                    \Log::info('Summary passenger debug FIXED', [
+                        'foreachIndex' => $index,
+                        'currentPassengerIndex' => $currentPassengerIndex,
+                        'passengerNumber' => $passenger['passenger_number'] ?? 'NOT_FOUND',
+                        'seatIds' => $seatIds,
+                        'returnSeatIds' => $returnSeatIds,
+                        'seatId' => $seatId,
+                        'returnSeatId' => $returnSeatId,
+                    ]);
                 @endphp
 
                 <div

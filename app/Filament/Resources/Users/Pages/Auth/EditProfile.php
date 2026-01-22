@@ -32,7 +32,7 @@ class EditProfile extends BaseEditProfile
                     ]),
 
                 TextInput::make('username')
-                    ->label('Nombre de usuario')
+                    ->label('Usuario')
                     ->minLength(3)
                     ->maxLength(255)
                     ->required()
@@ -43,15 +43,6 @@ class EditProfile extends BaseEditProfile
                         'max' => 'El nombre de usuario no debe exceder los :max caracteres.',
                         'unique' => 'El nombre de usuario ya está en uso.',
                     ]),
-                TextInput::make('phone')
-                    ->tel()
-                    ->label('Número de teléfono')
-                    ->maxLength(15)
-                    ->nullable()
-                    ->validationMessages([
-                        'max' => 'El número de teléfono no debe exceder los :max caracteres.',
-                    ]),
-                $this->getEmailFormComponent(),
                 $this->getPasswordFormComponent(),
                 $this->getPasswordConfirmationFormComponent(),
             ]);

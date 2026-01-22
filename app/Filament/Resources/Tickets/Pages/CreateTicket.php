@@ -24,7 +24,7 @@ class CreateTicket extends CreateRecord
 {
     protected static string $resource = TicketResource::class;
 
-/*     protected static ?string $title = ' '; //alt + 255 */
+    /*     protected static ?string $title = ' '; //alt + 255 */
     protected ?string $heading = 'Vender boleto';
     protected static ?string $breadcrumb = 'Vender';
 
@@ -41,28 +41,25 @@ class CreateTicket extends CreateRecord
 
     protected function getCancelFormAction(): Action
     {
-        return Action::make('cancelWizard')
+        return Action::make('cancel')
             ->label('Cancelar')
             ->color('gray')
             ->requiresConfirmation()
-            ->modalHeading('Los cambios se perderan.')
+            ->modalHeading('Los cambios se perderán')
             ->modalDescription('¿Desea continuar?')
-            // Botón CONFIRMAR
-            ->modalSubmitAction(
+            ->action(fn() => $this->redirect(url('/admin')))
+            ->modalCancelAction(
                 fn(Action $action) =>
                 $action
                     ->label('Cancelar')
                     ->color('gray')
-                    ->close()
             )
 
-            // Botón CANCELAR
-            ->modalCancelAction(
+            ->modalSubmitAction(
                 fn(Action $action) =>
                 $action
                     ->label('Aceptar')
                     ->color('primary')
-                    ->action(fn() => redirect()->route('filament.admin.resources.tickets.index'))
             )
             ->modalIconColor('primary');
     }
@@ -78,9 +75,9 @@ class CreateTicket extends CreateRecord
     {
         // Si hay una descarga de ticket pendiente, será manejada por afterCreate
         if (session()->has('auto_download_url')) {
-            return $this->url('/admin');
+            return url('/admin');
         }
-        return $this->url('/admin');
+        return url('/admin');
     }
 
     protected function afterCreate(): void

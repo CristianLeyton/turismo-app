@@ -7,7 +7,7 @@ use Illuminate\Contracts\Support\Htmlable;
 
 class CustomDashboard extends BaseDashboard
 {
-    protected ?string $heading = 'Inicio';
+/*     protected ?string $heading = 'Inicio'; */
 
     public function getTitle(): string | Htmlable
     {

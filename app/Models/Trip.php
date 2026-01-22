@@ -487,9 +487,15 @@ class Trip extends Model
     {
         $passengers = collect();
         
-        // Obtener pasajeros adultos de los tickets
+        // Obtener pasajeros adultos de los tickets ordenados por orden de parada
         $this->tickets()
             ->with(['passenger', 'seat', 'origin', 'destination'])
+            ->join('route_stops', function ($join) {
+                $join->on('route_stops.location_id', '=', 'tickets.origin_location_id')
+                     ->where('route_stops.route_id', '=', $this->route_id);
+            })
+            ->orderBy('route_stops.stop_order')
+            ->select('tickets.*') // Asegurarnos de solo obtener las columnas de tickets
             ->get()
             ->each(function ($ticket) use ($passengers) {
                 // Agregar pasajero adulto

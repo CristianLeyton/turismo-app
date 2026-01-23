@@ -1427,15 +1427,6 @@ class TicketForm
                                             // Obtener la nueva hora de expiración para pasarla al frontend
                                             $newExpirationTime = now()->addMinutes(5);
                                             
-                                            // Log para debugging
-                                            \Log::info('EXTENDIENDO RESERVAS - Pasando hora al frontend', [
-                                                'trip_id' => $tripId,
-                                                'session_id' => $sessionId,
-                                                'extended_count' => $extendedCount,
-                                                'new_expiration_time' => $newExpirationTime->toISOString(),
-                                                'selected_seats' => $selectedSeats
-                                            ]);
-                                            
                                             // Notificar extensión
                                             Notification::make()
                                                 ->title('Reservas extendidas')
@@ -1691,15 +1682,6 @@ class TicketForm
                                         if ($extendedCount > 0) {
                                             // Obtener la nueva hora de expiración para pasarla al frontend
                                             $newExpirationTime = now()->addMinutes(5);
-                                            
-                                            // Log para debugging
-                                            \Log::info('EXTENDIENDO RESERVAS VUELTA - Pasando hora al frontend', [
-                                                'trip_id' => $tripId,
-                                                'session_id' => $sessionId,
-                                                'extended_count' => $extendedCount,
-                                                'new_expiration_time' => $newExpirationTime->toISOString(),
-                                                'selected_seats' => $selectedSeats
-                                            ]);
                                             
                                             // Notificar extensión
                                             Notification::make()

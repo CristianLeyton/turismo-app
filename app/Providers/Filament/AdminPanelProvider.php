@@ -65,10 +65,6 @@ class AdminPanelProvider extends PanelProvider
             ->login(CustomLogin::class)
             ->globalSearch(false)
             ->viteTheme('resources/css/filament/admin/theme.css')
-            ->renderHook(
-                'panels::head.end',
-                fn (): string => '<link rel="stylesheet" href="' . asset('css/custom-reset-button.css') . '">'
-            )
             ->colors([
                 'primary' => Color::Fuchsia,
             ])

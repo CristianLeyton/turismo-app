@@ -44,6 +44,28 @@ class TicketForm
             Wizard::make([
                 Step::make('Buscar viaje')
                     ->afterValidation(function (Get $get, Set $set) {
+                        // Solo limpiar reservas si realmente cambian los parámetros de búsqueda
+                        // No limpiar solo por navegación hacia atrás
+                        static $lastSearchHash = null;
+                        
+                        $currentSearch = [
+                            'origin_id' => $get('origin_location_id'),
+                            'destination_id' => $get('destination_location_id'),
+                            'schedule_id' => $get('schedule_id'),
+                            'departure_date' => $get('departure_date'),
+                            'passengers_count' => $get('passengers_count'),
+                        ];
+                        
+                        $currentHash = md5(serialize($currentSearch));
+                        
+                        // Si la búsqueda realmente cambió, limpiar reservas anteriores
+                        if ($lastSearchHash !== null && $lastSearchHash !== $currentHash) {
+                            $sessionId = session()->getId();
+                            SeatReservation::releaseBySession($sessionId);
+                        }
+                        
+                        $lastSearchHash = $currentHash;
+                        
                         // Verificar automáticamente el viaje de ida si no se ha verificado
                         $tripId = $get('trip_id');
                         $tripSearchStatus = $get('trip_search_status');
@@ -571,10 +593,10 @@ class TicketForm
                                                     : $departureDate;
 
                                                 if ($departure->format('Y-m-d') === $now->format('Y-m-d')) {
-                                                    return 'No hay horarios disponibles para hoy (ya pasaron las horas de salida). Por favor, seleccione otra fecha.';
+                                                    return 'Por favor, seleccione otra fecha.';
                                                 }
                                             }
-                                            return 'No hay horarios disponibles para esta ruta. Por favor, seleccione otra combinación de origen y destino.';
+                                            return 'Por favor, seleccione otra combinación de origen y destino.';
                                         }
 
                                         return null;
@@ -1206,10 +1228,8 @@ class TicketForm
 
                 Step::make('Asientos (Ida)')
                     ->beforeValidation(function (Get $get, Set $set) {
-                        // Limpiar reservas expiradas y liberar reservas anteriores al entrar
+                        // Solo limpiar reservas expiradas
                         SeatReservation::cleanupExpired();
-                        $sessionId = session()->getId();
-                        SeatReservation::releaseBySession($sessionId);
                     })
                     ->afterValidation(function (Get $get) {
                         $required = (int) $get('passengers_count');
@@ -1238,8 +1258,14 @@ class TicketForm
                         if ($tripId) {
                             $trip = Trip::find($tripId);
                             if ($trip) {
-                                // Obtener asientos realmente disponibles
+                                // Obtener asientos disponibles excluyendo ocupados permanentemente
+                                // pero incluyendo las reservas del usuario actual
                                 $availableSeatIds = $trip->availableSeats()->pluck('id')->toArray();
+                                
+                                // Agregar los asientos reservados por esta sesión a los disponibles
+                                $sessionId = session()->getId();
+                                $userReservedSeats = SeatReservation::getReservedSeatsBySession($sessionId, $tripId);
+                                $availableSeatIds = array_merge($availableSeatIds, $userReservedSeats);
 
                                 // Filtrar solo los asientos seleccionados que aún están disponibles
                                 $validSelectedSeats = array_intersect($selected, $availableSeatIds);
@@ -1319,10 +1345,13 @@ class TicketForm
                         ViewField::make('seat_selector')
                             ->label('Seleccione los asientos')
                             ->view('tickets.seat-selector')
-                            ->viewData(function (Get $get) {
+                            ->viewData(function (Get $get, Set $set) {
                                 $tripId = $get('trip_id');
                                 $trip = $tripId ? Trip::find($tripId) : null;
                                 $selectedSeats = $get('seat_ids') ?? [];
+
+                                // Limpiar reservas expiradas de TODOS los usuarios siempre al entrar
+                                SeatReservation::cleanupExpired();
 
                                 // Asegurar que sea un array
                                 if (!is_array($selectedSeats)) {
@@ -1334,6 +1363,103 @@ class TicketForm
                                 }
 
                                 $requiredSeats = (int) $get('passengers_count');
+                                $sessionId = session()->getId();
+
+                                // Verificar estado de las reservas existentes al cargar la vista
+                                if ($tripId && !empty($selectedSeats)) {
+                                    // Limpiar reservas expiradas primero
+                                    SeatReservation::cleanupExpired();
+                                    
+                                    $expiredSeats = [];
+                                    $validSeats = [];
+                                    
+                                    foreach ($selectedSeats as $seatId) {
+                                        $isReserved = SeatReservation::isSeatReserved($tripId, $seatId);
+                                        $isOccupied = \App\Models\Ticket::where('trip_id', $tripId)
+                                            ->where('seat_id', $seatId)
+                                            ->exists();
+                                        
+                                        if (!$isReserved && !$isOccupied) {
+                                            // El asiento expiró o fue tomado por otro
+                                            $expiredSeats[] = $seatId;
+                                        } else {
+                                            // El asiento sigue reservado por esta sesión
+                                            $validSeats[] = $seatId;
+                                        }
+                                    }
+                                    
+                                    // Si hay asientos expirados
+                                    if (!empty($expiredSeats)) {
+                                        // Obtener números de asiento para notificación
+                                        $expiredSeatNumbers = [];
+                                        foreach ($expiredSeats as $seatId) {
+                                            $seat = \App\Models\Seat::find($seatId);
+                                            if ($seat) {
+                                                $expiredSeatNumbers[] = $seat->seat_number;
+                                            }
+                                        }
+                                        
+                                        // Notificar al usuario
+                                        Notification::make()
+                                            ->title('Asientos expirados')
+                                            ->icon('heroicon-m-clock')
+                                            ->persistent()
+                                            ->body('Los siguientes asientos expiraron: ' . implode(', ', $expiredSeatNumbers) . '. Por favor, selecciónelos nuevamente.')
+                                            ->warning()
+                                            ->send();
+                                        
+                                        // Limpiar datos de pasos posteriores
+                                        $set('passenger_data', []);
+                                        $set('return_seat_ids', []);
+                                        $set('return_passenger_data', []);
+                                        
+                                        // Actualizar selección solo con asientos válidos
+                                        $set('seat_ids', $validSeats);
+                                        $selectedSeats = $validSeats; // Actualizar variable local
+                                    } elseif (!empty($validSeats)) {
+                                        // Extender tiempo de las reservas válidas para este viaje específico
+                                        $extendedCount = SeatReservation::where('user_session_id', $sessionId)
+                                            ->where('trip_id', $tripId)
+                                            ->where('expires_at', '>', now())
+                                            ->update(['expires_at' => now()->addMinutes(5)]);
+                                        
+                                        if ($extendedCount > 0) {
+                                            // Obtener la nueva hora de expiración para pasarla al frontend
+                                            $newExpirationTime = now()->addMinutes(5);
+                                            
+                                            // Log para debugging
+                                            \Log::info('EXTENDIENDO RESERVAS - Pasando hora al frontend', [
+                                                'trip_id' => $tripId,
+                                                'session_id' => $sessionId,
+                                                'extended_count' => $extendedCount,
+                                                'new_expiration_time' => $newExpirationTime->toISOString(),
+                                                'selected_seats' => $selectedSeats
+                                            ]);
+                                            
+                                            // Notificar extensión
+                                            Notification::make()
+                                                ->title('Reservas extendidas')
+                                                ->icon('heroicon-m-arrow-path')
+                                                ->body('Sus reservas han sido extendidas por 5 minutos adicionales.')
+                                                ->success()
+                                                ->duration(3000)
+                                                ->send();
+                                            
+                                            // Agregar la nueva hora de expiración al viewData
+                                            return [
+                                                'trip_id' => $tripId,
+                                                'trip' => $trip,
+                                                'seat_ids' => $selectedSeats,
+                                                'passengers_count' => $requiredSeats,
+                                                'fieldId' => 'seat_ids',
+                                                'session_id' => $sessionId,
+                                                'enable_reservation' => true,
+                                                'reservation_timeout' => 5,
+                                                'reservation_expires_at' => $newExpirationTime->toISOString(), // Pasar nueva hora al frontend
+                                            ];
+                                        }
+                                    }
+                                }
 
                                 return [
                                     'trip_id' => $tripId,
@@ -1341,9 +1467,9 @@ class TicketForm
                                     'seat_ids' => $selectedSeats,
                                     'passengers_count' => $requiredSeats,
                                     'fieldId' => 'seat_ids',
-                                    'session_id' => session()->getId(),
+                                    'session_id' => $sessionId,
                                     'enable_reservation' => true,
-                                    'reservation_timeout' => 10,
+                                    'reservation_timeout' => 5,
                                 ];
                             })
                             ->visible(
@@ -1356,15 +1482,8 @@ class TicketForm
                 Step::make('Asientos (Vuelta)')
                     ->visible(fn(Get $get) => $get('is_round_trip'))
                     ->beforeValidation(function (Get $get, Set $set) {
-                        // Limpiar reservas expiradas y liberar reservas anteriores de vuelta al entrar
+                        // Solo limpiar reservas expiradas
                         SeatReservation::cleanupExpired();
-                        $sessionId = session()->getId();
-                        $returnTripId = $get('return_trip_id');
-                        if ($returnTripId) {
-                            SeatReservation::where('user_session_id', $sessionId)
-                                ->where('trip_id', $returnTripId)
-                                ->delete();
-                        }
                     })
                     ->afterValidation(function (Get $get) {
                         $required = (int) $get('passengers_count');
@@ -1393,8 +1512,26 @@ class TicketForm
                         if ($returnTripId) {
                             $returnTrip = Trip::find($returnTripId);
                             if ($returnTrip) {
-                                // Obtener asientos realmente disponibles de vuelta
-                                $availableSeatIds = $returnTrip->availableSeats()->pluck('id')->toArray();
+                                $sessionId = session()->getId();
+                                
+                                // Obtener asientos realmente disponibles de vuelta (excluyendo ocupados y reservas de otros)
+                                $occupiedSeatIds = \App\Models\Ticket::where('trip_id', $returnTripId)
+                                    ->whereNotNull('seat_id')
+                                    ->pluck('seat_id')
+                                    ->toArray();
+                                    
+                                $reservedByOthersSeatIds = \App\Models\SeatReservation::where('trip_id', $returnTripId)
+                                    ->where('expires_at', '>', now())
+                                    ->where('user_session_id', '!=', $sessionId)
+                                    ->pluck('seat_id')
+                                    ->toArray();
+                                
+                                $unavailableSeatIds = array_merge($occupiedSeatIds, $reservedByOthersSeatIds);
+                                $availableSeatIds = \App\Models\Seat::where('bus_id', $returnTrip->bus_id)
+                                    ->where('is_active', true)
+                                    ->whereNotIn('id', $unavailableSeatIds)
+                                    ->pluck('id')
+                                    ->toArray();
 
                                 // Filtrar solo los asientos seleccionados que aún están disponibles
                                 $validSelectedSeats = array_intersect($selected, $availableSeatIds);
@@ -1475,10 +1612,13 @@ class TicketForm
                         ViewField::make('return_seat_selector')
                             ->label('Seleccione los asientos de vuelta')
                             ->view('tickets.seat-selector')
-                            ->viewData(function (Get $get) {
+                            ->viewData(function (Get $get, Set $set) {
                                 $tripId = $get('return_trip_id');
                                 $trip = $tripId ? Trip::find($tripId) : null;
                                 $selectedSeats = $get('return_seat_ids') ?? [];
+
+                                // Limpiar reservas expiradas de TODOS los usuarios siempre al entrar
+                                SeatReservation::cleanupExpired();
 
                                 // Asegurar que sea un array
                                 if (!is_array($selectedSeats)) {
@@ -1490,6 +1630,101 @@ class TicketForm
                                 }
 
                                 $requiredSeats = (int) $get('passengers_count');
+                                $sessionId = session()->getId();
+
+                                // Verificar estado de las reservas existentes al cargar la vista
+                                if ($tripId && !empty($selectedSeats)) {
+                                    // Limpiar reservas expiradas primero
+                                    SeatReservation::cleanupExpired();
+                                    
+                                    $expiredSeats = [];
+                                    $validSeats = [];
+                                    
+                                    foreach ($selectedSeats as $seatId) {
+                                        $isReserved = SeatReservation::isSeatReserved($tripId, $seatId);
+                                        $isOccupied = \App\Models\Ticket::where('trip_id', $tripId)
+                                            ->where('seat_id', $seatId)
+                                            ->exists();
+                                        
+                                        if (!$isReserved && !$isOccupied) {
+                                            // El asiento expiró o fue tomado por otro
+                                            $expiredSeats[] = $seatId;
+                                        } else {
+                                            // El asiento sigue reservado por esta sesión
+                                            $validSeats[] = $seatId;
+                                        }
+                                    }
+                                    
+                                    // Si hay asientos expirados
+                                    if (!empty($expiredSeats)) {
+                                        // Obtener números de asiento para notificación
+                                        $expiredSeatNumbers = [];
+                                        foreach ($expiredSeats as $seatId) {
+                                            $seat = \App\Models\Seat::find($seatId);
+                                            if ($seat) {
+                                                $expiredSeatNumbers[] = $seat->seat_number;
+                                            }
+                                        }
+                                        
+                                        // Notificar al usuario
+                                        Notification::make()
+                                            ->title('Asientos de vuelta expirados')
+                                            ->icon('heroicon-m-clock')
+                                            ->body('Los siguientes asientos de vuelta expiraron: ' . implode(', ', $expiredSeatNumbers) . '. Por favor, selecciónelos nuevamente.')
+                                            ->persistent()
+                                            ->warning()
+                                            ->send();
+                                        
+                                        // Limpiar datos de pasos posteriores
+                                        $set('return_passenger_data', []);
+                                        
+                                        // Actualizar selección solo con asientos válidos
+                                        $set('return_seat_ids', $validSeats);
+                                        $selectedSeats = $validSeats; // Actualizar variable local
+                                    } elseif (!empty($validSeats)) {
+                                        // Extender tiempo de las reservas válidas para este viaje de vuelta específico
+                                        $extendedCount = SeatReservation::where('user_session_id', $sessionId)
+                                            ->where('trip_id', $tripId)
+                                            ->where('expires_at', '>', now())
+                                            ->update(['expires_at' => now()->addMinutes(5)]);
+                                        
+                                        if ($extendedCount > 0) {
+                                            // Obtener la nueva hora de expiración para pasarla al frontend
+                                            $newExpirationTime = now()->addMinutes(5);
+                                            
+                                            // Log para debugging
+                                            \Log::info('EXTENDIENDO RESERVAS VUELTA - Pasando hora al frontend', [
+                                                'trip_id' => $tripId,
+                                                'session_id' => $sessionId,
+                                                'extended_count' => $extendedCount,
+                                                'new_expiration_time' => $newExpirationTime->toISOString(),
+                                                'selected_seats' => $selectedSeats
+                                            ]);
+                                            
+                                            // Notificar extensión
+                                            Notification::make()
+                                                ->title('Reservas de vuelta extendidas')
+                                                ->icon('heroicon-m-arrow-path')
+                                                ->body('Sus reservas de vuelta han sido extendidas por 5 minutos adicionales.')
+                                                ->success()
+                                                ->duration(3000)
+                                                ->send();
+                                            
+                                            // Agregar la nueva hora de expiración al viewData
+                                            return [
+                                                'trip_id' => $tripId,
+                                                'trip' => $trip,
+                                                'seat_ids' => $selectedSeats,
+                                                'passengers_count' => $requiredSeats,
+                                                'fieldId' => 'return_seat_ids',
+                                                'session_id' => $sessionId,
+                                                'enable_reservation' => true,
+                                                'reservation_timeout' => 5,
+                                                'reservation_expires_at' => $newExpirationTime->toISOString(), // Pasar nueva hora al frontend
+                                            ];
+                                        }
+                                    }
+                                }
 
                                 return [
                                     'trip_id' => $tripId,
@@ -1497,9 +1732,9 @@ class TicketForm
                                     'seat_ids' => $selectedSeats,
                                     'passengers_count' => $requiredSeats,
                                     'fieldId' => 'return_seat_ids',
-                                    'session_id' => session()->getId(),
+                                    'session_id' => $sessionId,
                                     'enable_reservation' => true,
-                                    'reservation_timeout' => 10,
+                                    'reservation_timeout' => 5,
                                 ];
                             })
                             ->visible(

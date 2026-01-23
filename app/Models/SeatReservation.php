@@ -23,7 +23,7 @@ class SeatReservation extends Model
     /**
      * Reservar múltiples asientos para un viaje
      */
-    public static function reserveSeats(int $tripId, array $seatIds, string $sessionId, int $minutes = 10): array
+    public static function reserveSeats(int $tripId, array $seatIds, string $sessionId, int $minutes = 5): array
     {
         $expiresAt = now()->addMinutes($minutes);
         $reservations = [];
@@ -64,7 +64,13 @@ class SeatReservation extends Model
      */
     public static function cleanupExpired(): int
     {
-        return static::where('expires_at', '<', now())->delete();
+        $deletedCount = static::where('expires_at', '<', now())->delete();
+        
+        if ($deletedCount > 0) {
+            \Log::info("CleanupExpired: Eliminadas {$deletedCount} reservas expiradas de todos los usuarios");
+        }
+        
+        return $deletedCount;
     }
 
     /**

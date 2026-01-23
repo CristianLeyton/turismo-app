@@ -966,4 +966,18 @@ class CreateTicket extends CreateRecord
                 ->send();
         }
     }
+
+    /**
+     * Método llamado desde el frontend cuando una reserva expira
+     */
+    public function notifyReservationExpired(): void
+    {
+        Notification::make()
+            ->title('Asientos expirados')
+            ->icon('heroicon-m-clock')
+            ->body('Los asientos han sido liberados. Por favor, seleccionalos nuevamente si aún los necesitas.')
+            ->persistent()
+            ->warning()
+            ->send();
+    }
 }

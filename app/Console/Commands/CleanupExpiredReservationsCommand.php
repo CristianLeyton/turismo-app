@@ -26,13 +26,21 @@ class CleanupExpiredReservationsCommand extends Command
      */
     public function handle(): int
     {
-        $this->info('Dispatching cleanup job for expired reservations...');
+        $this->info('Cleaning up expired reservations...');
         
-        // Dispatch the job to handle the cleanup
-        CleanupExpiredReservationsJob::dispatch();
-        
-        $this->info('Cleanup job dispatched successfully!');
-        
-        return Command::SUCCESS;
+        try {
+            $deletedCount = \App\Models\SeatReservation::cleanupExpired();
+            
+            if ($deletedCount > 0) {
+                $this->info("Successfully deleted {$deletedCount} expired reservations");
+            } else {
+                $this->info('No expired reservations found');
+            }
+            
+            return Command::SUCCESS;
+        } catch (\Exception $e) {
+            $this->error('Error cleaning up expired reservations: ' . $e->getMessage());
+            return Command::FAILURE;
+        }
     }
 }

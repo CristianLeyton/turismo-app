@@ -96,6 +96,18 @@ class SeatReservation extends Model
     }
 
     /**
+     * Verificar si un asiento está reservado por la sesión actual
+     */
+    public static function isSeatReservedBySession(int $tripId, int $seatId, string $sessionId): bool
+    {
+        return static::where('trip_id', $tripId)
+            ->where('seat_id', $seatId)
+            ->where('user_session_id', $sessionId)
+            ->where('expires_at', '>', now())
+            ->exists();
+    }
+
+    /**
      * Verificar si un asiento está reservado
      */
     public static function isSeatReserved(int $tripId, int $seatId): bool

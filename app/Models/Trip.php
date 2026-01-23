@@ -110,7 +110,27 @@ class Trip extends Model
             }
 
             $failedSeats = [];
-            $availableSeats = $lockedTrip->availableSeats()->pluck('id')->toArray();
+            
+            // Obtener asientos realmente disponibles (excluyendo ocupados y reservas de otros)
+            $sessionId = session()->getId();
+            
+            $occupiedSeatIds = \App\Models\Ticket::where('trip_id', $this->id)
+                ->whereNotNull('seat_id')
+                ->pluck('seat_id')
+                ->toArray();
+                
+            $reservedByOthersSeatIds = \App\Models\SeatReservation::where('trip_id', $this->id)
+                ->where('expires_at', '>', now())
+                ->where('user_session_id', '!=', $sessionId)
+                ->pluck('seat_id')
+                ->toArray();
+            
+            $unavailableSeatIds = array_merge($occupiedSeatIds, $reservedByOthersSeatIds);
+            $availableSeats = \App\Models\Seat::where('bus_id', $lockedTrip->bus_id)
+                ->where('is_active', true)
+                ->whereNotIn('id', $unavailableSeatIds)
+                ->pluck('id')
+                ->toArray();
 
             foreach ($seatIds as $seatId) {
                 if (!in_array($seatId, $availableSeats)) {
@@ -145,13 +165,30 @@ class Trip extends Model
             foreach ($ticketsData as $index => $ticketData) {
                 try {
                     // Verificar que el asiento esté disponible antes de crear
-                    if (isset($ticketData['seat_id']) && !$this->canAssignSeat($ticketData['seat_id'])) {
-                        $failedTickets[] = [
-                            'index' => $index,
-                            'seat_id' => $ticketData['seat_id'],
-                            'error' => 'Asiento ya no disponible'
-                        ];
-                        continue;
+                    if (isset($ticketData['seat_id'])) {
+                        $sessionId = session()->getId();
+                        
+                        $occupiedSeatIds = \App\Models\Ticket::where('trip_id', $this->id)
+                            ->whereNotNull('seat_id')
+                            ->pluck('seat_id')
+                            ->toArray();
+                            
+                        $reservedByOthersSeatIds = \App\Models\SeatReservation::where('trip_id', $this->id)
+                            ->where('expires_at', '>', now())
+                            ->where('user_session_id', '!=', $sessionId)
+                            ->pluck('seat_id')
+                            ->toArray();
+                        
+                        $unavailableSeatIds = array_merge($occupiedSeatIds, $reservedByOthersSeatIds);
+                        
+                        if (in_array($ticketData['seat_id'], $unavailableSeatIds)) {
+                            $failedTickets[] = [
+                                'index' => $index,
+                                'seat_id' => $ticketData['seat_id'],
+                                'error' => 'Asiento ya no disponible'
+                            ];
+                            continue;
+                        }
                     }
 
                     $ticket = $this->tickets()->create($ticketData);

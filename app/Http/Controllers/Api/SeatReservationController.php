@@ -34,8 +34,8 @@ class SeatReservationController extends Controller
             $seatIds = $request->input('seat_ids');
             $sessionId = $request->input('session_id');
 
-            // Limpiar reservas expiradas primero
-            SeatReservation::cleanupExpired();
+            // No limpiar reservas expiradas aquí para evitar eliminar reservas recién creadas
+            // SeatReservation::cleanupExpired();
 
             // Si no hay asientos seleccionados, liberar todos los de esta sesión para este viaje
             if (empty($seatIds)) {
@@ -75,8 +75,24 @@ class SeatReservationController extends Controller
                 ], 404);
             }
 
-            // Verificar disponibilidad actual de asientos
-            $availableSeats = $trip->availableSeats()->pluck('id')->toArray();
+            // Verificar disponibilidad actual de asientos (excluyendo solo reservas de otros)
+            $occupiedSeatIds = \App\Models\Ticket::where('trip_id', $tripId)
+                ->whereNotNull('seat_id')
+                ->pluck('seat_id')
+                ->toArray();
+                
+            $reservedByOthersSeatIds = \App\Models\SeatReservation::where('trip_id', $tripId)
+                ->where('expires_at', '>', now())
+                ->where('user_session_id', '!=', $sessionId)
+                ->pluck('seat_id')
+                ->toArray();
+            
+            $unavailableSeatIds = array_merge($occupiedSeatIds, $reservedByOthersSeatIds);
+            $availableSeats = \App\Models\Seat::where('bus_id', $trip->bus_id)
+                ->where('is_active', true)
+                ->whereNotIn('id', $unavailableSeatIds)
+                ->pluck('id')
+                ->toArray();
             $invalidSeats = array_diff($seatIds, $availableSeats);
 
             if (!empty($invalidSeats)) {
@@ -189,8 +205,8 @@ class SeatReservationController extends Controller
         $sessionId = $request->input('session_id');
         $tripId = $request->input('trip_id');
 
-        // Limpiar reservas expiradas
-        SeatReservation::cleanupExpired();
+        // No limpiar reservas expiradas aquí para evitar eliminar reservas recién creadas
+        // SeatReservation::cleanupExpired();
 
         // Obtener reservas activas de esta sesión para este viaje
         $reservedSeats = SeatReservation::getReservedSeatsBySession($sessionId, $tripId);

@@ -28,6 +28,24 @@ class CreateTicket extends CreateRecord
     protected ?string $heading = 'Vender boleto';
     protected static ?string $breadcrumb = 'Vender';
 
+    /**
+     * Limpiar reservaciones cuando el componente se destruye (navegación fuera)
+     * Solo se ejecuta si el usuario confirma salir con unsavedChangesAlerts()
+     */
+    public function __destruct()
+    {
+        try {
+            // Solo limpiar si no estamos en una solicitud AJAX/Livewire normal
+            // Esto evita limpiar al cambiar entre pasos del wizard
+            if (!request()->ajax() && !request()->hasHeader('X-Livewire')) {
+                $sessionId = session()->getId();
+                \App\Models\SeatReservation::where('user_session_id', $sessionId)->delete();
+            }
+        } catch (\Exception $e) {
+            // Ignorar errores en la destrucción del componente
+        }
+    }
+
     protected static bool $canCreateAnother = false;
 
     public array $seat_ids = [];
@@ -47,7 +65,14 @@ class CreateTicket extends CreateRecord
             ->requiresConfirmation()
             ->modalHeading('Los cambios se perderán')
             ->modalDescription('¿Desea continuar?')
-            ->action(fn() => $this->redirect(url('/admin')))
+            ->action(function() {
+                // Limpiar todas las reservaciones de esta sesión al cancelar
+                $sessionId = session()->getId();
+                \App\Models\SeatReservation::where('user_session_id', $sessionId)->delete();
+                
+                // Redirigir al admin
+                $this->redirect(url('/admin'));
+            })
             ->modalCancelAction(
                 fn(Action $action) =>
                 $action
@@ -150,6 +175,11 @@ class CreateTicket extends CreateRecord
 
                         // Cancelar la creación del registro
                         $this->halt();
+                        
+                        // Limpiar reservaciones de esta sesión
+                        $sessionId = session()->getId();
+                        \App\Models\SeatReservation::where('user_session_id', $sessionId)->delete();
+                        
                         return $data;
                     }
                 }
@@ -202,6 +232,11 @@ class CreateTicket extends CreateRecord
 
                         // Cancelar la creación del registro
                         $this->halt();
+                        
+                        // Limpiar reservaciones de esta sesión
+                        $sessionId = session()->getId();
+                        \App\Models\SeatReservation::where('user_session_id', $sessionId)->delete();
+                        
                         return $data;
                     }
                 }
@@ -414,11 +449,19 @@ class CreateTicket extends CreateRecord
             // 6. Recalcular el total de la venta
             $sale->recalculateTotal();
 
-            // 7. Generar y descargar PDFs automáticamente
+            // 7. Limpiar todas las reservaciones de esta sesión (venta completada exitosamente)
+            $sessionId = session()->getId();
+            \App\Models\SeatReservation::where('user_session_id', $sessionId)->delete();
+
+            // 8. Generar y descargar PDFs automáticamente
             $this->generateAndDownloadTickets($sale);
 
             return $result['tickets']->first();
         } catch (\Exception $e) {
+            // Limpiar reservaciones de esta sesión en caso de error
+            $sessionId = session()->getId();
+            \App\Models\SeatReservation::where('user_session_id', $sessionId)->delete();
+            
             // Manejar errores y mostrar notificación adecuada
             Notification::make()
                 ->icon('heroicon-m-x-circle')

@@ -1427,14 +1427,14 @@ class TicketForm
                                             // Obtener la nueva hora de expiración para pasarla al frontend
                                             $newExpirationTime = now()->addMinutes(5);
                                             
-                                            // Notificar extensión
+/*                                             // Notificar extensión
                                             Notification::make()
                                                 ->title('Reservas extendidas')
                                                 ->icon('heroicon-m-arrow-path')
                                                 ->body('Sus reservas han sido extendidas por 5 minutos adicionales.')
                                                 ->success()
                                                 ->duration(3000)
-                                                ->send();
+                                                ->send(); */
                                             
                                             // Agregar la nueva hora de expiración al viewData
                                             return [
@@ -1684,13 +1684,13 @@ class TicketForm
                                             $newExpirationTime = now()->addMinutes(5);
                                             
                                             // Notificar extensión
-                                            Notification::make()
+/*                                             Notification::make()
                                                 ->title('Reservas de vuelta extendidas')
                                                 ->icon('heroicon-m-arrow-path')
                                                 ->body('Sus reservas de vuelta han sido extendidas por 5 minutos adicionales.')
                                                 ->success()
                                                 ->duration(3000)
-                                                ->send();
+                                                ->send(); */
                                             
                                             // Agregar la nueva hora de expiración al viewData
                                             return [

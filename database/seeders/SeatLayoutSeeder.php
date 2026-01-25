@@ -77,7 +77,7 @@ class SeatLayoutSeeder extends Seeder
 
     /**
      * Layout específico para primer piso del primer colectivo
-     * Basado exactamente en la imagen: asientos 49-60 con BAÑO y pasillos blancos
+     * Según especificación: B B P E, 1 2 P 3, 4 5 P 6, 7 8 P 9
      */
     private function assignFloor1Layout(Bus $bus): void
     {
@@ -88,51 +88,34 @@ class SeatLayoutSeeder extends Seeder
             return;
         }
 
-        // Layout según la imagen:
-        // Fila 1: BAÑO (columnas 0-1), pasillo (col 2), pasillo (col 3)
-        // Fila 2: Asiento 49 (col 0), Asiento 50 (col 1), pasillo (col 2), Asiento 51 (col 3)
-        // Fila 3: Asiento 52 (col 0), Asiento 53 (col 1), pasillo (col 2), Asiento 54 (col 3)
-        // Fila 4: Asiento 55 (col 0), Asiento 56 (col 1), pasillo (col 2), Asiento 57 (col 3)
-        // Fila 5: Asiento 58 (col 0), Asiento 59 (col 1), pasillo (col 2), Asiento 60 (col 3)
+        // Layout según especificación textual:
+        // Fila 1: B B P E (BAÑO en columnas 0-1, Pasillo en 2, Espacio vacío en 3)
+        // Fila 2: 1 2 P 3
+        // Fila 3: 4 5 P 6
+        // Fila 4: 7 8 P 9
 
         $floor1Layout = [
-            // Fila 2 (row 2 en el grid, pero row 1 es BAÑO)
-            49 => ['row' => 2, 'column' => 0],
-            50 => ['row' => 2, 'column' => 1],
-            51 => ['row' => 2, 'column' => 3],
+            // Fila 2: 1 2 P 3
+            1 => ['row' => 2, 'column' => 0],
+            2 => ['row' => 2, 'column' => 1],
+            3 => ['row' => 2, 'column' => 3],
 
-            // Fila 3
-            52 => ['row' => 3, 'column' => 0],
-            53 => ['row' => 3, 'column' => 1],
-            54 => ['row' => 3, 'column' => 3],
+            // Fila 3: 4 5 P 6
+            4 => ['row' => 3, 'column' => 0],
+            5 => ['row' => 3, 'column' => 1],
+            6 => ['row' => 3, 'column' => 3],
 
-            // Fila 4
-            55 => ['row' => 4, 'column' => 0],
-            56 => ['row' => 4, 'column' => 1],
-            57 => ['row' => 4, 'column' => 3],
-
-            // Fila 5
-            58 => ['row' => 5, 'column' => 0],
-            59 => ['row' => 5, 'column' => 1],
-            60 => ['row' => 5, 'column' => 3],
+            // Fila 4: 7 8 P 9
+            7 => ['row' => 4, 'column' => 0],
+            8 => ['row' => 4, 'column' => 1],
+            9 => ['row' => 4, 'column' => 3],
         ];
 
-        // Obtener asientos del primer piso (si los asientos 49-60 están en piso 1)
-        // Si están en piso 2, necesitaremos ajustar el SeatSeeder primero
         $seatsOnFloor = Seat::where('bus_id', $bus->id)
             ->where('floor', '1')
             ->where('is_active', true)
             ->get()
             ->keyBy('seat_number');
-
-        // Si los asientos 49-60 no están en el piso 1, buscarlos en el piso 2
-        if (!$seatsOnFloor->has(49)) {
-            $seatsOnFloor = Seat::where('bus_id', $bus->id)
-                ->where('floor', '2')
-                ->where('is_active', true)
-                ->get()
-                ->keyBy('seat_number');
-        }
 
         foreach ($floor1Layout as $seatNumber => $layout) {
             if (isset($seatsOnFloor[$seatNumber])) {
@@ -148,12 +131,12 @@ class SeatLayoutSeeder extends Seeder
             }
         }
 
-        $this->command->info("  - Piso 1 (Bus {$bus->id}): " . count($floor1Layout) . " asientos organizados según layout específico con pasillos");
+        $this->command->info("  - Piso 1 (Bus {$bus->id}): " . count($floor1Layout) . " asientos organizados según layout específico");
     }
 
     /**
      * Layout específico para segundo piso del primer colectivo
-     * Basado exactamente en la imagen: 48 asientos (1-48) con pasillo central y CAFETERA
+     * Según especificación: 10 11 P 12 13, 14 15 P E E, etc.
      */
     private function assignFloor2Layout(Bus $bus): void
     {
@@ -164,86 +147,82 @@ class SeatLayoutSeeder extends Seeder
             return;
         }
 
-        // Layout según la imagen:
-        // 13 filas, 5 columnas (columns 0-4)
-        // Columna 2 siempre es pasillo blanco
-        // CAFETERA en filas 2-3, columnas 3-4 (bloque 2x2)
-        // Asientos 1-48 distribuidos en las filas
+        // Layout según especificación textual:
+        // 5 columnas (0-4), columna 2 es pasillo (P)
+        // P = Pasillo, E = Espacio en blanco, C = Cafetería
 
         $floor2Layout = [
-            // Fila 1 (row 1)
-            1 => ['row' => 1, 'column' => 0],
-            2 => ['row' => 1, 'column' => 1],
-            3 => ['row' => 1, 'column' => 3],
-            4 => ['row' => 1, 'column' => 4],
+            // Fila 1: 10 11 P 12 13
+            10 => ['row' => 1, 'column' => 0],
+            11 => ['row' => 1, 'column' => 1],
+            12 => ['row' => 1, 'column' => 3],
+            13 => ['row' => 1, 'column' => 4],
 
-            // Fila 2 (row 2) - CAFETERA ocupa columnas 3-4, solo asientos 5-6 en columnas 0-1
-            5 => ['row' => 2, 'column' => 0],
-            6 => ['row' => 2, 'column' => 1],
+            // Fila 2: 14 15 P E E
+            14 => ['row' => 2, 'column' => 0],
+            15 => ['row' => 2, 'column' => 1],
 
-            // Fila 3 (row 3) - CAFETERA ocupa columnas 3-4, solo asientos 7-8 en columnas 0-1
-            7 => ['row' => 3, 'column' => 0],
-            8 => ['row' => 3, 'column' => 1],
+            // Fila 3: 16 17 P E E
+            16 => ['row' => 3, 'column' => 0],
+            17 => ['row' => 3, 'column' => 1],
 
-            // Fila 4 (row 4) - Continúa después de CAFETERA
-            9 => ['row' => 4, 'column' => 0],
-            10 => ['row' => 4, 'column' => 1],
-            11 => ['row' => 4, 'column' => 3],
-            12 => ['row' => 4, 'column' => 4],
+            // Fila 4: 18 19 P C C
+            18 => ['row' => 4, 'column' => 0],
+            19 => ['row' => 4, 'column' => 1],
 
-            // Fila 5 (row 5)
-            13 => ['row' => 5, 'column' => 0],
-            14 => ['row' => 5, 'column' => 1],
-            15 => ['row' => 5, 'column' => 3],
-            16 => ['row' => 5, 'column' => 4],
+            // Fila 5: 20 21 P 24 25
+            20 => ['row' => 5, 'column' => 0],
+            21 => ['row' => 5, 'column' => 1],
+            24 => ['row' => 5, 'column' => 3],
+            25 => ['row' => 5, 'column' => 4],
 
-            // Fila 6 (row 6)
-            17 => ['row' => 6, 'column' => 0],
-            18 => ['row' => 6, 'column' => 1],
-            19 => ['row' => 6, 'column' => 3],
-            20 => ['row' => 6, 'column' => 4],
+            // Fila 6: 22 23 P 28 29
+            22 => ['row' => 6, 'column' => 0],
+            23 => ['row' => 6, 'column' => 1],
+            28 => ['row' => 6, 'column' => 3],
+            29 => ['row' => 6, 'column' => 4],
 
-            // Fila 7 (row 7)
-            21 => ['row' => 7, 'column' => 0],
-            22 => ['row' => 7, 'column' => 1],
-            23 => ['row' => 7, 'column' => 3],
-            24 => ['row' => 7, 'column' => 4],
+            // Fila 7: 26 27 P 32 33
+            26 => ['row' => 7, 'column' => 0],
+            27 => ['row' => 7, 'column' => 1],
+            32 => ['row' => 7, 'column' => 3],
+            33 => ['row' => 7, 'column' => 4],
 
-            // Fila 8 (row 8)
-            25 => ['row' => 8, 'column' => 0],
-            26 => ['row' => 8, 'column' => 1],
-            27 => ['row' => 8, 'column' => 3],
-            28 => ['row' => 8, 'column' => 4],
+            // Fila 8: 30 31 P 36 37
+            30 => ['row' => 8, 'column' => 0],
+            31 => ['row' => 8, 'column' => 1],
+            36 => ['row' => 8, 'column' => 3],
+            37 => ['row' => 8, 'column' => 4],
 
-            // Fila 9 (row 9)
-            29 => ['row' => 9, 'column' => 0],
-            30 => ['row' => 9, 'column' => 1],
-            31 => ['row' => 9, 'column' => 3],
-            32 => ['row' => 9, 'column' => 4],
+            // Fila 9: 34 35 P 40 41
+            34 => ['row' => 9, 'column' => 0],
+            35 => ['row' => 9, 'column' => 1],
+            40 => ['row' => 9, 'column' => 3],
+            41 => ['row' => 9, 'column' => 4],
 
-            // Fila 10 (row 10)
-            33 => ['row' => 10, 'column' => 0],
-            34 => ['row' => 10, 'column' => 1],
-            35 => ['row' => 10, 'column' => 3],
-            36 => ['row' => 10, 'column' => 4],
+            // Fila 10: 38 39 P 44 45
+            38 => ['row' => 10, 'column' => 0],
+            39 => ['row' => 10, 'column' => 1],
+            44 => ['row' => 10, 'column' => 3],
+            45 => ['row' => 10, 'column' => 4],
 
-            // Fila 11 (row 11)
-            37 => ['row' => 11, 'column' => 0],
-            38 => ['row' => 11, 'column' => 1],
-            39 => ['row' => 11, 'column' => 3],
-            40 => ['row' => 11, 'column' => 4],
+            // Fila 11: 42 43 P 48 49
+            42 => ['row' => 11, 'column' => 0],
+            43 => ['row' => 11, 'column' => 1],
+            48 => ['row' => 11, 'column' => 3],
+            49 => ['row' => 11, 'column' => 4],
 
-            // Fila 12 (row 12)
-            41 => ['row' => 12, 'column' => 0],
-            42 => ['row' => 12, 'column' => 1],
-            43 => ['row' => 12, 'column' => 3],
-            44 => ['row' => 12, 'column' => 4],
+            // Fila 12: 46 47 P 52 53
+            46 => ['row' => 12, 'column' => 0],
+            47 => ['row' => 12, 'column' => 1],
+            52 => ['row' => 12, 'column' => 3],
+            53 => ['row' => 12, 'column' => 4],
 
-            // Fila 13 (row 13)
-            45 => ['row' => 13, 'column' => 0],
-            46 => ['row' => 13, 'column' => 1],
-            47 => ['row' => 13, 'column' => 3],
-            48 => ['row' => 13, 'column' => 4],
+            // Fila 13: 50 51 P 54 55
+            50 => ['row' => 13, 'column' => 0],
+            51 => ['row' => 13, 'column' => 1],
+            54 => ['row' => 13, 'column' => 3],
+            55 => ['row' => 13, 'column' => 4],
         ];
 
         $seatsOnFloor = Seat::where('bus_id', $bus->id)
@@ -266,7 +245,7 @@ class SeatLayoutSeeder extends Seeder
             }
         }
 
-        $this->command->info("  - Piso 2 (Bus {$bus->id}): " . count($floor2Layout) . " asientos organizados según layout específico con pasillo y CAFETERA");
+        $this->command->info("  - Piso 2 (Bus {$bus->id}): " . count($floor2Layout) . " asientos organizados según layout específico");
     }
 
     /**
@@ -308,7 +287,7 @@ class SeatLayoutSeeder extends Seeder
 
     /**
      * Crear áreas especiales (cafetera, baño, pasillos, etc.) para un bus
-     * Basado exactamente en el layout de la imagen proporcionada
+     * Según especificación exacta del usuario
      */
     private function createSpecialAreas(Bus $bus): void
     {
@@ -319,7 +298,8 @@ class SeatLayoutSeeder extends Seeder
 
         // Layout especial solo para el primer colectivo (bus_id = 1)
         if ($bus->id == 1 && $floors >= 1) {
-            // BAÑO en la fila 1, columnas 0-1 (ocupa 2 columnas)
+            // PRIMER PISO: B B P E
+            // BAÑO en fila 1, columnas 0-1
             BusLayoutArea::create([
                 'bus_id' => $bus->id,
                 'floor' => '1',
@@ -333,37 +313,8 @@ class SeatLayoutSeeder extends Seeder
                 'span_columns' => 2,
             ]);
 
-            // Pasillos blancos en la columna 2 (fila 1, y filas 2-5)
-            // Fila 1, columna 2: pasillo blanco
-            BusLayoutArea::create([
-                'bus_id' => $bus->id,
-                'floor' => '1',
-                'area_type' => 'pasillo',
-                'label' => '',
-                'row_start' => 1,
-                'row_end' => 1,
-                'column_start' => 2,
-                'column_end' => 2,
-                'span_rows' => 1,
-                'span_columns' => 1,
-            ]);
-
-            // Fila 1, columna 3: pasillo blanco
-            BusLayoutArea::create([
-                'bus_id' => $bus->id,
-                'floor' => '1',
-                'area_type' => 'pasillo',
-                'label' => '',
-                'row_start' => 1,
-                'row_end' => 1,
-                'column_start' => 3,
-                'column_end' => 3,
-                'span_rows' => 1,
-                'span_columns' => 1,
-            ]);
-
-            // Pasillos en columna 2 para filas 2-5
-            for ($row = 2; $row <= 5; $row++) {
+            // Pasillo en columna 2 para todas las filas (1-4)
+            for ($row = 1; $row <= 4; $row++) {
                 BusLayoutArea::create([
                     'bus_id' => $bus->id,
                     'floor' => '1',
@@ -378,7 +329,21 @@ class SeatLayoutSeeder extends Seeder
                 ]);
             }
 
-            $this->command->info("  - BAÑO y pasillos creados en piso 1 del primer colectivo");
+            // Espacio vacío en fila 1, columna 3 (E)
+            BusLayoutArea::create([
+                'bus_id' => $bus->id,
+                'floor' => '1',
+                'area_type' => 'vacio',
+                'label' => '',
+                'row_start' => 1,
+                'row_end' => 1,
+                'column_start' => 3,
+                'column_end' => 3,
+                'span_rows' => 1,
+                'span_columns' => 1,
+            ]);
+
+            $this->command->info("  - BAÑO, pasillo y espacio vacío creados en piso 1 del primer colectivo");
         } elseif ($floors >= 1) {
             // Para otros colectivos, mantener el layout anterior con CAFETERA
             BusLayoutArea::create([
@@ -397,23 +362,9 @@ class SeatLayoutSeeder extends Seeder
             $this->command->info("  - CAFETERA creada en piso 1 (filas 5-11, columnas 1-2)");
         }
 
-        // Segundo piso del primer colectivo
+        // SEGUNDO PISO del primer colectivo
         if ($floors >= 2 && $bus->id == 1) {
-            // CAFETERA en filas 3, columnas 3-4 (bloque 1x2)
-            BusLayoutArea::create([
-                'bus_id' => $bus->id,
-                'floor' => '2',
-                'area_type' => 'cafeteria',
-                'label' => 'CAFE',
-                'row_start' => 3,
-                'row_end' => 3,
-                'column_start' => 3,
-                'column_end' => 4,
-                'span_rows' => 1,
-                'span_columns' => 2,
-            ]);
-
-            // Pasillo blanco en columna 2 para todas las filas (1-13)
+            // Pasillo en columna 2 para todas las filas (1-13)
             for ($row = 1; $row <= 13; $row++) {
                 BusLayoutArea::create([
                     'bus_id' => $bus->id,
@@ -429,7 +380,51 @@ class SeatLayoutSeeder extends Seeder
                 ]);
             }
 
-            $this->command->info("  - CAFETERA y pasillos creados en piso 2 del primer colectivo");
+            // Espacios vacíos (E) en filas 2-3, columnas 3-4
+            // Fila 2: 14 15 P E E
+            BusLayoutArea::create([
+                'bus_id' => $bus->id,
+                'floor' => '2',
+                'area_type' => 'vacio',
+                'label' => '',
+                'row_start' => 2,
+                'row_end' => 2,
+                'column_start' => 3,
+                'column_end' => 4,
+                'span_rows' => 1,
+                'span_columns' => 2,
+            ]);
+
+            // Fila 3: 16 17 P E E
+            BusLayoutArea::create([
+                'bus_id' => $bus->id,
+                'floor' => '2',
+                'area_type' => 'vacio',
+                'label' => '',
+                'row_start' => 3,
+                'row_end' => 3,
+                'column_start' => 3,
+                'column_end' => 4,
+                'span_rows' => 1,
+                'span_columns' => 2,
+            ]);
+
+            // Cafetería (C) en fila 4, columnas 3-4
+            // Fila 4: 18 19 P C C
+            BusLayoutArea::create([
+                'bus_id' => $bus->id,
+                'floor' => '2',
+                'area_type' => 'cafeteria',
+                'label' => 'CAFE',
+                'row_start' => 4,
+                'row_end' => 4,
+                'column_start' => 3,
+                'column_end' => 4,
+                'span_rows' => 1,
+                'span_columns' => 2,
+            ]);
+
+            $this->command->info("  - Pasillo central, espacios vacíos y cafetería creados en piso 2 del primer colectivo");
         } elseif ($floors >= 2 && $bus->id != 1) {
             // BAÑO en el segundo piso para otros colectivos
             BusLayoutArea::create([

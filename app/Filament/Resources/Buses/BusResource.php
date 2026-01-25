@@ -58,8 +58,8 @@ class BusResource extends Resource
                     ->label('Cantidad de pisos')
                     ->required()
                     ->numeric()
-                    ->min(1)
-                    ->max(3)
+                    ->minValue(1)
+                    ->maxValue(3)
                     ->validationMessages([
                         'required' => 'El campo cantidad de pisos es obligatorio.',
                         'numeric' => 'El campo cantidad de pisos debe ser un número.',
@@ -70,9 +70,13 @@ class BusResource extends Resource
                     ->label('Cantidad de asientos')
                     ->required()
                     ->numeric()
+                    ->minValue(1)
+                    ->maxValue(100)
                     ->validationMessages([
                         'required' => 'El campo cantidad de asientos es obligatorio.',
                         'numeric' => 'El campo cantidad de asientos debe ser un número.',
+                        'min' => 'El colectivo debe tener al menos :min asientos.',
+                        'max' => 'El colectivo no debe tener más de :max asientos.',
                     ]),
             ]);
     }

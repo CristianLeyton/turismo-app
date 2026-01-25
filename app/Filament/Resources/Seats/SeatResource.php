@@ -32,6 +32,7 @@ use Filament\Tables\Filters\TrashedFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
+use Illuminate\Validation\Rule;
 use UnitEnum;
 
 class SeatResource extends Resource
@@ -60,10 +61,16 @@ class SeatResource extends Resource
                     ->required(),
                 TextInput::make('seat_number')
                     ->label('Número de asiento')
-                    ->unique(column: 'seat_number', ignoreRecord: true)
-                    ->required()
-                    ->numeric()
-                    ->minValue(1)
+                    ->rules(function (callable $get, $record) {
+                        return [
+                            'required',
+                            'numeric',
+                            'min:1',
+                            Rule::unique('seats', 'seat_number')
+                                ->where('bus_id', $get('bus_id'))
+                                ->ignore($record?->id),
+                        ];
+                    })
                     ->maxValue(function (Get $get) {
                         $busId = $get('bus_id');
                         if (! $busId) {

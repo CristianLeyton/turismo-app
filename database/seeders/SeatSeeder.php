@@ -14,14 +14,14 @@ class SeatSeeder extends Seeder
     {
         //
         for ($busId = 1; $busId <= 2; $busId++) {
-            $seatCount = $busId === 1 ? 60 : 50;
+            $seatCount = $busId === 1 ? 55 : 50;
 
             for ($i = 1; $i <= $seatCount; $i++) {
                 \App\Models\Seat::create([
                     'bus_id' => $busId,
                     'seat_number' => $i,
                     'is_active' => true,
-                    'floor' => $busId === 1 ? ($i <= 48 ? '2' : '1') : 1,
+                    'floor' => $busId === 1 ? ($i <= 9 ? '1' : '2') : 1,
                 ]);
             }
         }

@@ -18,7 +18,7 @@ class BusSeeder extends Seeder
         Bus::create([
             'name' => 'Expresso Sofia Turismo',
             'plate' => 'ABC123',
-            'seat_count' => 60,
+            'seat_count' => 55,
             'floors' => 2,
         ]);
 

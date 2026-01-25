@@ -75,7 +75,7 @@ class SeatReservationController extends Controller
                 ], 404);
             }
 
-            // Verificar disponibilidad actual de asientos (excluyendo solo reservas de otros)
+            // Verificar disponibilidad actual de cada asiento individualmente
             $occupiedSeatIds = \App\Models\Ticket::where('trip_id', $tripId)
                 ->whereNotNull('seat_id')
                 ->pluck('seat_id')
@@ -93,13 +93,35 @@ class SeatReservationController extends Controller
                 ->whereNotIn('id', $unavailableSeatIds)
                 ->pluck('id')
                 ->toArray();
+            
+            // Verificar cada asiento individualmente para dar mensajes específicos
             $invalidSeats = array_diff($seatIds, $availableSeats);
-
+            $occupiedSeats = array_intersect($seatIds, $occupiedSeatIds);
+            $reservedSeats = array_intersect($seatIds, $reservedByOthersSeatIds);
+            
             if (!empty($invalidSeats)) {
+                $message = 'Algunos asientos ya no están disponibles. ';
+                
+                if (!empty($occupiedSeats)) {
+                    $occupiedSeatNumbers = \App\Models\Seat::whereIn('id', $occupiedSeats)
+                        ->pluck('seat_number')
+                        ->toArray();
+                    $message .= 'Asientos vendidos: ' . implode(', ', $occupiedSeatNumbers) . '. ';
+                }
+                
+                if (!empty($reservedSeats)) {
+                    $reservedSeatNumbers = \App\Models\Seat::whereIn('id', $reservedSeats)
+                        ->pluck('seat_number')
+                        ->toArray();
+                    $message .= 'Los siguientes asientos están reservados por otros usuarios: ' . implode(', ', $reservedSeatNumbers);
+                }
+                
                 return response()->json([
                     'success' => false,
-                    'message' => 'Algunos asientos ya no están disponibles',
-                    'invalid_seats' => $invalidSeats
+                    'message' => trim($message),
+                    'invalid_seats' => $invalidSeats,
+                    'occupied_seats' => $occupiedSeats,
+                    'reserved_by_others' => $reservedSeats
                 ], 409);
             }
 

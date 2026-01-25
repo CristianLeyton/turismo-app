@@ -1407,23 +1407,32 @@ class TicketForm
                                     
                                     // Si hay asientos expirados
                                     if (!empty($expiredSeats)) {
-                                        // Obtener números de asiento para notificación
-                                        $expiredSeatNumbers = [];
-                                        foreach ($expiredSeats as $seatId) {
-                                            $seat = \App\Models\Seat::find($seatId);
-                                            if ($seat) {
-                                                $expiredSeatNumbers[] = $seat->seat_number;
-                                            }
-                                        }
+                                        // Verificar si se debe omitir la notificación (por conflicto)
+                                        $skipNotification = $get('skip_expiration_notification', false);
                                         
-                                        // Notificar al usuario
-                                        Notification::make()
-                                            ->title('Asientos expirados')
-                                            ->icon('heroicon-m-clock')
-                                            ->persistent()
-                                            ->body('Los siguientes asientos expiraron: ' . implode(', ', $expiredSeatNumbers) . '. Por favor, selecciónelos nuevamente.')
-                                            ->warning()
-                                            ->send();
+                                        // Limpiar la bandera después de usarla
+                                        $set('skip_expiration_notification', false);
+                                        
+                                        // Solo mostrar notificación si no es un conflicto
+                                        if (!$skipNotification) {
+                                            // Obtener números de asiento para notificación
+                                            $expiredSeatNumbers = [];
+                                            foreach ($expiredSeats as $seatId) {
+                                                $seat = \App\Models\Seat::find($seatId);
+                                                if ($seat) {
+                                                    $expiredSeatNumbers[] = $seat->seat_number;
+                                                }
+                                            }
+                                            
+                                            // Fue expiración real por tiempo
+                                            Notification::make()
+                                                ->title('Asientos expirados')
+                                                ->icon('heroicon-m-clock')
+                                                ->persistent()
+                                                ->body('Los siguientes asientos expiraron: ' . implode(', ', $expiredSeatNumbers) . '. Por favor, selecciónelos nuevamente.')
+                                                ->warning()
+                                                ->send();
+                                        }
                                         
                                         // Limpiar datos de pasos posteriores
                                         $set('passenger_data', []);
@@ -1665,23 +1674,32 @@ class TicketForm
                                     
                                     // Si hay asientos expirados
                                     if (!empty($expiredSeats)) {
-                                        // Obtener números de asiento para notificación
-                                        $expiredSeatNumbers = [];
-                                        foreach ($expiredSeats as $seatId) {
-                                            $seat = \App\Models\Seat::find($seatId);
-                                            if ($seat) {
-                                                $expiredSeatNumbers[] = $seat->seat_number;
-                                            }
-                                        }
+                                        // Verificar si se debe omitir la notificación (por conflicto)
+                                        $skipNotification = $get('skip_expiration_notification', false);
                                         
-                                        // Notificar al usuario
-                                        Notification::make()
-                                            ->title('Asientos de vuelta expirados')
-                                            ->icon('heroicon-m-clock')
-                                            ->body('Los siguientes asientos de vuelta expiraron: ' . implode(', ', $expiredSeatNumbers) . '. Por favor, selecciónelos nuevamente.')
-                                            ->persistent()
-                                            ->warning()
-                                            ->send();
+                                        // Limpiar la bandera después de usarla
+                                        $set('skip_expiration_notification', false);
+                                        
+                                        // Solo mostrar notificación si no es un conflicto
+                                        if (!$skipNotification) {
+                                            // Obtener números de asiento para notificación
+                                            $expiredSeatNumbers = [];
+                                            foreach ($expiredSeats as $seatId) {
+                                                $seat = \App\Models\Seat::find($seatId);
+                                                if ($seat) {
+                                                    $expiredSeatNumbers[] = $seat->seat_number;
+                                                }
+                                            }
+                                            
+                                            // Fue expiración real por tiempo
+                                            Notification::make()
+                                                ->title('Asientos de vuelta expirados')
+                                                ->icon('heroicon-m-clock')
+                                                ->body('Los siguientes asientos de vuelta expiraron: ' . implode(', ', $expiredSeatNumbers) . '. Por favor, selecciónelos nuevamente.')
+                                                ->persistent()
+                                                ->warning()
+                                                ->send();
+                                        }
                                         
                                         // Limpiar datos de pasos posteriores
                                         $set('return_passenger_data', []);
@@ -1762,20 +1780,24 @@ class TicketForm
                                             ->minLength(2)
                                             ->maxLength(80)
                                             ->required()
+                                            ->regex('/^[\pL\s]+$/u') // Permite letras con acentos y espacios
                                             ->validationMessages([
                                                 'required' => 'Debe ingresar un nombre.',
                                                 'min' => 'El nombre debe tener al menos :min caracteres.',
                                                 'max' => 'El nombre no puede tener más de :max caracteres.',
+                                                'regex' => 'El nombre solo puede contener letras y espacios.',
                                             ]),
                                         TextInput::make('last_name')
                                             ->label('Apellido')
                                             ->minLength(2)
                                             ->maxLength(80)
                                             ->required()
+                                            ->regex('/^[\pL\s]+$/u') // Permite letras con acentos y espacios
                                             ->validationMessages([
                                                 'required' => 'Debe ingresar un apellido.',
                                                 'min' => 'El apellido debe tener al menos :min caracteres.',
                                                 'maxLength' => 'El apellido no puede tener más de :max caracteres.',
+                                                'regex' => 'El apellido solo puede contener letras y espacios.',
                                             ]),
                                     ]),
 
@@ -1829,10 +1851,12 @@ class TicketForm
                                             ->required()
                                             ->minLength(2)
                                             ->maxLength(80)
+                                            ->regex('/^[\pL\s]+$/u') // Permite letras con acentos y espacios
                                             ->validationMessages([
                                                 'required' => 'Debe ingresar un nombre.',
                                                 'min' => 'El nombre debe tener al menos :min caracteres.',
                                                 'max' => 'El nombre no puede tener más de :max caracteres.',
+                                                'regex' => 'El nombre solo puede contener letras y espacios.',
                                             ]),
 
                                         TextInput::make('child_data.last_name')
@@ -1840,10 +1864,12 @@ class TicketForm
                                             ->required()
                                             ->minLength(2)
                                             ->maxLength(80)
+                                            ->regex('/^[\pL\s]+$/u') // Permite letras con acentos y espacios
                                             ->validationMessages([
                                                 'required' => 'Debe ingresar un apellido.',
                                                 'min' => 'El apellido debe tener al menos :min caracteres.',
                                                 'max' => 'El apellido no puede tener más de :max caracteres.',
+                                                'regex' => 'El apellido solo puede contener letras y espacios.',
                                             ]),
 
                                         TextInput::make('child_data.dni')

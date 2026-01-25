@@ -76,6 +76,15 @@
             this.reservationExpiresAt = null;
             this.timerText = null;
         });
+        
+        // Escuchar evento de refresco de asientos por conflictos
+        window.addEventListener('refresh-seats', () => {
+            // Forzar recarga del componente para actualizar estado de asientos
+            this.$nextTick(() => {
+                // Actualizar el estado de los asientos basados en los datos del formulario
+                this.syncReservationStatus();
+            });
+        });
     },
 
     destroy() {
@@ -276,6 +285,12 @@
         const isReserved = seat.reserved;
         const isOccupied = seat.occupied;
 
+        // Si el asiento está ocupado o reservado por otro, no permitir ninguna interacción
+        if ((isOccupied || isReserved) && !isCurrentlySelected) {
+            // No hacer nada - el botón ya está deshabilitado visualmente
+            return;
+        }
+
         if (isCurrentlySelected) {
             // Deseleccionar asiento
             this.selected = this.selected.filter(id => id !== seatId);
@@ -298,11 +313,6 @@
                 
                 return;
             }
-            
-            // Verificar si el asiento está disponible
-            if (isReserved || isOccupied) {
-                return;
-            }
 
             // Seleccionar asiento
             this.selected.push(seatId);
@@ -311,7 +321,7 @@
             this.startGlobalTimer();
         }
 
-        // Actualizar reservación en el backend
+        // Actualizar reservación en el backend (aquí se hace la verificación final)
         await this.updateReservation();
     },
 
@@ -353,22 +363,79 @@
                 })
             });
             
+            // Parsear respuesta independientemente del código de estado
             const result = await response.json();
             
-            if (result.success) {
+            if (response.ok && result.success) {
                 if (result.expires_at) {
                     this.updateReservationTime(result.expires_at);
                 }
             } else {
-                // Si falla la reservación, mostrar notificación
-                this.$wire.dispatch('notify', {
-                    type: 'warning',
-                    body: result.message || 'No se pudieron reservar los asientos seleccionados'
+                // Error 409 o cualquier otro error: delegar a Filament
+                // console.log('Error de reservación detectado, delegando a Filament:', result);
+                
+                // Llamar a método de Livewire/Filament para manejar el error
+                this.$wire.call('handleSeatReservationConflict', {
+                    message: result.message || 'Conflicto de reservación',
+                    occupied_seats: result.occupied_seats || [],
+                    reserved_by_others: result.reserved_by_others || [],
+                    invalid_seats: result.invalid_seats || []
+                }).then(() => {
+                    // Filament se encargará de mostrar notificación y recargar el layout
+                    // console.log('Filament manejó el conflicto de reservación');
+                }).catch((error) => {
+                    console.error('Error al llamar a Filament para manejar conflicto:', error);
+                    
+                    // Fallback: mostrar notificación local
+                    this.$wire.dispatch('notify', {
+                        type: 'warning',
+                        body: result.message || 'No se pudieron reservar los asientos seleccionados'
+                    });
                 });
             }
         } catch (error) {
+            // Silenciar específicamente errores 409 que son manejados
+            if (error.message && error.message.includes('409')) {
+                console.log('Conflicto de reservación manejado correctamente');
+                return;
+            }
+            
             console.error('Error al actualizar reservación:', error);
+            
+            // Mostrar notificación de error genérica
+            this.$wire.dispatch('notify', {
+                type: 'danger',
+                body: 'Error de conexión al intentar reservar los asientos'
+            });
         }
+    },
+
+    // Nuevo método para actualizar el estado de los asientos en el objeto seats
+    updateSeatsStatus(seatIds, status, occupiedSeats = [], reservedSeats = []) {
+        seatIds.forEach(seatId => {
+            // Buscar el asiento en todos los pisos y actualizar su estado
+            for (const floorKey in this.seats) {
+                const floorSeats = this.seats[floorKey];
+                const seat = floorSeats.find(s => s.id === seatId);
+                if (seat) {
+                    if (status === 'unavailable') {
+                        // Determinar si está ocupado o reservado según las listas del backend
+                        if (occupiedSeats.includes(seatId)) {
+                            seat.occupied = true;
+                            seat.reserved = false;
+                        } else if (reservedSeats.includes(seatId)) {
+                            seat.occupied = false;
+                            seat.reserved = true;
+                        } else {
+                            // Por defecto, marcar como ocupado
+                            seat.occupied = true;
+                            seat.reserved = false;
+                        }
+                    }
+                    break;
+                }
+            }
+        });
     },
 
     async releaseReservations() {
@@ -692,8 +759,7 @@
                                         @endphp
 
                                         <button type="button" @click="toggleSeat({{ $seatId }})"
-                                            @if ($isOccupied || ($isReserved && !$isReservedByCurrentUser)) disabled @endif
-                                            :disabled="!isSelected({{ $seatId }}) && selected.length >= required"
+                                            :disabled="!isSelected({{ $seatId }}) && (@js($isOccupied) || (@js($isReserved) && !@js($isReservedByCurrentUser)) || selected.length >= required)"
                                             :class="{
                                                 'bg-gray-300 dark:bg-gray-600 border-gray-400 hover:bg-gray-400 dark:hover:bg-gray-500':
                                                     !isSelected({{ $seatId }}) && !@js($isOccupied),
@@ -703,7 +769,7 @@
                                             
                                                 'bg-red-500 border-red-600 cursor-not-allowed': @js($isOccupied),
                                                 
-                                                'bg-orange-500 border-orange-600 cursor-not-allowed': @js($isReserved) && !@js($isReservedByCurrentUser)
+                                                'bg-orange-500 border-orange-600 dark:bg-orange-600 dark:border-orange-600 cursor-not-allowed hover:bg-orange-600 dark:hover:bg-orange-400': @js($isReserved) && !@js($isReservedByCurrentUser)
                                             }"
                                             class="seat-button rounded border-2 flex items-center justify-center text-xs font-semibold text-gray-800 dark:text-gray-200 transition-colors duration-200 disabled disabled:cursor-not-allowed"
                                             title="{{ $tooltipText }}">

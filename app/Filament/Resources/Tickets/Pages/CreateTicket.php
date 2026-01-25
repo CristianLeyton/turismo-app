@@ -749,6 +749,77 @@ class CreateTicket extends CreateRecord
         }
     }
 
+    public function handleSeatReservationConflict($data): void
+    {
+        try {
+            $message = $data['message'] ?? 'Conflicto de reservación detectado';
+            $occupiedSeats = $data['occupied_seats'] ?? [];
+            $reservedSeats = $data['reserved_by_others'] ?? [];
+            $invalidSeats = $data['invalid_seats'] ?? [];
+
+            // Mostrar notificación específica del conflicto
+            Notification::make()
+                ->icon('heroicon-m-exclamation-triangle')
+                ->title('Conflicto de reservación')
+                ->body($message . '. Por favor, seleccione otros asientos.')
+                ->warning()
+                ->persistent()
+                ->send();
+
+            // Limpiar asientos no válidos de la selección actual
+            $currentSeatIds = $this->data['seat_ids'] ?? [];
+            if (!is_array($currentSeatIds)) {
+                if (is_string($currentSeatIds)) {
+                    $currentSeatIds = json_decode($currentSeatIds, true) ?? [];
+                } else {
+                    $currentSeatIds = [];
+                }
+            }
+
+            $allInvalidSeats = array_merge($occupiedSeats, $reservedSeats, $invalidSeats);
+            $validSeats = array_diff($currentSeatIds, $allInvalidSeats);
+
+            // Actualizar solo los asientos válidos en el formulario (refresco silencioso)
+            $tripId = $this->data['trip_id'] ?? null;
+            if ($tripId) {
+                $trip = Trip::find($tripId);
+                if ($trip) {
+                    $availableSeats = $trip->remainingSeats();
+                    $passengersCount = (int) ($this->data['passengers_count'] ?? 1);
+
+                    // Actualizar estado sin mostrar notificaciones adicionales
+                    $this->form->fill(array_merge($this->data ?? [], [
+                        'trip_available_seats' => $availableSeats,
+                        'trip_search_status' => $availableSeats >= $passengersCount ? 'available' : 'insufficient_seats',
+                        'seat_ids' => array_values($validSeats),
+                        // IMPORTANTE: Limpiar datos de pasos posteriores para evitar notificaciones de expiración
+                        'passenger_data' => [],
+                        'return_seat_ids' => [],
+                        'return_passenger_data' => [],
+                        // Bandera para evitar notificación de expiración cuando fue conflicto
+                        'skip_expiration_notification' => true,
+                    ]));
+
+                    // Forzar actualización del estado de Livewire para que el componente se refresque
+                    $this->dispatch('refresh-seats');
+                }
+            }
+
+        } catch (\Exception $e) {
+            \Log::error('Error en handleSeatReservationConflict', [
+                'error' => $e->getMessage(),
+                'data' => $data
+            ]);
+
+            Notification::make()
+                ->icon('heroicon-m-x-circle')
+                ->title('Error al manejar conflicto')
+                ->body('Ocurrió un error al procesar el conflicto de reservación. Por favor, recargue la página.')
+                ->danger()
+                ->send();
+        }
+    }
+
     public function refreshSeatAvailability(): void
     {
         try {

@@ -120,6 +120,7 @@ class TripResource extends Resource
                 TextColumn::make('departure_time')
                     ->label('Horario')
 /*                     ->sortable() */
+->visibleFrom('md')
                     ->badge()
                     ->color('info')
                     ->alignCenter()
@@ -134,11 +135,13 @@ class TripResource extends Resource
                 TextColumn::make('route.name')
                     ->label('Ruta')
                     ->sortable()
+                    ->visibleFrom('md')
                     ->badge()
                     ->color('warning'),
                     //->toggleable(isToggledHiddenByDefault: false),
                 TextColumn::make('occupiedSeatsCount')
                     ->label('Asientos vendidos')
+                    ->visibleFrom('md')
                     ->getStateUsing(fn($record) => $record->occupiedSeatsCount())
                     ->badge()
                     ->color('primary')
@@ -147,6 +150,7 @@ class TripResource extends Resource
                 TextColumn::make('total_passengers')
                     ->label('Pasajeros')
                     ->getStateUsing(fn($record) => $record->total_passengers)
+                    ->visibleFrom('md')
                     ->badge()
                     ->color('success')
                     ->alignCenter(),

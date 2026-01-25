@@ -56,6 +56,7 @@ class TicketsTable
                     })
                     ->sortable()
                     ->badge()
+                    ->visibleFrom('md')
                     ->color('info')
                     ->url(fn(Ticket $record) => TicketResource::getUrl('view', ['record' => $record])),
 
@@ -65,10 +66,12 @@ class TicketsTable
                         fn($state, $record) =>
                         $record->passenger->first_name . ' ' . $record->passenger->last_name,
                     )
-                    ->sortable(),
+                    ->sortable()
+                    ->visibleFrom('md'),
 
                 TextColumn::make('passenger.dni')
-                    ->label('DNI'),
+                    ->label('DNI')
+                    ->visibleFrom('md'),
 
                 TextColumn::make('origin_location_id')
                     ->label('Ruta')
@@ -81,6 +84,7 @@ class TicketsTable
                     ->alignCenter()
                     ->sortable()
                     ->badge()
+                    ->visibleFrom('md')
                     ->color('warning'),
 
                 TextColumn::make('seat.seat_number')
@@ -91,11 +95,13 @@ class TicketsTable
 
                 IconColumn::make('is_round_trip')
                     ->label('Diferido')
+                    ->visibleFrom('md')
                     ->boolean()
                     ->alignCenter(),
 
                 IconColumn::make('travels_with_child')
                     ->label('Viaja con menor')
+                    ->visibleFrom('md')
                     ->boolean()
                     ->alignCenter(),
             ])

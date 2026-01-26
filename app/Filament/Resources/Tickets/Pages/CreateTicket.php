@@ -763,7 +763,7 @@ class CreateTicket extends CreateRecord
                 ->title('Conflicto de reservación')
                 ->body($message . '. Por favor, seleccione otros asientos.')
                 ->warning()
-                ->persistent()
+                /* ->persistent() */
                 ->send();
 
             // Limpiar asientos no válidos de la selección actual

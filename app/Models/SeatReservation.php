@@ -64,12 +64,11 @@ class SeatReservation extends Model
      */
     public static function cleanupExpired(): int
     {
-        // Restar 3 horas para compensar el desfase UTC-Argentina
-        $nowWithOffset = now()->subHours(3);
+        $nowWithOffset = now();
         $deletedCount = static::where('expires_at', '<', $nowWithOffset)->delete();
 
         if ($deletedCount > 0) {
-            \Log::info("CleanupExpired: Eliminadas {$deletedCount} reservas expiradas. Hora UTC: " . now()->format('Y-m-d H:i:s') . ", Hora Argentina: " . $nowWithOffset->format('Y-m-d H:i:s'));
+            \Log::info("CleanupExpired: Eliminadas {$deletedCount} reservas expiradas. Hora UTC: " . now()->format('Y-m-d H:i:s'));
         }
 
         return $deletedCount;

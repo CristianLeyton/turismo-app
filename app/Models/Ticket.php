@@ -119,21 +119,22 @@ class Ticket extends Model
         if (isset($data['seat_id'])) {
             // Obtener asientos realmente disponibles (excluyendo ocupados y reservas de otros)
             $sessionId = session()->getId();
-            
+
             $occupiedSeatIds = \App\Models\Ticket::where('trip_id', $data['trip_id'])
                 ->whereNotNull('seat_id')
+                ->whereNull('deleted_at')
                 ->pluck('seat_id')
                 ->toArray();
-                
+
             $reservedByOthersSeatIds = \App\Models\SeatReservation::where('trip_id', $data['trip_id'])
                 ->where('expires_at', '>', now())
                 ->where('user_session_id', '!=', $sessionId)
                 ->pluck('seat_id')
                 ->toArray();
-            
+
             $unavailableSeatIds = array_merge($occupiedSeatIds, $reservedByOthersSeatIds);
             $isSeatAvailable = !in_array($data['seat_id'], $unavailableSeatIds);
-            
+
             if (!$isSeatAvailable) {
                 throw ValidationException::withMessages([
                     'seat_id' => 'El asiento no está disponible.',

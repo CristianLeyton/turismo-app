@@ -53,7 +53,7 @@ class UserResource extends Resource
     {
         return $schema
             ->components([
-                                TextInput::make('username')
+                    TextInput::make('username')
                     ->label('Usuario')
                     ->minLength(3)
                     ->maxLength(255)

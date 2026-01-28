@@ -19,6 +19,7 @@ use Filament\Forms\Concerns\InteractsWithForms;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Contracts\Support\Htmlable;
+use Illuminate\Support\Facades\Log;
 
 class CreateTicket extends CreateRecord
 {
@@ -65,11 +66,11 @@ class CreateTicket extends CreateRecord
             ->requiresConfirmation()
             ->modalHeading('Los cambios se perderán')
             ->modalDescription('¿Desea continuar?')
-            ->action(function() {
+            ->action(function () {
                 // Limpiar todas las reservaciones de esta sesión al cancelar
                 $sessionId = session()->getId();
                 \App\Models\SeatReservation::where('user_session_id', $sessionId)->delete();
-                
+
                 // Redirigir al admin
                 $this->redirect(url('/admin'));
             })
@@ -175,11 +176,11 @@ class CreateTicket extends CreateRecord
 
                         // Cancelar la creación del registro
                         $this->halt();
-                        
+
                         // Limpiar reservaciones de esta sesión
                         $sessionId = session()->getId();
                         \App\Models\SeatReservation::where('user_session_id', $sessionId)->delete();
-                        
+
                         return $data;
                     }
                 }
@@ -232,11 +233,11 @@ class CreateTicket extends CreateRecord
 
                         // Cancelar la creación del registro
                         $this->halt();
-                        
+
                         // Limpiar reservaciones de esta sesión
                         $sessionId = session()->getId();
                         \App\Models\SeatReservation::where('user_session_id', $sessionId)->delete();
-                        
+
                         return $data;
                     }
                 }
@@ -461,7 +462,7 @@ class CreateTicket extends CreateRecord
             // Limpiar reservaciones de esta sesión en caso de error
             $sessionId = session()->getId();
             \App\Models\SeatReservation::where('user_session_id', $sessionId)->delete();
-            
+
             // Manejar errores y mostrar notificación adecuada
             Notification::make()
                 ->icon('heroicon-m-x-circle')
@@ -804,7 +805,6 @@ class CreateTicket extends CreateRecord
                     $this->dispatch('refresh-seats');
                 }
             }
-
         } catch (\Exception $e) {
             \Log::error('Error en handleSeatReservationConflict', [
                 'error' => $e->getMessage(),

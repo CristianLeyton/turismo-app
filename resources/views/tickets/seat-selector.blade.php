@@ -31,52 +31,52 @@
     seats: {{ $layoutData['seats'] ? json_encode($layoutData['seats']) : '{}' }},
 
     init() {
-        
+
         // Limpiar cualquier intervalo anterior antes de iniciar
         this.stopCountdown();
-        
+
         if (!Array.isArray(this.selected)) {
             this.selected = [];
         }
-        
+
         // Si hay asientos seleccionados, iniciar timer global
         if (this.selected.length > 0) {
             this.startGlobalTimer();
         }
-        
+
         // Sincronizar estado actual de reservas con el backend (solo para limpiar expiradas)
         if (this.enableReservation && this.tripId) {
             this.syncReservationStatus();
         }
-        
+
         // Limpiar reservas al salir de la página (solo si el usuario confirma)
         let isPageUnloading = false;
-        
+
         window.addEventListener('beforeunload', (event) => {
             // Marcar que la página se está descargando
             isPageUnloading = true;
-            
+
             // No liberar reservas aquí, esperar a 'unload'
             // Filament manejará la confirmación con unsavedChangesAlerts()
         });
-        
+
         // Liberar reservas solo cuando la página realmente se descarga
         window.addEventListener('unload', () => {
             if (isPageUnloading) {
                 this.releaseReservations();
             }
         });
-        
+
         // Escuchar evento global de expiración de reservas
         window.addEventListener('seatReservationExpired', (event) => {
             // Limpiar asientos seleccionados en este componente
             this.selected = [];
-            
+
             // Limpiar tiempo de expiración local
             this.reservationExpiresAt = null;
             this.timerText = null;
         });
-        
+
         // Escuchar evento de refresco de asientos por conflictos
         window.addEventListener('refresh-seats', () => {
             // Forzar recarga del componente para actualizar estado de asientos
@@ -88,11 +88,11 @@
     },
 
     destroy() {
-        
+
         // Limpiar todos los intervalos al destruir el componente
         this.stopCountdown();
         this.stopKeepAlive();
-        
+
         // Si no hay asientos seleccionados, detener timer global
         if (!this.selected || this.selected.length === 0) {
             this.stopGlobalTimer();
@@ -103,63 +103,63 @@
     startGlobalTimer() {
         // Detener timer global anterior si existe
         this.stopGlobalTimer();
-        
+
         // Establecer tiempo de expiración global
         window.seatReservationGlobalExpiresAt = new Date(Date.now() + 5 * 60 * 1000);
-        
+
         // Iniciar contador global
         window.seatReservationGlobalInterval = setInterval(() => {
             const now = new Date();
             const timeRemaining = window.seatReservationGlobalExpiresAt - now;
-            
+
             if (timeRemaining <= 0) {
                 this.handleGlobalReservationExpired();
                 return;
             }
-            
+
             const minutes = Math.floor(timeRemaining / 60000);
             const seconds = Math.floor((timeRemaining % 60000) / 1000);
             this.timerText = `${minutes}:${seconds.toString().padStart(2, '0')}`;
             this.timerKey++;
         }, 1000);
     },
-    
+
     stopGlobalTimer() {
         if (window.seatReservationGlobalInterval) {
             clearInterval(window.seatReservationGlobalInterval);
             window.seatReservationGlobalInterval = null;
         }
     },
-    
+
     handleGlobalReservationExpired() {
-        
+
         // Detener timer global
         this.stopGlobalTimer();
-        
+
         // Limpiar el tiempo de expiración
         this.reservationExpiresAt = null;
         this.timerText = null;
-        
+
         // Esperar 10 segundos antes de limpiar
         setTimeout(async () => {
             // Notificar a todos los componentes que limpien sus asientos
             window.dispatchEvent(new CustomEvent('seatReservationExpired', {
                 detail: { source: '{{ $fieldId }}' }
             }));
-            
+
             // Liberar reservas en el backend
             try {
                 await this.releaseReservations();
             } catch (error) {
                 console.error('Error al liberar reservas expiradas:', error);
             }
-            
+
             // Llamar al método Livewire para mostrar notificación de Filament
             this.$wire.call('notifyReservationExpired').then(() => {
                 // Notificación enviada
             }).catch((error) => {
                 console.error('❌ Error al enviar notificación de Filament:', error);
-                
+
                 // Fallback a notificación del navegador
                 if ('Notification' in window && Notification.permission === 'granted') {
                     new Notification('Reserva expirada', {
@@ -172,18 +172,18 @@
     },
 
     startCountdown() {
-        
+
         if (this.countdownInterval) {
             clearInterval(this.countdownInterval);
         }
-        
+
         this.countdownInterval = setInterval(() => {
             // Actualizar tiempo actual para forzar reactividad
             this.currentTime = new Date();
-            
+
             // Incrementar timerKey para forzar actualización del DOM
             this.timerKey++;
-            
+
             // Calcular y actualizar timerText directamente
             if (!this.selected || this.selected.length === 0 || !this.reservationExpiresAt) {
                 this.timerText = null;
@@ -204,35 +204,35 @@
     },
 
     async handleReservationExpired() {
-        
+
         // Detener el contador
         this.stopCountdown();
-        
+
         // Limpiar el tiempo de expiración para mostrar 00:00 o que desaparezca
         this.reservationExpiresAt = null;
-        
+
         // Esperar 10 segundos antes de limpiar
         setTimeout(async () => {
             // Deseleccionar todos los asientos
             this.selected = [];
-            
+
             // Limpiar tiempo de expiración
             this.reservationExpiresAt = null;
             this.timerText = null;
-            
+
             // Liberar reservas en el backend
             try {
                 await this.releaseReservations();
             } catch (error) {
                 console.error('Error al liberar reservas:', error);
             }
-            
+
             // Llamar al método Livewire para mostrar notificación de Filament
             this.$wire.call('notifyReservationExpired').then(() => {
                 // Notificación enviada
             }).catch((error) => {
                 console.error('❌ Error al enviar notificación de Filament:', error);
-                
+
                 // Fallback a notificación del navegador
                 if ('Notification' in window && Notification.permission === 'granted') {
                     new Notification('Reserva expirada', {
@@ -245,7 +245,7 @@
     },
 
     stopCountdown() {
-        
+
         if (this.countdownInterval) {
             clearInterval(this.countdownInterval);
             this.countdownInterval = null;
@@ -264,7 +264,7 @@
     },
 
     async toggleSeat(seatId) {
-        
+
         if (!Array.isArray(this.selected)) {
             this.selected = [];
         }
@@ -276,7 +276,7 @@
             seat = floorSeats.find(s => s.id === seatId);
             if (seat) break;
         }
-        
+
         if (!seat) {
             return;
         }
@@ -294,7 +294,7 @@
         if (isCurrentlySelected) {
             // Deseleccionar asiento
             this.selected = this.selected.filter(id => id !== seatId);
-            
+
             // Si no quedan asientos seleccionados en ningún componente, detener timer global
             const totalSelected = this.getTotalSelectedSeats();
             if (totalSelected === 0) {
@@ -310,13 +310,13 @@
                         icon: '/favicon.ico'
                     });
                 }
-                
+
                 return;
             }
 
             // Seleccionar asiento
             this.selected.push(seatId);
-            
+
             // Iniciar/reiniciar timer global
             this.startGlobalTimer();
         }
@@ -330,14 +330,14 @@
         // Obtener todos los componentes de selección de asientos
         const seatSelectors = document.querySelectorAll('[x-data*=\'seat_selector\']');
         let total = 0;
-        
+
         seatSelectors.forEach(selector => {
             const alpineData = selector.__x;
             if (alpineData && alpineData.selected) {
                 total += alpineData.selected.length;
             }
         });
-        
+
         return total;
     },
 
@@ -362,10 +362,10 @@
                     session_id: this.sessionId
                 })
             });
-            
+
             // Parsear respuesta independientemente del código de estado
             const result = await response.json();
-            
+
             if (response.ok && result.success) {
                 if (result.expires_at) {
                     this.updateReservationTime(result.expires_at);
@@ -373,7 +373,7 @@
             } else {
                 // Error 409 o cualquier otro error: delegar a Filament
                 // console.log('Error de reservación detectado, delegando a Filament:', result);
-                
+
                 // Llamar a método de Livewire/Filament para manejar el error
                 this.$wire.call('handleSeatReservationConflict', {
                     message: result.message || 'Conflicto de reservación',
@@ -385,7 +385,7 @@
                     // console.log('Filament manejó el conflicto de reservación');
                 }).catch((error) => {
                     console.error('Error al llamar a Filament para manejar conflicto:', error);
-                    
+
                     // Fallback: mostrar notificación local
                     this.$wire.dispatch('notify', {
                         type: 'warning',
@@ -399,9 +399,9 @@
                 console.log('Conflicto de reservación manejado correctamente');
                 return;
             }
-            
+
             console.error('Error al actualizar reservación:', error);
-            
+
             // Mostrar notificación de error genérica
             this.$wire.dispatch('notify', {
                 type: 'danger',
@@ -440,7 +440,7 @@
 
     async releaseReservations() {
         if (!this.enableReservation || !this.sessionId) return;
-        
+
         try {
             await fetch('/api/seat-reservations/release', {
                 method: 'POST',
@@ -471,7 +471,7 @@
                         session_id: this.sessionId
                     })
                 });
-                
+
                 if (response.ok) {
                     const result = await response.json();
                     if (result.success && result.expires_at) {
@@ -522,21 +522,21 @@
         if (!this.selected || this.selected.length === 0) {
             return null;
         }
-        
+
         if (!this.reservationExpiresAt) {
             return null;
         }
-        
+
         const diff = this.reservationExpiresAt - this.currentTime;
-        
+
         if (diff <= 0) {
             return null;
         }
-        
+
         const minutes = Math.floor(diff / 60000);
         const seconds = Math.floor((diff % 60000) / 1000);
         const result = `${minutes}:${seconds.toString().padStart(2, '0')}`;
-        
+
         // Forzar actualización reactiva
         return result;
     },
@@ -582,11 +582,12 @@
         </div>
 
         <h3 class="text-xl font-semibold text-primary text-fuchsia-600 flex justify-between">
-            <p>Seleccionar asientos</p> 
-            
+            <p>Seleccionar asientos</p>
+
             <p class="font-bold text-xl uppercase">
-            {{ strpos($fieldId, 'return') !== false ? 'Vuelta ↓' : 'Ida ↑' }}</h3>
-            </p>
+                {{ strpos($fieldId, 'return') !== false ? 'Vuelta ↓' : 'Ida ↑' }}
+        </h3>
+        </p>
         <!-- Contenedor de pisos con flexbox para cambiar orden -->
         <div class="flex flex-col-reverse md:flex-row-reverse md:justify-center items-end *:w-full gap-4">
             @foreach ($floors as $floorKey => $seats)
@@ -729,16 +730,22 @@
                                             $seatId = $seat['id'];
                                             $seatNumber = $seat['seat_number'];
                                             $isOccupied = $seat['is_occupied'] ?? false;
-                                            
+
                                             // Verificar si el asiento está reservado (para pre-reservaciones)
                                             $isReserved = false;
                                             $isReservedByCurrentUser = false;
                                             if ($enableReservation && $tripId) {
-                                                $isReserved = \App\Models\SeatReservation::isSeatReserved($tripId, $seatId);
-                                                
+                                                $isReserved = \App\Models\SeatReservation::isSeatReserved(
+                                                    $tripId,
+                                                    $seatId,
+                                                );
+
                                                 // Verificar si está reservado por el usuario actual
                                                 if ($isReserved) {
-                                                    $isReservedByCurrentUser = \App\Models\SeatReservation::where('trip_id', $tripId)
+                                                    $isReservedByCurrentUser = \App\Models\SeatReservation::where(
+                                                        'trip_id',
+                                                        $tripId,
+                                                    )
                                                         ->where('seat_id', $seatId)
                                                         ->where('user_session_id', $sessionId)
                                                         ->where('expires_at', '>', now())
@@ -759,7 +766,9 @@
                                         @endphp
 
                                         <button type="button" @click="toggleSeat({{ $seatId }})"
-                                            :disabled="!isSelected({{ $seatId }}) && (@js($isOccupied) || (@js($isReserved) && !@js($isReservedByCurrentUser)) || selected.length >= required)"
+                                            :disabled="!isSelected({{ $seatId }}) && (@js($isOccupied) || (
+                                                    @js($isReserved) && !@js($isReservedByCurrentUser)
+                                                    ) || selected.length >= required)"
                                             :class="{
                                                 'bg-gray-300 dark:bg-gray-600 border-gray-400 hover:bg-gray-400 dark:hover:bg-gray-500':
                                                     !isSelected({{ $seatId }}) && !@js($isOccupied),
@@ -768,8 +777,9 @@
                                                     {{ $seatId }}),
                                             
                                                 'bg-red-500 border-red-600 cursor-not-allowed': @js($isOccupied),
-                                                
-                                                'bg-orange-500 border-orange-600 dark:bg-orange-600 dark:border-orange-600 cursor-not-allowed hover:bg-orange-600 dark:hover:bg-orange-400': @js($isReserved) && !@js($isReservedByCurrentUser)
+                                            
+                                                'bg-orange-500 border-orange-600 dark:bg-orange-600 dark:border-orange-600 cursor-not-allowed hover:bg-orange-600 dark:hover:bg-orange-400': @js($isReserved) &&
+                                                    !@js($isReservedByCurrentUser)
                                             }"
                                             class="seat-button rounded border-2 flex items-center justify-center text-xs font-semibold text-gray-800 dark:text-gray-200 transition-colors duration-200 disabled disabled:cursor-not-allowed"
                                             title="{{ $tooltipText }}">

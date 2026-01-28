@@ -40,7 +40,7 @@ class SeatReservationController extends Controller
             // Si no hay asientos seleccionados, liberar todos los de esta sesión para este viaje
             if (empty($seatIds)) {
                 \Log::info('Empty seat_ids detected, deleting reservations');
-                
+
                 SeatReservation::where('user_session_id', $sessionId)
                     ->where('trip_id', $tripId)
                     ->delete();
@@ -50,9 +50,9 @@ class SeatReservationController extends Controller
                     'message' => 'Todas las reservas liberadas',
                     'reserved_seats' => []
                 ];
-                
+
                 \Log::info('Returning empty response', $response);
-                
+
                 return response()->json($response);
             }
 
@@ -80,42 +80,42 @@ class SeatReservationController extends Controller
                 ->whereNotNull('seat_id')
                 ->pluck('seat_id')
                 ->toArray();
-                
+
             $reservedByOthersSeatIds = \App\Models\SeatReservation::where('trip_id', $tripId)
                 ->where('expires_at', '>', now())
                 ->where('user_session_id', '!=', $sessionId)
                 ->pluck('seat_id')
                 ->toArray();
-            
+
             $unavailableSeatIds = array_merge($occupiedSeatIds, $reservedByOthersSeatIds);
             $availableSeats = \App\Models\Seat::where('bus_id', $trip->bus_id)
                 ->where('is_active', true)
                 ->whereNotIn('id', $unavailableSeatIds)
                 ->pluck('id')
                 ->toArray();
-            
+
             // Verificar cada asiento individualmente para dar mensajes específicos
             $invalidSeats = array_diff($seatIds, $availableSeats);
             $occupiedSeats = array_intersect($seatIds, $occupiedSeatIds);
             $reservedSeats = array_intersect($seatIds, $reservedByOthersSeatIds);
-            
+
             if (!empty($invalidSeats)) {
                 $message = 'Algunos asientos ya no están disponibles. ';
-                
+
                 if (!empty($occupiedSeats)) {
                     $occupiedSeatNumbers = \App\Models\Seat::whereIn('id', $occupiedSeats)
                         ->pluck('seat_number')
                         ->toArray();
                     $message .= 'Asientos vendidos: ' . implode(', ', $occupiedSeatNumbers) . '. ';
                 }
-                
+
                 if (!empty($reservedSeats)) {
                     $reservedSeatNumbers = \App\Models\Seat::whereIn('id', $reservedSeats)
                         ->pluck('seat_number')
                         ->toArray();
                     $message .= 'Los siguientes asientos están reservados por otros usuarios: ' . implode(', ', $reservedSeatNumbers);
                 }
-                
+
                 return response()->json([
                     'success' => false,
                     'message' => trim($message),
@@ -184,15 +184,15 @@ class SeatReservationController extends Controller
         ]);
 
         $sessionId = $request->input('session_id');
-        
+
         // Obtener la fecha de expiración más lejana antes de extender
         $latestReservation = SeatReservation::where('user_session_id', $sessionId)
             ->where('expires_at', '>', now())
             ->orderBy('expires_at', 'desc')
             ->first();
-        
+
         $extendedCount = SeatReservation::extendReservationTime($sessionId, 5);
-        
+
         // Obtener la nueva fecha de expiración
         $newExpiresAt = null;
         if ($extendedCount > 0) {
@@ -200,7 +200,7 @@ class SeatReservationController extends Controller
                 ->where('expires_at', '>', now())
                 ->orderBy('expires_at', 'desc')
                 ->first();
-            
+
             if ($newReservation) {
                 $newExpiresAt = $newReservation->expires_at;
             }
@@ -240,7 +240,7 @@ class SeatReservationController extends Controller
                 ->where('trip_id', $tripId)
                 ->orderBy('expires_at', 'desc')
                 ->first();
-            
+
             if ($latestReservation) {
                 $expiresAt = $latestReservation->expires_at;
             }

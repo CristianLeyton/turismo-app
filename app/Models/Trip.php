@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Facades\DB;
 
 use App\Models\Seat;
 
@@ -52,11 +53,19 @@ class Trip extends Model
     }
 
     /**
+     * Tickets activos que ocupan asiento (excluyendo eliminados)
+     */
+    public function activeSeatedTickets()
+    {
+        return $this->tickets()->whereNotNull('seat_id')->whereNull('deleted_at');
+    }
+
+    /**
      * Saber si el viaje está completo
      */
     public function isFull(): bool
     {
-        return $this->seatedTickets()->count() >= $this->bus->seat_count;
+        return $this->activeSeatedTickets()->count() >= $this->bus->seat_count;
     }
 
     public function availableSeats()
@@ -68,7 +77,8 @@ class Trip extends Model
                 $query->select('seat_id')
                     ->from('tickets')
                     ->where('trip_id', $this->id)
-                    ->whereNotNull('seat_id');
+                    ->whereNotNull('seat_id')
+                    ->whereNull('deleted_at');
             })
             ->whereNotIn('id', function ($query) {
                 $query->select('seat_id')
@@ -101,7 +111,7 @@ class Trip extends Model
             return ['success' => true, 'message' => 'No hay asientos que reservar', 'failed_seats' => []];
         }
 
-        return \DB::transaction(function () use ($seatIds) {
+        return DB::transaction(function () use ($seatIds) {
             // Bloquear el viaje actual para evitar modificaciones concurrentes
             $lockedTrip = self::where('id', $this->id)->lockForUpdate()->first();
 
@@ -110,21 +120,22 @@ class Trip extends Model
             }
 
             $failedSeats = [];
-            
+
             // Obtener asientos realmente disponibles (excluyendo ocupados y reservas de otros)
             $sessionId = session()->getId();
-            
+
             $occupiedSeatIds = \App\Models\Ticket::where('trip_id', $this->id)
                 ->whereNotNull('seat_id')
+                ->whereNull('deleted_at')
                 ->pluck('seat_id')
                 ->toArray();
-                
+
             $reservedByOthersSeatIds = \App\Models\SeatReservation::where('trip_id', $this->id)
                 ->where('expires_at', '>', now())
                 ->where('user_session_id', '!=', $sessionId)
                 ->pluck('seat_id')
                 ->toArray();
-            
+
             $unavailableSeatIds = array_merge($occupiedSeatIds, $reservedByOthersSeatIds);
             $availableSeats = \App\Models\Seat::where('bus_id', $lockedTrip->bus_id)
                 ->where('is_active', true)
@@ -140,8 +151,8 @@ class Trip extends Model
 
             if (!empty($failedSeats)) {
                 return [
-                    'success' => false, 
-                    'message' => 'Algunos asientos ya no están disponibles', 
+                    'success' => false,
+                    'message' => 'Algunos asientos ya no están disponibles',
                     'failed_seats' => $failedSeats
                 ];
             }
@@ -158,7 +169,7 @@ class Trip extends Model
      */
     public function createTicketsWithLock(array $ticketsData): array
     {
-        return \DB::transaction(function () use ($ticketsData) {
+        return DB::transaction(function () use ($ticketsData) {
             $createdTickets = collect();
             $failedTickets = [];
 
@@ -167,20 +178,21 @@ class Trip extends Model
                     // Verificar que el asiento esté disponible antes de crear
                     if (isset($ticketData['seat_id'])) {
                         $sessionId = session()->getId();
-                        
+
                         $occupiedSeatIds = \App\Models\Ticket::where('trip_id', $this->id)
                             ->whereNotNull('seat_id')
+                            ->whereNull('deleted_at')
                             ->pluck('seat_id')
                             ->toArray();
-                            
+
                         $reservedByOthersSeatIds = \App\Models\SeatReservation::where('trip_id', $this->id)
                             ->where('expires_at', '>', now())
                             ->where('user_session_id', '!=', $sessionId)
                             ->pluck('seat_id')
                             ->toArray();
-                        
+
                         $unavailableSeatIds = array_merge($occupiedSeatIds, $reservedByOthersSeatIds);
-                        
+
                         if (in_array($ticketData['seat_id'], $unavailableSeatIds)) {
                             $failedTickets[] = [
                                 'index' => $index,
@@ -193,7 +205,6 @@ class Trip extends Model
 
                     $ticket = $this->tickets()->create($ticketData);
                     $createdTickets->push($ticket);
-
                 } catch (\Illuminate\Database\QueryException $e) {
                     // Capturar error de constraint unique (duplicate entry)
                     if ($e->getCode() == 23000 && str_contains($e->getMessage(), 'tickets_trip_seat_unique')) {
@@ -239,6 +250,7 @@ class Trip extends Model
     {
         return $this->tickets()
             ->whereNotNull('seat_id')
+            ->whereNull('deleted_at')
             ->count();
     }
 
@@ -356,6 +368,7 @@ class Trip extends Model
         // Obtener IDs de asientos ocupados en este viaje
         $occupiedSeatIds = $this->tickets()
             ->whereNotNull('seat_id')
+            ->whereNull('deleted_at')
             ->pluck('seat_id')
             ->toArray();
 
@@ -369,11 +382,11 @@ class Trip extends Model
 
         // Agrupar por piso
         $layout = [];
-        
+
         foreach ($allSeats as $seat) {
             $floor = $seat->floor ?? '1';
             $floorKey = 'floor_' . $floor;
-            
+
             if (!isset($layout[$floorKey])) {
                 $layout[$floorKey] = [];
             }
@@ -382,17 +395,17 @@ class Trip extends Model
             // Asumimos 4 columnas por fila (2 a cada lado del pasillo) como layout estándar
             $row = $seat->row;
             $column = $seat->column;
-            
+
             if ($row === null || $column === null) {
                 // Inferir posición: asumimos layout estándar de 4 columnas (2-2)
                 // Primero piso: asientos 1-48, segundo piso: asientos 49-60
                 $seatNum = $seat->seat_number;
                 $seatsPerRow = 4; // 2 izquierda, pasillo, 2 derecha
-                
+
                 // Calcular fila y columna inferidas
                 $inferredRow = (int) ceil(($seatNum - 1) / $seatsPerRow);
                 $positionInRow = (($seatNum - 1) % $seatsPerRow) + 1;
-                
+
                 // Mapear posición a columna: 1,2 -> left (0,1), 3,4 -> right (2,3)
                 if ($positionInRow <= 2) {
                     $inferredColumn = $positionInRow - 1; // 0, 1
@@ -401,7 +414,7 @@ class Trip extends Model
                     $inferredColumn = $positionInRow - 1; // 2, 3
                     $inferredPosition = 'right';
                 }
-                
+
                 $row = $row ?? $inferredRow;
                 $column = $column ?? $inferredColumn;
                 $position = $seat->position ?? $inferredPosition;
@@ -441,7 +454,7 @@ class Trip extends Model
         foreach ($areas as $area) {
             $floor = $area->floor ?? '1';
             $floorKey = 'floor_' . $floor;
-            
+
             if (!isset($layoutAreas[$floorKey])) {
                 $layoutAreas[$floorKey] = [];
             }
@@ -487,10 +500,10 @@ class Trip extends Model
     public function getTotalPassengersAttribute(): int
     {
         $total = $this->tickets()->count();
-        
+
         // Sumar menores adicionales
         $childrenCount = $this->tickets()->where('travels_with_child', true)->count();
-        
+
         return $total + $childrenCount;
     }
 
@@ -529,13 +542,13 @@ class Trip extends Model
     public function getPassengersWithDetails()
     {
         $passengers = collect();
-        
+
         // Obtener pasajeros adultos de los tickets ordenados por orden de parada
         $this->tickets()
             ->with(['passenger', 'seat', 'origin', 'destination'])
             ->join('route_stops', function ($join) {
                 $join->on('route_stops.location_id', '=', 'tickets.origin_location_id')
-                     ->where('route_stops.route_id', '=', $this->route_id);
+                    ->where('route_stops.route_id', '=', $this->route_id);
             })
             ->orderBy('route_stops.stop_order')
             ->select('tickets.*') // Asegurarnos de solo obtener las columnas de tickets
@@ -556,7 +569,7 @@ class Trip extends Model
                         'is_round_trip' => $ticket->is_round_trip,
                     ]);
                 }
-                
+
                 // Si viaja con menor, agregar al menor como pasajero adicional
                 if ($ticket->travels_with_child && $ticket->passenger && $ticket->passenger->children->isNotEmpty()) {
                     $ticket->passenger->children->each(function ($child) use ($passengers, $ticket) {
@@ -576,7 +589,7 @@ class Trip extends Model
                     });
                 }
             });
-        
+
         return $passengers;
     }
 }

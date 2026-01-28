@@ -27,7 +27,7 @@ class SeatReservation extends Model
     {
         $expiresAt = now()->addMinutes($minutes);
         $reservations = [];
-        
+
         foreach ($seatIds as $seatId) {
             $reservations[] = [
                 'trip_id' => $tripId,
@@ -38,7 +38,7 @@ class SeatReservation extends Model
                 'updated_at' => now(),
             ];
         }
-        
+
         try {
             static::insert($reservations);
             return ['success' => true, 'expires_at' => $expiresAt];
@@ -64,12 +64,14 @@ class SeatReservation extends Model
      */
     public static function cleanupExpired(): int
     {
-        $deletedCount = static::where('expires_at', '<', now())->delete();
-        
+        // Restar 3 horas para compensar el desfase UTC-Argentina
+        $nowWithOffset = now()->subHours(3);
+        $deletedCount = static::where('expires_at', '<', $nowWithOffset)->delete();
+
         if ($deletedCount > 0) {
-            \Log::info("CleanupExpired: Eliminadas {$deletedCount} reservas expiradas de todos los usuarios");
+            \Log::info("CleanupExpired: Eliminadas {$deletedCount} reservas expiradas. Hora UTC: " . now()->format('Y-m-d H:i:s') . ", Hora Argentina: " . $nowWithOffset->format('Y-m-d H:i:s'));
         }
-        
+
         return $deletedCount;
     }
 

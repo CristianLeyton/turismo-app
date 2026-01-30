@@ -99,10 +99,18 @@ class TicketsTable
                     ->boolean()
                     ->alignCenter(),
 
-                IconColumn::make('travels_with_child')
-                    ->label('Viaja con menor')
+                TextColumn::make('companion_type')
+                    ->label('Acompañante')
+                    ->badge()
+                    ->color(function ($record) {
+                        if ($record->travels_with_child) {
+                            return 'primary'; // Rosa/fucsia para menores
+                        } elseif ($record->travels_with_pets) {
+                            return 'warning'; // Naranja para mascotas
+                        }
+                        return 'gray';
+                    })
                     ->visibleFrom('md')
-                    ->boolean()
                     ->alignCenter(),
             ])
             ->defaultSort('sale.sale_date', 'desc')

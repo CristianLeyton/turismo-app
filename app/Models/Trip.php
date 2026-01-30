@@ -504,7 +504,10 @@ class Trip extends Model
         // Sumar menores adicionales
         $childrenCount = $this->tickets()->where('travels_with_child', true)->count();
 
-        return $total + $childrenCount;
+        // Sumar mascotas adicionales
+        $petsCount = $this->tickets()->where('travels_with_pets', true)->sum('pet_count');
+
+        return $total + $childrenCount + $petsCount;
     }
 
     /**
@@ -522,6 +525,9 @@ class Trip extends Model
                     'passenger_dni' => $ticket->passenger?->dni ?? 'N/A',
                     'seat_number' => $ticket->seat?->seat_number ?? 'N/A',
                     'travels_with_child' => $ticket->travels_with_child,
+                    'travels_with_pets' => $ticket->travels_with_pets,
+                    'pet_names' => $ticket->pet_names,
+                    'pet_count' => $ticket->pet_count,
                     'origin' => $ticket->origin?->name ?? 'N/A',
                     'destination' => $ticket->destination?->name ?? 'N/A',
                     'route' => $this->route?->name ?? 'N/A',
@@ -587,6 +593,25 @@ class Trip extends Model
                             'parent_name' => $ticket->passenger->full_name,
                         ]);
                     });
+                }
+
+                // Si viaja con mascotas, agregar las mascotas como pasajeros adicionales
+                if ($ticket->travels_with_pets && $ticket->pet_count > 0) {
+                        $passengers->push([
+                            'type' => 'pet',
+                            'name' => $ticket->pet_names ?? 'Mascota',
+                            'dni' => 'N/A',
+                            'phone' => 'N/A',
+                            'seat_number' => 'Acompañante',
+                            'origin' => $ticket->origin?->name ?? 'N/A',
+                            'destination' => $ticket->destination?->name ?? 'N/A',
+                            'ticket_id' => $ticket->id,
+                            'price' => 0, // Las mascotas no pagan
+                            'is_round_trip' => $ticket->is_round_trip,
+                            'parent_name' => $ticket->passenger->full_name,
+                            'pet_count' => $ticket->pet_count,
+                            'pet_names' => $ticket->pet_names,
+                        ]);
                 }
             });
 

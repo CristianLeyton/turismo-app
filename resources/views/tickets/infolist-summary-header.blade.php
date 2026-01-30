@@ -79,7 +79,8 @@
 
         @if ($record?->is_round_trip)
             @if ($record->return_trip_id && $returnTrip)
-                <div class="flex flex-col md:flex-row gap-3 justify-between border-t border-gray-200 dark:border-gray-700 md:items-center mt-3 pt-3">
+                <div
+                    class="flex flex-col md:flex-row gap-3 justify-between border-t border-gray-200 dark:border-gray-700 md:items-center mt-3 pt-3">
                     <div class="text-sm text-gray-600 dark:text-gray-400 mt-1">
                         <strong class="font-semibold"> Vuelta: </strong>
                         {{ $returnTrip->trip_date ? Carbon::parse($returnTrip->trip_date)->format('d/m/Y') : '--/--/----' }}
@@ -126,7 +127,8 @@
                 </div>
             @else
                 <div class="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-                    <div class="bg-sky-100 border border-sky-400 text-sky-700 px-4 py-3 rounded dark:bg-sky-800 dark:border-sky-700 dark:text-sky-300">
+                    <div
+                        class="bg-sky-100 border border-sky-400 text-sky-700 px-4 py-3 rounded dark:bg-sky-800 dark:border-sky-700 dark:text-sky-300">
                         <strong class="font-semibold">Viaje de vuelta</strong><br>
                         <span class="text-sm">Este ticket es el viaje de vuelta de un pasaje diferido. </span>
                     </div>
@@ -192,12 +194,44 @@
 
                             <div class="text-sm text-gray-600 dark:text-gray-400 mt-1">
                                 <span class="font-semibold"> Documento: </span>
-                               {{ $child->dni ?? 'No especificado' }}
+                                {{ $child->dni ?? 'No especificado' }}
                             </div>
 
                         </div>
                     </div>
                 @endforeach
+            </div>
+        @endif
+
+        {{-- Información de mascotas acompañantes --}}
+        @if ($record->travels_with_pets && !empty($record->pet_names))
+            <div class="mt-4">
+                <div
+                    class="border-l-4 border-orange-500 pl-4 py-2 my-2
+                            bg-gray-50 dark:bg-gray-800 rounded">
+                    <div
+                        class="text-sm font-semibold text-orange-600 dark:text-orange-400 flex flex-row justify-between gap-3 mb-1 flex-nowrap">
+                        <span> Acompañante </span>
+                        <span
+                            class="self-start md:self-center
+                             px-3 py-1 rounded-full text-xs font-medium
+                             bg-gray-100 dark:bg-gray-900
+                             text-orange-600 dark:text-orange-400 mr-3">
+                            Mascota(s)
+                        </span>
+                    </div>
+                    <div class="text-sm text-gray-700 dark:text-gray-300">
+                        <div class="text-sm text-gray-600 dark:text-gray-400">
+                            <span class="font-semibold"> Mascotas: </span>
+                            {{ $record->pet_names ?? 'No especificado' }}
+                        </div>
+
+                        <div class="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                            <span class="font-semibold"> Cantidad: </span>
+                            {{ $record->pet_count ?? 'No especificado' }}
+                        </div>
+                    </div>
+                </div>
             </div>
         @endif
     </div>

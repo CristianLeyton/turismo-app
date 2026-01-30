@@ -137,6 +137,8 @@
             color: #166534;
         }
 
+    
+
         .badge-seat {
             background: #f5d0fe;
             color: #86198f;
@@ -286,16 +288,30 @@
                                         Viaja con: {{ $passenger['parent_name'] }}
                                     </div>
                                 @endif
+                                @if ($passenger['type'] === 'pet' && isset($passenger['parent_name']))
+                                    <div class="child-info">
+                                        Mascota de: {{ $passenger['parent_name'] }}
+                                    </div>
+                                    @if (isset($passenger['pet_count']) && $passenger['pet_count'] > 1)
+                                        <div class="child-info">
+                                            ({{ $passenger['pet_count'] }} mascotas)
+                                        </div>
+                                    @endif
+                                @endif
                             </td>
 
-                            <td>{{ $passenger['dni'] }}</td>
+                            <td>{{ $passenger['dni'] == 'N/A' ? '-' : $passenger['dni'] }}</td>
 
                             <td>{{ $passenger['phone'] == 'N/A' ? '-' : $passenger['phone'] }}</td>
 
                             <td style="text-align: center;">
-                                <span class="badge badge-seat">
-                                    {{ is_numeric($passenger['seat_number']) ? $passenger['seat_number'] : 'No ocupa' }}
-                                </span>
+                                @if ($passenger['type'] === 'pet')
+                                    <span class="badge badge-seat">No ocupa</span>
+                                @else
+                                    <span class="badge badge-seat">
+                                        {{ is_numeric($passenger['seat_number']) ? $passenger['seat_number'] : 'No ocupa' }}
+                                    </span>
+                                @endif
                             </td>
 
                             <td style="text-align: center;">
@@ -316,7 +332,7 @@
         @endif
     </div>
 
-{{--     <div class="footer">
+    {{--     <div class="footer">
         Generado el {{ now()->format('d/m/Y H:i') }}
     </div> --}}
 

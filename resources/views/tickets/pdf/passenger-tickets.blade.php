@@ -3,8 +3,8 @@
 
 <head>
     <meta charset='utf-8'>
-     @foreach ($tickets->chunk(2) as $pair)
-            <title>Boleto N° {{ $pair[0]->id }} {{ isset($pair[1]) ? 'y ' . $pair[1]->id : ''}} </title>
+    @foreach ($tickets->chunk(2) as $pair)
+        <title>Boleto N° {{ $pair[0]->id }} {{ isset($pair[1]) ? 'y ' . $pair[1]->id : '' }} </title>
     @endforeach
 
     <style>
@@ -88,6 +88,15 @@
             font-size: 10px;
         }
 
+        .pet-box {
+            background: #ffe9cf;
+            border-left: 3px solid #ea580c;
+            padding: 2mm;
+            margin-top: 2mm;
+            border-radius: 4px;
+            font-size: 10px;
+        }
+
         .seat {
             font-size: 18px;
             font-weight: bold;
@@ -138,6 +147,16 @@
             font-size: 9px;
             font-weight: bold;
             color: #6b21a8;
+        }
+
+        .pet-warning {
+            margin-top: 2mm;
+            padding: 2mm;
+            background: #ffe9cf;
+            border-left: 3px solid #ea580c;
+            font-size: 9px;
+            font-weight: bold;
+            color: #9a3412;
         }
 
         .company-header {
@@ -196,6 +215,7 @@
                                 @php
                                     $hasChild =
                                         $ticket->travels_with_child && $ticket->passenger->children->isNotEmpty();
+                                    $hasPets = $ticket->travels_with_pets && !empty($ticket->pet_names);
                                 @endphp
 
                                 @if ($hasChild)
@@ -206,6 +226,14 @@
                                             <strong>Documento:</strong> {{ $child->dni }}
                                         </div>
                                     @endforeach
+                                @endif
+
+                                @if ($hasPets)
+                                    <div class='pet-box'>
+                                        <strong style="color: #ea580c;">ACOMPAÑANTE</strong><br>
+                                        <strong>Mascotas:</strong> {{ $ticket->pet_names }}<br>
+                                        <strong>Cantidad:</strong> {{ $ticket->pet_count }}
+                                    </div>
                                 @endif
 
                                 <div class='section-title'>VIAJE</div>
@@ -223,9 +251,10 @@
                                 <table width='100%' cellspacing='0' cellpadding='0'>
                                     <tr>
                                         <td width='50%' valign='top'>
-                                           {{--  <div class='section-title'>ASIENTO</div> --}}
+                                            {{--  <div class='section-title'>ASIENTO</div> --}}
                                             <div class='seat'>
-                                                <span style="color:#111827"> Asiento: </span> {{ $ticket->seat?->seat_number ?? 'SIN ASIENTO' }}
+                                                <span style="color:#111827"> Asiento: </span>
+                                                {{ $ticket->seat?->seat_number ?? 'SIN ASIENTO' }}
                                             </div>
                                         </td>
                                         <td width='50%' valign='top'>
@@ -267,6 +296,13 @@
                                         <div class='child-warning'>
                                             El pasajero adulto es responsable del menor durante todo el viaje. El menor
                                             no ocupa asiento.
+                                        </div>
+                                    @endif
+
+                                    @if ($hasPets)
+                                        <div class='pet-warning'>
+                                            El pasajero es responsable de las mascotas durante todo el viaje. Las mascotas
+                                            no ocupan asiento.
                                         </div>
                                     @endif
 

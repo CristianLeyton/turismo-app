@@ -21,6 +21,9 @@ class Ticket extends Model
         'seat_id',
         'is_round_trip',
         'travels_with_child',
+        'travels_with_pets',
+        'pet_names',
+        'pet_count',
         'price',
         'origin_location_id',
         'destination_location_id',
@@ -30,7 +33,18 @@ class Ticket extends Model
     protected $casts = [
         'is_round_trip' => 'boolean',
         'travels_with_child' => 'boolean',
+        'travels_with_pets' => 'boolean',
     ];
+
+    public function getCompanionTypeAttribute()
+    {
+        if ($this->travels_with_child) {
+            return 'Menor';
+        } elseif ($this->travels_with_pets) {
+            return 'Mascota';
+        }
+        return "No";
+    }
 
     protected static function boot()
     {

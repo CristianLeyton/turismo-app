@@ -147,13 +147,13 @@ class TripResource extends Resource
                     ->color('primary')
                     ->alignCenter(),
                     //->toggleable(isToggledHiddenByDefault: false),
-                TextColumn::make('total_passengers')
+/*                 TextColumn::make('total_passengers')
                     ->label('Pasajeros')
                     ->getStateUsing(fn($record) => $record->total_passengers)
                     ->visibleFrom('md')
                     ->badge()
                     ->color('success')
-                    ->alignCenter(),
+                    ->alignCenter(), */
                     //->toggleable(isToggledHiddenByDefault: false),
 /*                 TextColumn::make('created_at')
                     ->dateTime()

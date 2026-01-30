@@ -20,6 +20,7 @@ class LocationSeeder extends Seeder
             ['name' => 'Pichanal'],
             ['name' => 'Colonia Santa Rosa'],
             ['name' => 'Urundel'],
+            ['name' => 'Gral. Güemes'],
             ['name' => 'Salta'],
         ];
 

@@ -325,6 +325,9 @@ class CreateTicket extends CreateRecord
                 $seatId = $seatIds[$index] ?? null;
                 $passengerData = $data['passengers'][$index] ?? [];
                 $travelsWithChild = $passengerData['travels_with_child'] ?? false;
+                $travelsWithPets = $passengerData['travels_with_pets'] ?? false;
+                $petNames = $passengerData['pet_data']['pet_names'] ?? null;
+                $petCount = $passengerData['pet_data']['pet_count'] ?? null;
 
                 $ticketsData[] = [
                     'sale_id' => $sale->id,
@@ -334,6 +337,9 @@ class CreateTicket extends CreateRecord
                     'is_round_trip' => $data['is_round_trip'] ?? false,
                     'return_trip_id' => $data['return_trip_id'] ?? null,
                     'travels_with_child' => $travelsWithChild,
+                    'travels_with_pets' => $travelsWithPets,
+                    'pet_names' => $petNames,
+                    'pet_count' => $petCount,
                     'origin_location_id' => $data['origin_location_id'],
                     'destination_location_id' => $data['destination_location_id'],
                     'price' => 0,
@@ -407,6 +413,9 @@ class CreateTicket extends CreateRecord
                     $seatId = $returnSeatIds[$index] ?? null;
                     $passengerData = $data['passengers'][$index] ?? [];
                     $travelsWithChild = $passengerData['travels_with_child'] ?? false;
+                    $travelsWithPets = $passengerData['travels_with_pets'] ?? false;
+                    $petNames = $passengerData['pet_data']['pet_names'] ?? null;
+                    $petCount = $passengerData['pet_data']['pet_count'] ?? null;
 
                     $returnTicketsData[] = [
                         'sale_id' => $sale->id,
@@ -415,6 +424,9 @@ class CreateTicket extends CreateRecord
                         'passenger_id' => $passenger->id,
                         'is_round_trip' => true,
                         'travels_with_child' => $travelsWithChild,
+                        'travels_with_pets' => $travelsWithPets,
+                        'pet_names' => $petNames,
+                        'pet_count' => $petCount,
                         'origin_location_id' => $data['destination_location_id'],
                         'destination_location_id' => $data['origin_location_id'],
                         'price' => 0,
@@ -806,7 +818,7 @@ class CreateTicket extends CreateRecord
                 }
             }
         } catch (\Exception $e) {
-            \Log::error('Error en handleSeatReservationConflict', [
+            Log::error('Error en handleSeatReservationConflict', [
                 'error' => $e->getMessage(),
                 'data' => $data
             ]);

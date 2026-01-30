@@ -88,153 +88,184 @@
             Pasajeros
         </h3>
 
-            @foreach ($passengers as $index => $passenger)
-                @php
-                    // Contador para asignar asientos correctamente
-                    static $passengerCounter = 0;
-                    $currentPassengerIndex = $passengerCounter++;
-                    
-                    // Asignar asientos por orden de llegada
-                    $seatId = null;
-                    $returnSeatId = null;
-                    
-                    if (is_array($seatIds) && count($seatIds) > 0) {
-                        if (count($seatIds) === 1) {
-                            // Si hay un solo asiento, asignarlo a todos los pasajeros
-                            $seatId = reset($seatIds);
-                        } else {
-                            // Asignar por orden de pasajero usando contador numérico
-                            $seatId = $seatIds[$currentPassengerIndex] ?? null;
-                        }
-                    }
-                    
-                    if (is_array($returnSeatIds) && count($returnSeatIds) > 0) {
-                        if (count($returnSeatIds) === 1) {
-                            // Si hay un solo asiento de vuelta, asignarlo a todos los pasajeros
-                            $returnSeatId = reset($returnSeatIds);
-                        } else {
-                            // Asignar por orden de pasajero usando contador numérico
-                            $returnSeatId = $returnSeatIds[$currentPassengerIndex] ?? null;
-                        }
-                    }
-                    
-                    // Depuración
-                    \Log::info('Summary passenger debug FIXED', [
-                        'foreachIndex' => $index,
-                        'currentPassengerIndex' => $currentPassengerIndex,
-                        'passengerNumber' => $passenger['passenger_number'] ?? 'NOT_FOUND',
-                        'seatIds' => $seatIds,
-                        'returnSeatIds' => $returnSeatIds,
-                        'seatId' => $seatId,
-                        'returnSeatId' => $returnSeatId,
-                    ]);
-                @endphp
+        @foreach ($passengers as $index => $passenger)
+            @php
+                // Contador para asignar asientos correctamente
+                static $passengerCounter = 0;
+                $currentPassengerIndex = $passengerCounter++;
 
-                <div
-                    class="rounded-xl border p-5
+                // Asignar asientos por orden de llegada
+                $seatId = null;
+                $returnSeatId = null;
+
+                if (is_array($seatIds) && count($seatIds) > 0) {
+                    if (count($seatIds) === 1) {
+                        // Si hay un solo asiento, asignarlo a todos los pasajeros
+                        $seatId = reset($seatIds);
+                    } else {
+                        // Asignar por orden de pasajero usando contador numérico
+                        $seatId = $seatIds[$currentPassengerIndex] ?? null;
+                    }
+                }
+
+                if (is_array($returnSeatIds) && count($returnSeatIds) > 0) {
+                    if (count($returnSeatIds) === 1) {
+                        // Si hay un solo asiento de vuelta, asignarlo a todos los pasajeros
+                        $returnSeatId = reset($returnSeatIds);
+                    } else {
+                        // Asignar por orden de pasajero usando contador numérico
+                        $returnSeatId = $returnSeatIds[$currentPassengerIndex] ?? null;
+                    }
+                }
+
+                // Depuración
+                \Log::info('Summary passenger debug FIXED', [
+                    'foreachIndex' => $index,
+                    'currentPassengerIndex' => $currentPassengerIndex,
+                    'passengerNumber' => $passenger['passenger_number'] ?? 'NOT_FOUND',
+                    'seatIds' => $seatIds,
+                    'returnSeatIds' => $returnSeatIds,
+                    'seatId' => $seatId,
+                    'returnSeatId' => $returnSeatId,
+                ]);
+            @endphp
+
+            <div
+                class="rounded-xl border p-5
                         bg-white dark:bg-gray-900
                         border-gray-200 dark:border-gray-700">
 
-                    {{-- Datos principales --}}
-                    <div class="flex justify-between gap-3 mb-1 flex-nowrap">
-                        <div>
-                            <div class="text-sm text-gray-500 dark:text-gray-400 mb-1">
-                                Pasajero N°{{ is_numeric($index) ? ($index + 1) : 1 }}
-                            </div>
-                            <div class="text-lg font-semibold text-gray-900 dark:text-gray-100">
-                                {{ $passenger['first_name'] ?? '' }}
-                                {{ $passenger['last_name'] ?? '' }}
-                            </div>
-
-                            <div class="text-sm text-gray-600 dark:text-gray-400">
-                                <div class="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                                    <span class="font-semibold">Documento: </span>
-                                    {{ $passenger['dni'] ?? 'No especificado' }}
-                                </div>
-                            </div>
-
-                            @if (!empty($passenger['phone_number']))
-                                <div class="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                                    <span class="font-semibold">Teléfono: </span> {{ $passenger['phone_number'] }}
-                                </div>
-                            @endif
+                {{-- Datos principales --}}
+                <div class="flex justify-between gap-3 mb-1 flex-nowrap">
+                    <div>
+                        <div class="text-sm text-gray-500 dark:text-gray-400 mb-1">
+                            Pasajero N°{{ is_numeric($index) ? $index + 1 : 1 }}
+                        </div>
+                        <div class="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                            {{ $passenger['first_name'] ?? '' }}
+                            {{ $passenger['last_name'] ?? '' }}
                         </div>
 
-                        <span
-                            class="self-start md:self-center
-                                 px-3 py-1 rounded-full text-xs font-medium
-                                 bg-gray-100 dark:bg-gray-800
-                                 text-fuchsia-600 dark:text-fuchsia-400">
-                            Adulto
-                        </span>
-                    </div>
-
-                    {{-- Menor acompañante --}}
-                    @if (!empty($passenger['travels_with_child']) && !empty($passenger['child_data']))
-                        <div
-                            class="border-l-4 border-fuchsia-500 pl-4 py-2 my-2
-                                bg-gray-50 dark:bg-gray-800 rounded">
-                            <div class="text-sm font-semibold text-fuchsia-600 dark:text-fuchsia-400 flex flex-row justify-between gap-3 mb-1 flex-nowrap">
-                                <span> Acompañante </span>
-                                 <span
-                            class="self-start md:self-center
-                                 px-3 py-1 rounded-full text-xs font-medium
-                                 bg-gray-100 dark:bg-gray-900
-                                 text-fuchsia-600 dark:text-fuchsia-400 mr-3">
-                            Menor
-                        </span>
-                            </div>
-                            <div class="text-sm text-gray-700 dark:text-gray-300">
-                                {{ $passenger['child_data']['first_name'] ?? '' }}
-                                {{ $passenger['child_data']['last_name'] ?? '' }}
-
-                                <div class="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                                    <span class="font-semibold"> Documento: </span>
-                                    {{ $passenger['child_data']['dni'] ?? 'No especificado' }}
-                                </div>
-
+                        <div class="text-sm text-gray-600 dark:text-gray-400">
+                            <div class="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                                <span class="font-semibold">Documento: </span>
+                                {{ $passenger['dni'] ?? 'No especificado' }}
                             </div>
                         </div>
-                    @endif
 
-                    {{-- Asientos (más pequeños y discretos) --}}
-                    <div class="text-sm text-gray-600 dark:text-gray-400 mb-2">
-                        <span class="font-semibold ">Asientos: </span>
-                    </div>
-                    <div class="flex gap-3 mb-2">
-                        <div
-                            class="flex items-center gap-2
-                                px-3 py-2 rounded-lg
-                                bg-gray-100 dark:bg-gray-800">
-                            <span class="text-xs text-gray-500 dark:text-gray-400 uppercase">
-                                Ida
-                            </span>
-                            <span class="text-lg font-bold text-gray-900 dark:text-gray-100">
-                                {{ $seatId ?? '—' }}
-                            </span>
-                        </div>
-
-                        @if ($get('is_round_trip'))
-                            <div
-                                class="flex items-center gap-2
-                                    px-3 py-2 rounded-lg
-                                    bg-gray-100 dark:bg-gray-800">
-                                <span class="text-xs text-gray-500 dark:text-gray-400 uppercase">
-                                    Vuelta
-                                </span>
-                                <span class="text-lg font-bold text-gray-900 dark:text-gray-100">
-                                    {{ $returnSeatId ?? '—' }}
-                                </span>
+                        @if (!empty($passenger['phone_number']))
+                            <div class="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                                <span class="font-semibold">Teléfono: </span> {{ $passenger['phone_number'] }}
                             </div>
                         @endif
                     </div>
 
-                    
-
+                    <span
+                        class="self-start md:self-center
+                                 px-3 py-1 rounded-full text-xs font-medium
+                                 bg-gray-100 dark:bg-gray-800
+                                 text-fuchsia-600 dark:text-fuchsia-400">
+                        Adulto
+                    </span>
                 </div>
-            @endforeach
 
-        
+                {{-- Menor acompañante --}}
+                @if (!empty($passenger['travels_with_child']) && !empty($passenger['child_data']))
+                    <div
+                        class="border-l-4 border-fuchsia-500 pl-4 py-2 my-2
+                                bg-gray-50 dark:bg-gray-800 rounded">
+                        <div
+                            class="text-sm font-semibold text-fuchsia-600 dark:text-fuchsia-400 flex flex-row justify-between gap-3 mb-1 flex-nowrap">
+                            <span> Acompañante </span>
+                            <span
+                                class="self-start md:self-center
+                                 px-3 py-1 rounded-full text-xs font-medium
+                                 bg-gray-100 dark:bg-gray-900
+                                 text-fuchsia-600 dark:text-fuchsia-400 mr-3">
+                                Menor
+                            </span>
+                        </div>
+                        <div class="text-sm text-gray-700 dark:text-gray-300">
+                            {{ $passenger['child_data']['first_name'] ?? '' }}
+                            {{ $passenger['child_data']['last_name'] ?? '' }}
+
+                            <div class="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                                <span class="font-semibold"> Documento: </span>
+                                {{ $passenger['child_data']['dni'] ?? 'No especificado' }}
+                            </div>
+
+                        </div>
+                    </div>
+                @endif
+
+                {{-- Mascotas acompañantes --}}
+                @if (!empty($passenger['travels_with_pets']) && !empty($passenger['pet_data']))
+                    <div
+                        class="border-l-4 border-orange-500 pl-4 py-2 my-2
+                                bg-gray-50 dark:bg-gray-800 rounded">
+                        <div
+                            class="text-sm font-semibold text-orange-600 dark:text-orange-400 flex flex-row justify-between gap-3 mb-1 flex-nowrap">
+                            <span> Acompañante </span>
+                            <span
+                                class="self-start md:self-center
+                                 px-3 py-1 rounded-full text-xs font-medium
+                                 bg-gray-100 dark:bg-gray-900
+                                 text-orange-600 dark:text-orange-400 mr-3">
+                                Mascota(s)
+                            </span>
+                        </div>
+                        <div class="text-sm text-gray-700 dark:text-gray-300">
+                            <div class="text-sm text-gray-600 dark:text-gray-400">
+                                <span class="font-semibold"> Mascotas: </span>
+                                {{ $passenger['pet_data']['pet_names'] ?? 'No especificado' }}
+                            </div>
+
+                            <div class="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                                <span class="font-semibold"> Cantidad: </span>
+                                {{ $passenger['pet_data']['pet_count'] ?? 'No especificado' }}
+                            </div>
+                        </div>
+                    </div>
+                @endif
+
+                {{-- Asientos (más pequeños y discretos) --}}
+                <div class="text-sm text-gray-600 dark:text-gray-400 mb-2">
+                    <span class="font-semibold ">Asientos: </span>
+                </div>
+                <div class="flex gap-3 mb-2">
+                    <div
+                        class="flex items-center gap-2
+                                px-3 py-2 rounded-lg
+                                bg-gray-100 dark:bg-gray-800">
+                        <span class="text-xs text-gray-500 dark:text-gray-400 uppercase">
+                            Ida
+                        </span>
+                        <span class="text-lg font-bold text-gray-900 dark:text-gray-100">
+                            {{ $seatId ?? '—' }}
+                        </span>
+                    </div>
+
+                    @if ($get('is_round_trip'))
+                        <div
+                            class="flex items-center gap-2
+                                    px-3 py-2 rounded-lg
+                                    bg-gray-100 dark:bg-gray-800">
+                            <span class="text-xs text-gray-500 dark:text-gray-400 uppercase">
+                                Vuelta
+                            </span>
+                            <span class="text-lg font-bold text-gray-900 dark:text-gray-100">
+                                {{ $returnSeatId ?? '—' }}
+                            </span>
+                        </div>
+                    @endif
+                </div>
+
+
+
+            </div>
+        @endforeach
+
+
     </div>
 
 </div>

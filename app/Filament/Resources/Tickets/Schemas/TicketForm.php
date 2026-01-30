@@ -35,6 +35,7 @@ use Filament\Schemas\Components\Wizard\Step;
 use Filament\Support\Exceptions\Halt;
 use Filament\Tables\Columns\Column;
 use Illuminate\Support\Facades\Blade;
+use Illuminate\Support\Facades\Log;
 
 class TicketForm
 {
@@ -60,7 +61,7 @@ class TicketForm
 
                         // Si la búsqueda realmente cambió, limpiar reservas anteriores
                         if ($lastSearchHash !== null && $lastSearchHash !== $currentHash) {
-                            \Log::info('Búsqueda cambió - limpiando reservaciones', [
+                            Log::info('Búsqueda cambió - limpiando reservaciones', [
                                 'lastHash' => $lastSearchHash,
                                 'currentHash' => $currentHash,
                                 'searchParams' => $currentSearch
@@ -631,16 +632,12 @@ class TicketForm
                                         '2' => '2',
                                         '3' => '3',
                                         '4' => '4',
-                                        '5' => '5',
-                                        '6' => '6',
-                                        '7' => '7',
-                                        '8' => '8',
                                     ])
                                     ->selectablePlaceholder(false)
-                                    ->rule('in:1,2,3,4,5,6,7,8')
+                                    ->rule('in:1,2,3,4')
                                     ->validationMessages([
                                         'required' => 'Ingrese la cantidad de pasajeros',
-                                        'in' => 'La cantidad de pasajeros debe ser entre 1 y 8',
+                                        'in' => 'La cantidad de pasajeros debe ser entre 1 y 4',
                                     ])
                                     ->afterStateUpdated(function ($state, callable $set, Get $get) {
 
@@ -1828,7 +1825,10 @@ class TicketForm
                                             ]),
                                     ]),
 
-                                Checkbox::make('travels_with_child')
+
+                                Grid::make(2)
+                                    ->schema([
+                                         Checkbox::make('travels_with_child')
                                     ->label('¿Viaja con un menor?')
                                     ->default(false)
                                     ->live()
@@ -1838,10 +1838,36 @@ class TicketForm
                                     ->afterStateUpdated(function ($state, callable $set, $get) {
                                         $passengerIndex = $get('..');
                                         if (!$state) {
-                                            $set('child_data', null);
+                                            $set('child_data', []);
                                         }
-                                    })
-                                    ->columnSpanFull(),
+                                        // Si viaja con menor, desmarcar mascotas
+                                        if ($state) {
+                                            $set('travels_with_pets', false);
+                                            $set('pet_data', []);
+                                        }
+                                    }),
+
+                                Checkbox::make('travels_with_pets')
+                                    ->label('¿Viaja con mascotas?')
+                                    ->default(false)
+                                    ->live()
+                                    ->extraAttributes([
+                                        'class' => 'toggle-checkbox'
+                                    ])
+                                    ->afterStateUpdated(function ($state, callable $set, $get) {
+                                        $passengerIndex = $get('..');
+                                        if (!$state) {
+                                            $set('pet_data', []);
+                                        }
+                                        // Si viaja con mascotas, desmarcar menor
+                                        if ($state) {
+                                            $set('travels_with_child', false);
+                                            $set('child_data', []);
+                                        }
+                                    }),
+                                    ]),
+
+                               
 
                                 // Sección de datos del menor (condicional)
                                 Grid::make(2)
@@ -1895,6 +1921,33 @@ class TicketForm
                                             ->helperText('Edad entre 0 y 4 años'), */
                                     ])
                                     ->visible(fn($get) => $get('travels_with_child'))
+                                    ->live(),
+
+                                // Sección de datos de mascotas (condicional)
+                                Grid::make(2)
+                                    ->schema([
+                                        TextInput::make('pet_data.pet_names')
+                                            ->label('Mascotas')
+                                            ->required()
+                                            ->placeholder('Ej: Perro, Gato, etc')
+                                            ->validationMessages([
+                                                'required' => 'Debe ingresar las mascotas.',
+                                            ]),
+
+                                        TextInput::make('pet_data.pet_count')
+                                            ->label('Cantidad')
+                                            ->required()
+                                            ->numeric()
+                                            ->minValue(1)
+                                            ->maxValue(3)
+                                            ->validationMessages([
+                                                'required' => 'Debe ingresar la cantidad de mascotas.',
+                                                'numeric' => 'La cantidad debe ser un número.',
+                                                'min' => 'Debe haber al menos 1 mascota.',
+                                                'max' => 'No puede viajar con más de 3 mascotas.',
+                                            ]),
+                                    ])
+                                    ->visible(fn($get) => $get('travels_with_pets'))
                                     ->live(),
 
                                 Hidden::make('passenger_number')

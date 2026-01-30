@@ -1977,7 +1977,6 @@ class TicketForm
                                                 'transfer' => 'Transferencia',
                                             ])
                                             ->inline()
-                                            ->default('cash')
                                             ->validationMessages([
                                                 'required' => 'Debe seleccionar un método de pago.',
                                             ]),

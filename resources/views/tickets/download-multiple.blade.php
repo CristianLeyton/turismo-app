@@ -29,13 +29,10 @@
 
         <div class="mt-6 space-y-3">
             @foreach ($downloads as $download)
-                <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200">
+                <div class="flex flex-col md:flex-row items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200 gap-4">
                     <div class="flex-1 text-left">
                         <div class="text-sm font-medium text-gray-900">
                             {{ $download['filename'] }}
-                        </div>
-                        <div class="text-xs text-gray-500">
-                            Boleto de viaje
                         </div>
                     </div>
                     <a href="data:application/pdf;base64,{{ $download['content'] }}"
@@ -53,6 +50,8 @@
                     </a>
                 </div>
             @endforeach
+            <span class="text-xs text-gray-400">Da click en el último enlace para descargar todos los boletos
+                juntos.</span>
         </div>
 
         <button onclick="window.close()"
@@ -71,26 +70,22 @@
 
     <script>
         const downloads = @json($downloads);
-        let downloadIndex = 0;
 
-        function downloadNext() {
-            if (downloadIndex < downloads.length) {
-                const download = downloads[downloadIndex];
+        // Descargar automáticamente solo el último archivo (PDF combinado)
+        function downloadCombinedPDF() {
+            if (downloads.length > 0) {
+                const combinedDownload = downloads[downloads.length - 1]; // El último es el combinado
                 const link = document.createElement('a');
-                link.href = 'data:application/pdf;base64,' + download.content;
-                link.download = download.filename;
+                link.href = 'data:application/pdf;base64,' + combinedDownload.content;
+                link.download = combinedDownload.filename;
                 document.body.appendChild(link);
                 link.click();
                 document.body.removeChild(link);
-
-                downloadIndex++;
-                // Delay de 800ms entre cada descarga
-                setTimeout(downloadNext, 800);
             }
         }
 
-        // Iniciar descargas después de 500ms
-        setTimeout(downloadNext, 500);
+        // Iniciar descarga automática del PDF combinado después de 500ms
+        setTimeout(downloadCombinedPDF, 500);
     </script>
 </body>
 

@@ -28,12 +28,12 @@
             border: 1px solid #e5e7eb;
             border-radius: 10px;
             padding: 6mm;
-            height: 130mm;
+            height: 123mm;
             /* media hoja A4 */
         }
 
         .ticket:first-child {
-            margin-bottom: 5mm;
+            margin-bottom: 15mm;
         }
 
         .ticket-grid {

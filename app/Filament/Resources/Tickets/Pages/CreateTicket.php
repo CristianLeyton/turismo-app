@@ -543,8 +543,10 @@ class CreateTicket extends CreateRecord
                 // Guardar URL de descarga para redirección automática
                 session()->put('auto_download_url', $downloadUrl);
             } else {
-                // Múltiples pasajeros - generar todos los PDFs
+                // Múltiples pasajeros - generar PDFs individuales y PDF combinado
                 $downloads = [];
+                $ticketNumbers = [];
+                $allTickets = [];
 
                 foreach ($ticketsByPassenger as $passengerId => $passengerTickets) {
                     $passenger = $passengerTickets->first()->passenger;
@@ -556,6 +558,12 @@ class CreateTicket extends CreateRecord
                     $colectivo = str_replace(' ', '_', $trip->bus->name);
                     $filename = "Boleto_N°{$ticketId}_{$colectivo}.pdf";
 
+                    // Recolectar números de boletos para el nombre del archivo combinado
+                    $ticketNumbers[] = $ticketId;
+
+                    // Recolectar todos los tickets para el PDF combinado
+                    $allTickets = array_merge($allTickets, $passengerTickets->toArray());
+
                     $data = [
                         'sale' => $sale,
                         'tickets' => $passengerTickets,
@@ -563,7 +571,7 @@ class CreateTicket extends CreateRecord
                         'hasChild' => $passengerTickets->contains('travels_with_child', true),
                     ];
 
-                    // Generar PDF
+                    // Generar PDF individual usando la vista existente
                     $dompdf = new \Dompdf\Dompdf();
                     $dompdf->loadHtml(view('tickets.pdf.passenger-tickets', $data)->render());
                     $dompdf->setPaper('A4', 'portrait');
@@ -576,20 +584,30 @@ class CreateTicket extends CreateRecord
                     ];
                 }
 
-                // Guardar en sesión para descarga múltiple
+                // Generar PDF combinado usando todos los tickets juntos
+                $combinedFilename = "Boletos_N°" . implode('_', $ticketNumbers) . ".pdf";
+                $combinedContent = $this->generateCombinedPDF($sale, $ticketsByPassenger);
+
+                // Agregar el PDF combinado a la lista de descargas
+                $downloads[] = [
+                    'filename' => $combinedFilename,
+                    'content' => base64_encode($combinedContent)
+                ];
+
+                // Guardar todos los PDFs en sesión para descarga múltiple
                 session(['ticket_pdfs_data' => $downloads]);
 
-                // Mostrar notificación con descarga automática
+                // Mostrar notificación y redirigir a la página de descarga múltiple
                 $passengerCount = count($downloads);
                 $downloadUrl = route('tickets.download.multiple');
                 Notification::make()
                     ->title('Boletos vendidos correctamente')
                     ->icon('heroicon-m-check-circle')
-                    ->body("Se han creado {$passengerCount} boletos. Se están descargando automáticamente...")
+                    ->body("Se han creado {$passengerCount} boletos. Elige cómo descargarlos.")
                     ->success()
                     ->send();
 
-                // Guardar URL de descarga para redirección automática
+                // Redirigir a la página de descarga múltiple
                 session()->put('auto_download_url', $downloadUrl);
             }
         } catch (\Exception $e) {
@@ -606,6 +624,98 @@ class CreateTicket extends CreateRecord
                 ->warning()
                 ->send();
         }
+    }
+
+    /**
+     * Generar PDF combinado con todos los tickets
+     */
+    private function generateCombinedPDF($sale, $ticketsByPassenger): string
+    {
+        $html = '<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Boletos N° ' . implode(', ', $ticketsByPassenger->flatMap(function ($passengerTickets) {
+            return $passengerTickets->pluck('id');
+        })->toArray()) . '</title>';
+
+        // Incluir los estilos CSS del PDF original
+        $originalStyles = file_get_contents(resource_path('views/tickets/pdf/passenger-tickets.blade.php'));
+        if (preg_match('/<style>(.*?)<\/style>/s', $originalStyles, $matches)) {
+            $html .= '<style>' . $matches[1] . '</style>';
+        }
+
+        $html .= '
+    <style>
+        .ticket-container {
+            page-break-inside: avoid;
+            min-height: 123mm; /* Más compacto que el PDF individual */
+        }
+
+        .ticket-container:nth-child(odd) {
+            margin-bottom: 17mm;
+        }
+
+        /* Para tickets sin vuelta, hacerlos más compactos */
+        .ticket-container.no-return {
+            height: 123mm; /* Altura fija para tickets de ida solamente */
+        }
+        
+        /* Para tickets con vuelta, mantener tamaño completo */
+        .ticket-container.with-return {
+            height: 123mm; /* Altura completa para tickets de ida y vuelta */
+            page-break-after: always;
+        }
+    </style>
+</head>
+<body>';
+
+        // Generar HTML para cada ticket usando la vista existente SIN saltos de página
+        foreach ($ticketsByPassenger as $index => $passengerTickets) {
+            $passenger = $passengerTickets->first()->passenger;
+            $hasChild = $passengerTickets->contains('travels_with_child', true);
+
+            // Generar el HTML del ticket usando la misma lógica que la vista individual
+            $html .= $this->generateTicketHTML($sale, $passengerTickets, $passenger, $hasChild);
+        }
+
+        $html .= '</body></html>';
+
+        // Generar el PDF combinado final
+        $dompdf = new \Dompdf\Dompdf();
+        $dompdf->loadHtml($html);
+        $dompdf->setPaper('A4', 'portrait');
+        $dompdf->render();
+
+        return $dompdf->output();
+    }
+
+    /**
+     * Generar HTML para un ticket específico
+     */
+    private function generateTicketHTML($sale, $tickets, $passenger, $hasChild): string
+    {
+        // Determinar si el ticket tiene vuelta
+        $hasReturn = $tickets->first()->is_round_trip && $tickets->first()->returnTrip;
+        $cssClass = $hasReturn ? 'with-return' : 'no-return';
+
+        // Extraer el HTML de la vista passenger-tickets para un solo pasajero
+        $data = [
+            'sale' => $sale,
+            'tickets' => $tickets,
+            'passenger' => $passenger,
+            'hasChild' => $hasChild,
+        ];
+
+        // Renderizar la vista y extraer el contenido del body
+        $fullHtml = view('tickets.pdf.passenger-tickets', $data)->render();
+
+        // Extraer solo el contenido dentro del body
+        if (preg_match('/<body[^>]*>(.*?)<\/body>/s', $fullHtml, $matches)) {
+            return '<div class="ticket-container ' . $cssClass . '">' . $matches[1] . '</div>';
+        }
+
+        return '<div class="ticket-container ' . $cssClass . '">' . $fullHtml . '</div>';
     }
 
     /**

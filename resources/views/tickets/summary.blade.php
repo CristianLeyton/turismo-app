@@ -277,12 +277,12 @@
                             </div>
                             @if (($passenger['payment_method'] ?? null) === 'cash')
                                 <span
-                                    class="inline-block px-3 py-1 rounded-full text-sm font-medium bg-gray-100 dark:bg-gray-800 text-lime-500 dark:text-lime-400">
+                                    class="inline-block px-3 py-1 rounded-full text-xs font-semibold bg-gray-100 dark:bg-gray-800 text-lime-500 dark:text-lime-400">
                                     Efectivo
                                 </span>
                             @elseif(($passenger['payment_method'] ?? null) === 'transfer')
                                 <span
-                                    class="inline-block px-3 py-1 rounded-full text-sm font-medium bg-gray-100 dark:bg-gray-800 text-sky-500 dark:text-sky-400">
+                                    class="inline-block px-3 py-1 rounded-full text-xs font-semibold bg-gray-100 dark:bg-gray-800 text-sky-500 dark:text-sky-400">
                                     Transferencia
                                 </span>
                             @else

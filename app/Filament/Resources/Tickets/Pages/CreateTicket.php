@@ -652,7 +652,7 @@ class CreateTicket extends CreateRecord
             min-height: 123mm; /* Más compacto que el PDF individual */
         }
 
-        .ticket-container:nth-child(odd) {
+        .ticket-container.no-return:nth-child(odd) {
             margin-bottom: 17mm;
         }
 

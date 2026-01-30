@@ -137,7 +137,7 @@
             color: #166534;
         }
 
-    
+
 
         .badge-seat {
             background: #f5d0fe;

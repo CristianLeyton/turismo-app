@@ -103,16 +103,17 @@
                                         @endif
                                     @endif
                                 </td>
-                                <td class="px-4 py-2 text-sm text-gray-900 dark:text-gray-100">{{ $passenger['dni'] == 'N/A' ? '-' : $passenger['dni']}}
+                                <td class="px-4 py-2 text-sm text-gray-900 dark:text-gray-100">
+                                    {{ $passenger['dni'] == 'N/A' ? '-' : $passenger['dni'] }}
                                 </td>
                                 <td class="px-4 py-2 text-sm text-gray-900 dark:text-gray-100">
                                     {{ $passenger['phone'] == 'N/A' ? '-' : $passenger['phone'] }}</td>
                                 <td class="px-4 py-2 text-sm text-gray-900 dark:text-gray-100 text-center">
 
-                                        <span
-                                            class="inline-block px-2 py-1 text-xs bg-fuchsia-100 dark:bg-fuchsia-900/30 text-fuchsia-800 dark:text-fuchsia-300 rounded-lg">{{ is_numeric($passenger['seat_number']) ? $passenger['seat_number'] : 'No ocupa' }}
-                                        </span>
-                                   
+                                    <span
+                                        class="inline-block px-2 py-1 text-xs bg-fuchsia-100 dark:bg-fuchsia-900/30 text-fuchsia-800 dark:text-fuchsia-300 rounded-lg">{{ is_numeric($passenger['seat_number']) ? $passenger['seat_number'] : 'No ocupa' }}
+                                    </span>
+
                                 </td>
                                 <td class="px-4 py-2 text-sm text-gray-900 dark:text-gray-100">
                                     <span

@@ -260,7 +260,37 @@
                     @endif
                 </div>
 
-
+                {{-- Información de pago --}}
+                <div class="border-t border-gray-200 dark:border-gray-700 pt-3 mt-3">
+                    <div class="flex justify-between items-center gap-4">
+                        <div class="flex-1">
+                            <div class="text-sm text-gray-500 dark:text-gray-400 mb-1">
+                                Precio
+                            </div>
+                            <div class="text-lg font-semibold text-fuchsia-600 dark:text-fuchsia-400">
+                                ${{ number_format($passenger['price'] ?? 0, 2, ',', '.') }}
+                            </div>
+                        </div>
+                        <div class="flex-1 text-right">
+                            <div class="text-sm text-gray-500 dark:text-gray-400 mb-1">
+                                Método de pago
+                            </div>
+                            @if (($passenger['payment_method'] ?? null) === 'cash')
+                                <span
+                                    class="inline-block px-3 py-1 rounded-full text-sm font-medium bg-gray-100 dark:bg-gray-800 text-lime-500 dark:text-lime-400">
+                                    Efectivo
+                                </span>
+                            @elseif(($passenger['payment_method'] ?? null) === 'transfer')
+                                <span
+                                    class="inline-block px-3 py-1 rounded-full text-sm font-medium bg-gray-100 dark:bg-gray-800 text-sky-500 dark:text-sky-400">
+                                    Transferencia
+                                </span>
+                            @else
+                                <span class="text-gray-500">No especificado</span>
+                            @endif
+                        </div>
+                    </div>
+                </div>
 
             </div>
         @endforeach

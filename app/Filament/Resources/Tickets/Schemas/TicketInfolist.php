@@ -17,7 +17,7 @@ class TicketInfolist
     {
         return $schema
             ->components([
-                
+
                 // Resumen General con estilo similar al del formulario
                 ViewEntry::make('summary_header')
                     ->label('')
@@ -27,7 +27,7 @@ class TicketInfolist
                 // Información del Viaje
                 ComponentsSection::make('Detalles de venta')
                     ->columnSpanFull()
-                    ->columns(3)
+                    ->columns(5)
                     ->collapsible()
                     ->schema([
                         TextEntry::make('sale.id')
@@ -40,13 +40,33 @@ class TicketInfolist
                             ->date('d/m/Y H:i')
                             ->badge()
                             ->color('info'),
-                        
+
+                        TextEntry::make('price')
+                            ->label('Precio')
+                            ->badge()
+                            ->prefix('$')
+                            ->color('success'),
+                        TextEntry::make('payment_method')
+                            ->label('Método de pago')
+                            ->badge()
+                            ->formatStateUsing(fn($state) => match ($state) {
+                                'cash' => 'Efectivo',
+                                'transfer' => 'Transferencia',
+                                default => 'N/A',
+                            })
+                            ->color(fn($state) => match ($state) {
+                                'cash' => 'success',
+                                'transfer' => 'info',
+                                default => 'gray',
+                            }),
                         TextEntry::make('sale.user.name')
                             ->label('Vendedor')
                             ->badge()
                             ->color('warning'),
+
+
                     ]),
-                
+
             ]);
     }
 }

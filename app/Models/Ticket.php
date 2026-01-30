@@ -25,6 +25,7 @@ class Ticket extends Model
         'pet_names',
         'pet_count',
         'price',
+        'payment_method',
         'origin_location_id',
         'destination_location_id',
         'deleted_by',

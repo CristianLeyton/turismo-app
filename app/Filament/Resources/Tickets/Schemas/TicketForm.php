@@ -22,6 +22,7 @@ use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\ViewField;
 use Filament\Forms\Components\Button;
 use Filament\Forms\Components\Checkbox;
+use Filament\Forms\Components\Radio;
 use Filament\Notifications\Notification;
 use Filament\Schemas\Components\Fieldset;
 use Filament\Schemas\Components\Section;
@@ -1828,46 +1829,46 @@ class TicketForm
 
                                 Grid::make(2)
                                     ->schema([
-                                         Checkbox::make('travels_with_child')
-                                    ->label('¿Viaja con un menor?')
-                                    ->default(false)
-                                    ->live()
-                                    ->extraAttributes([
-                                        'class' => 'toggle-checkbox'
-                                    ])
-                                    ->afterStateUpdated(function ($state, callable $set, $get) {
-                                        $passengerIndex = $get('..');
-                                        if (!$state) {
-                                            $set('child_data', []);
-                                        }
-                                        // Si viaja con menor, desmarcar mascotas
-                                        if ($state) {
-                                            $set('travels_with_pets', false);
-                                            $set('pet_data', []);
-                                        }
-                                    }),
+                                        Checkbox::make('travels_with_child')
+                                            ->label('¿Viaja con un menor?')
+                                            ->default(false)
+                                            ->live()
+                                            ->extraAttributes([
+                                                'class' => 'toggle-checkbox'
+                                            ])
+                                            ->afterStateUpdated(function ($state, callable $set, $get) {
+                                                $passengerIndex = $get('..');
+                                                if (!$state) {
+                                                    $set('child_data', []);
+                                                }
+                                                // Si viaja con menor, desmarcar mascotas
+                                                if ($state) {
+                                                    $set('travels_with_pets', false);
+                                                    $set('pet_data', []);
+                                                }
+                                            }),
 
-                                Checkbox::make('travels_with_pets')
-                                    ->label('¿Viaja con mascotas?')
-                                    ->default(false)
-                                    ->live()
-                                    ->extraAttributes([
-                                        'class' => 'toggle-checkbox'
-                                    ])
-                                    ->afterStateUpdated(function ($state, callable $set, $get) {
-                                        $passengerIndex = $get('..');
-                                        if (!$state) {
-                                            $set('pet_data', []);
-                                        }
-                                        // Si viaja con mascotas, desmarcar menor
-                                        if ($state) {
-                                            $set('travels_with_child', false);
-                                            $set('child_data', []);
-                                        }
-                                    }),
+                                        Checkbox::make('travels_with_pets')
+                                            ->label('¿Viaja con mascotas?')
+                                            ->default(false)
+                                            ->live()
+                                            ->extraAttributes([
+                                                'class' => 'toggle-checkbox'
+                                            ])
+                                            ->afterStateUpdated(function ($state, callable $set, $get) {
+                                                $passengerIndex = $get('..');
+                                                if (!$state) {
+                                                    $set('pet_data', []);
+                                                }
+                                                // Si viaja con mascotas, desmarcar menor
+                                                if ($state) {
+                                                    $set('travels_with_child', false);
+                                                    $set('child_data', []);
+                                                }
+                                            }),
                                     ]),
 
-                               
+
 
                                 // Sección de datos del menor (condicional)
                                 Grid::make(2)
@@ -1953,12 +1954,34 @@ class TicketForm
                                 Hidden::make('passenger_number')
                                     ->dehydrated(),
 
-                                /*                                 Text::make('datos')
-                                    ->content(
-                                        function ($state, $component) {
-                                            return var_dump($state);
-                                        }
-                                    ) */
+                                Grid::make(2)
+                                    ->schema([
+                                        TextInput::make('price')
+                                            ->label('Precio')
+                                            ->prefix('$')
+                                            ->required()
+                                            ->numeric()
+                                            ->minValue(0)
+                                            ->maxValue(999999)
+                                            ->validationMessages([
+                                                'required' => 'Debe ingresar el precio.',
+                                                'numeric' => 'El precio debe ser un número.',
+                                                'min' => 'El precio no puede ser negativo.',
+                                                'max' => 'El precio no puede ser mayor a 999999.',
+                                            ]),
+                                        Radio::make('payment_method')
+                                            ->label('Método de pago')
+                                            ->required()
+                                            ->options([
+                                                'cash' => 'Efectivo',
+                                                'transfer' => 'Transferencia',
+                                            ])
+                                            ->inline()
+                                            ->default('cash')
+                                            ->validationMessages([
+                                                'required' => 'Debe seleccionar un método de pago.',
+                                            ]),
+                                    ]),
                             ])
 
                             ->extraAttributes(

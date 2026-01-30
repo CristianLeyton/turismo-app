@@ -342,7 +342,8 @@ class CreateTicket extends CreateRecord
                     'pet_count' => $petCount,
                     'origin_location_id' => $data['origin_location_id'],
                     'destination_location_id' => $data['destination_location_id'],
-                    'price' => 0,
+                    'price' => $passengerData['price'] ?? 0,
+                    'payment_method' => $passengerData['payment_method'] ?? null,
                 ];
             }
 
@@ -429,7 +430,8 @@ class CreateTicket extends CreateRecord
                         'pet_count' => $petCount,
                         'origin_location_id' => $data['destination_location_id'],
                         'destination_location_id' => $data['origin_location_id'],
-                        'price' => 0,
+                        'price' => $passengerData['price'] ?? 0,
+                        'payment_method' => $passengerData['payment_method'] ?? null,
                     ];
                 }
 

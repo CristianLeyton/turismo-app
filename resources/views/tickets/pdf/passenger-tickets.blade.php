@@ -247,6 +247,19 @@
                                     <strong>Ruta:</strong> {{ $ticket->trip->route->name ?? 'Regular' }}
                                 </div>
 
+                                <div class='section-title'>PAGO</div>
+                                <div class='box'>
+                                    <strong>Precio:</strong> ${{ number_format($ticket->price, 2, ',', '.') }}<br>
+                                    <strong>Método de pago:</strong>
+                                    @if ($ticket->payment_method === 'cash')
+                                        Efectivo
+                                    @elseif ($ticket->payment_method === 'transfer')
+                                        Transferencia
+                                    @else
+                                        No especificado
+                                    @endif
+                                </div>
+
 
                                 <table width='100%' cellspacing='0' cellpadding='0'>
                                     <tr>
@@ -301,7 +314,8 @@
 
                                     @if ($hasPets)
                                         <div class='pet-warning'>
-                                            El pasajero es responsable de las mascotas durante todo el viaje. Las mascotas
+                                            El pasajero es responsable de las mascotas durante todo el viaje. Las
+                                            mascotas
                                             no ocupan asiento.
                                         </div>
                                     @endif

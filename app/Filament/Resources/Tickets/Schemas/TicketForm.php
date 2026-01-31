@@ -1935,17 +1935,22 @@ class TicketForm
                                                 'required' => 'Debe ingresar las mascotas.',
                                             ]),
 
-                                        TextInput::make('pet_data.pet_count')
+                                        Select::make('pet_data.pet_count')
                                             ->label('Cantidad')
                                             ->required()
-                                            ->numeric()
-                                            ->minValue(1)
-                                            ->maxValue(3)
+                                            ->options([
+                                                '1' => '1',
+                                                '2' => '2',
+                                                '3' => '3',
+                                                '4' => '4',
+                                                '5' =>  '5',
+                                            ])
+                                            ->rule(
+                                                'in:1,2,3,4,5'
+                                            )
                                             ->validationMessages([
                                                 'required' => 'Debe ingresar la cantidad de mascotas.',
-                                                'numeric' => 'La cantidad debe ser un número.',
-                                                'min' => 'Debe haber al menos 1 mascota.',
-                                                'max' => 'No puede viajar con más de 3 mascotas.',
+                                                'in' => 'La cantidad debe ser entre 1 y 5.',
                                             ]),
                                     ])
                                     ->visible(fn($get) => $get('travels_with_pets'))

@@ -1773,18 +1773,6 @@ class TicketForm
                             ->schema([
                                 Grid::make(2)
                                     ->schema([
-                                        TextInput::make('first_name')
-                                            ->label('Nombre')
-                                            ->minLength(2)
-                                            ->maxLength(80)
-                                            ->required()
-                                            ->regex('/^[\pL\s]+$/u') // Permite letras con acentos y espacios
-                                            ->validationMessages([
-                                                'required' => 'Debe ingresar un nombre.',
-                                                'min' => 'El nombre debe tener al menos :min caracteres.',
-                                                'max' => 'El nombre no puede tener más de :max caracteres.',
-                                                'regex' => 'El nombre solo puede contener letras y espacios.',
-                                            ]),
                                         TextInput::make('last_name')
                                             ->label('Apellido')
                                             ->minLength(2)
@@ -1796,6 +1784,18 @@ class TicketForm
                                                 'min' => 'El apellido debe tener al menos :min caracteres.',
                                                 'maxLength' => 'El apellido no puede tener más de :max caracteres.',
                                                 'regex' => 'El apellido solo puede contener letras y espacios.',
+                                            ]),
+                                        TextInput::make('first_name')
+                                            ->label('Nombre')
+                                            ->minLength(2)
+                                            ->maxLength(80)
+                                            ->required()
+                                            ->regex('/^[\pL\s]+$/u') // Permite letras con acentos y espacios
+                                            ->validationMessages([
+                                                'required' => 'Debe ingresar un nombre.',
+                                                'min' => 'El nombre debe tener al menos :min caracteres.',
+                                                'max' => 'El nombre no puede tener más de :max caracteres.',
+                                                'regex' => 'El nombre solo puede contener letras y espacios.',
                                             ]),
                                     ]),
 
@@ -1873,19 +1873,6 @@ class TicketForm
                                 // Sección de datos del menor (condicional)
                                 Grid::make(2)
                                     ->schema([
-                                        TextInput::make('child_data.first_name')
-                                            ->label('Nombre del menor')
-                                            ->required()
-                                            ->minLength(2)
-                                            ->maxLength(80)
-                                            ->regex('/^[\pL\s]+$/u') // Permite letras con acentos y espacios
-                                            ->validationMessages([
-                                                'required' => 'Debe ingresar un nombre.',
-                                                'min' => 'El nombre debe tener al menos :min caracteres.',
-                                                'max' => 'El nombre no puede tener más de :max caracteres.',
-                                                'regex' => 'El nombre solo puede contener letras y espacios.',
-                                            ]),
-
                                         TextInput::make('child_data.last_name')
                                             ->label('Apellido del menor')
                                             ->required()
@@ -1897,6 +1884,19 @@ class TicketForm
                                                 'min' => 'El apellido debe tener al menos :min caracteres.',
                                                 'max' => 'El apellido no puede tener más de :max caracteres.',
                                                 'regex' => 'El apellido solo puede contener letras y espacios.',
+                                            ]),
+
+                                        TextInput::make('child_data.first_name')
+                                            ->label('Nombre del menor')
+                                            ->required()
+                                            ->minLength(2)
+                                            ->maxLength(80)
+                                            ->regex('/^[\pL\s]+$/u') // Permite letras con acentos y espacios
+                                            ->validationMessages([
+                                                'required' => 'Debe ingresar un nombre.',
+                                                'min' => 'El nombre debe tener al menos :min caracteres.',
+                                                'max' => 'El nombre no puede tener más de :max caracteres.',
+                                                'regex' => 'El nombre solo puede contener letras y espacios.',
                                             ]),
 
                                         TextInput::make('child_data.dni')

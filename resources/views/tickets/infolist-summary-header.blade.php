@@ -144,7 +144,7 @@
             <div class="flex justify-between gap-3 mb-1 flex-nowrap">
                 <div>
                     <div class="text-lg font-semibold text-gray-900 dark:text-gray-100">
-                        {{ $record->passenger->first_name ?? '' }} {{ $record->passenger->last_name ?? '' }}
+                        {{ $record->passenger->last_name ?? '' }} {{ $record->passenger->first_name ?? '' }} 
                     </div>
 
                     <div class="text-sm text-gray-600 dark:text-gray-400">
@@ -189,8 +189,8 @@
                             </span>
                         </div>
                         <div class="text-sm text-gray-700 dark:text-gray-300">
-                            {{ $child->first_name ?? '' }}
                             {{ $child->last_name ?? '' }}
+                            {{ $child->first_name ?? '' }}
 
                             <div class="text-sm text-gray-600 dark:text-gray-400 mt-1">
                                 <span class="font-semibold"> Documento: </span>

@@ -549,14 +549,16 @@ class Trip extends Model
     {
         $passengers = collect();
 
-        // Obtener pasajeros adultos de los tickets ordenados por orden de parada
+        // Obtener pasajeros adultos de los tickets ordenados por orden de parada y luego por número de asiento
         $this->tickets()
             ->with(['passenger', 'seat', 'origin', 'destination'])
             ->join('route_stops', function ($join) {
                 $join->on('route_stops.location_id', '=', 'tickets.origin_location_id')
                     ->where('route_stops.route_id', '=', $this->route_id);
             })
+            ->leftJoin('seats', 'seats.id', '=', 'tickets.seat_id')
             ->orderBy('route_stops.stop_order')
+            ->orderBy('seats.seat_number')
             ->select('tickets.*') // Asegurarnos de solo obtener las columnas de tickets
             ->get()
             ->each(function ($ticket) use ($passengers) {
@@ -597,21 +599,21 @@ class Trip extends Model
 
                 // Si viaja con mascotas, agregar las mascotas como pasajeros adicionales
                 if ($ticket->travels_with_pets && $ticket->pet_count > 0) {
-                        $passengers->push([
-                            'type' => 'pet',
-                            'name' => $ticket->pet_names ?? 'Mascota',
-                            'dni' => 'N/A',
-                            'phone' => 'N/A',
-                            'seat_number' => 'Acompañante',
-                            'origin' => $ticket->origin?->name ?? 'N/A',
-                            'destination' => $ticket->destination?->name ?? 'N/A',
-                            'ticket_id' => $ticket->id,
-                            'price' => 0, // Las mascotas no pagan
-                            'is_round_trip' => $ticket->is_round_trip,
-                            'parent_name' => $ticket->passenger->full_name,
-                            'pet_count' => $ticket->pet_count,
-                            'pet_names' => $ticket->pet_names,
-                        ]);
+                    $passengers->push([
+                        'type' => 'pet',
+                        'name' => $ticket->pet_names ?? 'Mascota',
+                        'dni' => 'N/A',
+                        'phone' => 'N/A',
+                        'seat_number' => 'Acompañante',
+                        'origin' => $ticket->origin?->name ?? 'N/A',
+                        'destination' => $ticket->destination?->name ?? 'N/A',
+                        'ticket_id' => $ticket->id,
+                        'price' => 0, // Las mascotas no pagan
+                        'is_round_trip' => $ticket->is_round_trip,
+                        'parent_name' => $ticket->passenger->full_name,
+                        'pet_count' => $ticket->pet_count,
+                        'pet_names' => $ticket->pet_names,
+                    ]);
                 }
             });
 

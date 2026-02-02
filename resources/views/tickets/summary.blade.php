@@ -142,8 +142,8 @@
                             Pasajero N°{{ is_numeric($index) ? $index + 1 : 1 }}
                         </div>
                         <div class="text-lg font-semibold text-gray-900 dark:text-gray-100">
-                            {{ $passenger['first_name'] ?? '' }}
                             {{ $passenger['last_name'] ?? '' }}
+                            {{ $passenger['first_name'] ?? '' }}
                         </div>
 
                         <div class="text-sm text-gray-600 dark:text-gray-400">
@@ -186,8 +186,8 @@
                             </span>
                         </div>
                         <div class="text-sm text-gray-700 dark:text-gray-300">
-                            {{ $passenger['child_data']['first_name'] ?? '' }}
                             {{ $passenger['child_data']['last_name'] ?? '' }}
+                            {{ $passenger['child_data']['first_name'] ?? '' }}
 
                             <div class="text-sm text-gray-600 dark:text-gray-400 mt-1">
                                 <span class="font-semibold"> Documento: </span>

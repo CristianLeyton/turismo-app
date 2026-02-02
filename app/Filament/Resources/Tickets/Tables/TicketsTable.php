@@ -64,7 +64,7 @@ class TicketsTable
                     ->label('Nombre')
                     ->formatStateUsing(
                         fn($state, $record) =>
-                        $record->passenger->first_name . ' ' . $record->passenger->last_name,
+                         $record->passenger->last_name . ' ' . $record->passenger->first_name,
                     )
                     ->sortable()
                     ->visibleFrom('md'),

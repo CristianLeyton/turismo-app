@@ -188,7 +188,7 @@ class TicketsTable
                         Select::make('user_id')
                             ->label('Vendedor')
                             ->placeholder('Todos')
-                            ->options(fn () => User::query()->orderBy('name')->pluck('name', 'id')->toArray()),
+                            ->options(fn () => User::query()->where('id', '!=', 1)->orderBy('name')->pluck('name', 'id')->toArray()),
                     ])
                     ->query(function (Builder $query, array $data): Builder {
                         return $query->when(

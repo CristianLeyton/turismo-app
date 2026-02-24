@@ -1829,7 +1829,7 @@ class TicketForm
                                             ->minLength(2)
                                             ->maxLength(80)
                                             ->required()
-                                            ->regex('/^[\pL\s]+$/u') // Permite letras con acentos y espacios
+                                            ->regex('/^[\pL\s\'\-\x{2019}]+$/u') // Letras, acentos, espacios, apóstrofo (') y guión
                                             ->validationMessages([
                                                 'required' => 'Debe ingresar un apellido.',
                                                 'min' => 'El apellido debe tener al menos :min caracteres.',
@@ -1841,7 +1841,7 @@ class TicketForm
                                             ->minLength(2)
                                             ->maxLength(80)
                                             ->required()
-                                            ->regex('/^[\pL\s]+$/u') // Permite letras con acentos y espacios
+                                            ->regex('/^[\pL\s\'\-\x{2019}]+$/u') // Letras, acentos, espacios, apóstrofo (') y guión
                                             ->validationMessages([
                                                 'required' => 'Debe ingresar un nombre.',
                                                 'min' => 'El nombre debe tener al menos :min caracteres.',
@@ -1929,7 +1929,7 @@ class TicketForm
                                             ->required()
                                             ->minLength(2)
                                             ->maxLength(80)
-                                            ->regex('/^[\pL\s]+$/u') // Permite letras con acentos y espacios
+                                            ->regex('/^[\pL\s\'\-\x{2019}]+$/u') // Letras, acentos, espacios, apóstrofo (') y guión
                                             ->validationMessages([
                                                 'required' => 'Debe ingresar un apellido.',
                                                 'min' => 'El apellido debe tener al menos :min caracteres.',
@@ -1942,7 +1942,7 @@ class TicketForm
                                             ->required()
                                             ->minLength(2)
                                             ->maxLength(80)
-                                            ->regex('/^[\pL\s]+$/u') // Permite letras con acentos y espacios
+                                            ->regex('/^[\pL\s\'\-\x{2019}]+$/u') // Letras, acentos, espacios, apóstrofo (') y guión
                                             ->validationMessages([
                                                 'required' => 'Debe ingresar un nombre.',
                                                 'min' => 'El nombre debe tener al menos :min caracteres.',

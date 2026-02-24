@@ -465,14 +465,13 @@ class TicketForm
                                     ->minDate(now()->startOfDay())
                                     ->closeOnDateSelection()
                                     ->disabledDates(function (): array {
-                                        // Generar array de fechas de sábados y domingos para los próximos 2 años
+                                        // Deshabilitar solo domingos para los próximos 2 años
                                         $disabledDates = [];
                                         $start = Carbon::today();
                                         $end = Carbon::today()->addYears(2);
 
                                         while ($start->lte($end)) {
-                                            // 0 = Domingo, 6 = Sábado
-                                            if ($start->dayOfWeek === 0 || $start->dayOfWeek === 6) {
+                                            if ($start->dayOfWeek === 0) { // 0 = Domingo
                                                 $disabledDates[] = $start->copy()->format('Y-m-d');
                                             }
                                             $start->addDay();
@@ -983,14 +982,13 @@ class TicketForm
                                         return $date->startOfDay();
                                     })
                                     ->disabledDates(function (): array {
-                                        // Generar array de fechas de sábados y domingos para los próximos 2 años
+                                        // Deshabilitar solo domingos para los próximos 2 años
                                         $disabledDates = [];
                                         $start = Carbon::today();
                                         $end = Carbon::today()->addYears(2);
 
                                         while ($start->lte($end)) {
-                                            // 0 = Domingo, 6 = Sábado
-                                            if ($start->dayOfWeek === 0 || $start->dayOfWeek === 6) {
+                                            if ($start->dayOfWeek === 0) { // 0 = Domingo
                                                 $disabledDates[] = $start->copy()->format('Y-m-d');
                                             }
                                             $start->addDay();

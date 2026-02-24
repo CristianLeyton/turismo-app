@@ -310,12 +310,15 @@ class Trip extends Model
 
         // Si no existe, crearlo
         if (!$trip) {
-            // Obtener bus_id: primero intentar de un viaje existente de la ruta
-            $busId = $route->trips()
-                ->whereNotNull('bus_id')
-                ->value('bus_id');
+            // Preferir el colectivo asignado a la ruta; si no, usar uno de un viaje previo de la ruta; si no, el primer bus disponible
+            $busId = $route->bus_id;
 
-            // Si no hay viajes previos, obtener el primer bus disponible
+            if (!$busId) {
+                $busId = $route->trips()
+                    ->whereNotNull('bus_id')
+                    ->value('bus_id');
+            }
+
             if (!$busId) {
                 $bus = \App\Models\Bus::query()
                     ->where('seat_count', '>', 0)

@@ -18,6 +18,8 @@ use Filament\Tables\Table;
 use Filament\Tables\Enums\FiltersLayout;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\DatePicker;
+use Filament\Forms\Components\Select;
+use App\Models\User;
 use App\Services\TicketPdfService;
 use App\Models\Ticket;
 use Livewire\Livewire;
@@ -29,11 +31,11 @@ class TicketsTable
     {
         return $table
             ->modifyQueryUsing(function ($query) {
-                $query->with(['origin', 'destination', 'sale', 'trip.schedule', 'passenger', 'seat']);
+                $query->with(['origin', 'destination', 'sale.user', 'trip.schedule', 'passenger', 'seat']);
             })
             ->columns([
                 TextColumn::make('id')
-                    ->label('Boleto N°')
+                    ->label('N°')
                     ->badge()
                     ->color('gray')
                     ->sortable()
@@ -46,6 +48,15 @@ class TicketsTable
                     ->sortable()
                     ->date('d/m/Y')
                     ->url(fn(Ticket $record) => TicketResource::getUrl('view', ['record' => $record])),
+
+                TextColumn::make('sale.user.username')
+                    ->label('Vendedor')
+                    ->sortable()
+                    ->badge()
+                    ->color('warning')
+
+                    ->visibleFrom('md')
+                    ->placeholder('—'),
 
                 TextColumn::make('trip.trip_date')
                     ->label('Salida')
@@ -64,7 +75,7 @@ class TicketsTable
                     ->label('Nombre')
                     ->formatStateUsing(
                         fn($state, $record) =>
-                         $record->passenger->last_name . ' ' . $record->passenger->first_name,
+                        $record->passenger->last_name . ' ' . $record->passenger->first_name,
                     )
                     ->sortable()
                     ->visibleFrom('md'),
@@ -170,6 +181,32 @@ class TicketsTable
                         return $indicators;
                     }),
 
+
+                Filter::make('vendedor')
+                    ->label('Vendedor')
+                    ->form([
+                        Select::make('user_id')
+                            ->label('Vendedor')
+                            ->placeholder('Todos')
+                            ->options(fn () => User::query()->orderBy('name')->pluck('name', 'id')->toArray()),
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        return $query->when(
+                            $data['user_id'] ?? null,
+                            fn (Builder $query, $userId): Builder => $query->whereHas('sale', fn (Builder $q) => $q->where('user_id', $userId)),
+                        );
+                    })
+                    ->indicateUsing(function (array $data): array {
+                        $indicators = [];
+                        if (!empty($data['user_id'])) {
+                            $user = User::find($data['user_id']);
+                            if ($user) {
+                                $indicators[] = 'Vendedor: ' . $user->name;
+                            }
+                        }
+                        return $indicators;
+                    }),
+
                 Filter::make('trip_date')
                     ->label('Fecha de salida')
                     ->form([
@@ -250,9 +287,10 @@ class TicketsTable
                         }
                         return $indicators;
                     }),
+
             ])
             ->filtersLayout(FiltersLayout::AboveContent)
-            ->filtersFormColumns(5)
+            ->filtersFormColumns(6)
             ->deferFilters(false)
             ->persistFiltersInSession()
             ->hiddenFilterIndicators()

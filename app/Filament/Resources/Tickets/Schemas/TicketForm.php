@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\Tickets\Schemas;
 
 use App\Filament\Resources\Tickets\TicketResource;
+use App\Models\Bus;
 use App\Models\Route;
 use App\Models\RouteStop;
 use App\Models\Schedule;
@@ -51,6 +52,7 @@ class TicketForm
                         static $lastSearchHash = null;
 
                         $currentSearch = [
+                            'bus_id' => $get('bus_id'),
                             'origin_id' => $get('origin_location_id'),
                             'destination_id' => $get('destination_location_id'),
                             'schedule_id' => $get('schedule_id'),
@@ -297,18 +299,102 @@ class TicketForm
                     ->schema([
                         Grid::make(2)
                             ->schema([
+                                Select::make('bus_id')
+                                    ->label('Colectivo')
+                                    ->options(Bus::query()->orderBy('id')->pluck('name', 'id')->toArray())
+                                    ->default(fn() => Bus::query()->orderBy('id')->value('id'))
+                                    ->required()
+                                    ->selectablePlaceholder(false)
+                                    ->live()
+                                    ->afterStateUpdated(fn($set) => [
+                                        $set('origin_location_id', null),
+                                        $set('destination_location_id', null),
+                                        $set('schedule_id', null),
+                                        $set('trip_id', null),
+                                        $set('trip_search_status', null),
+                                        $set('trip_available_seats', null),
+                                        $set('return_trip_id', null),
+                                        $set('return_trip_search_status', null),
+                                        $set('return_trip_available_seats', null),
+                                        $set('is_round_trip', false),
+                                    ])
+                                    ->validationMessages([
+                                        'required' => 'Seleccione un colectivo',
+                                    ]),
+
+                                Select::make('passengers_count')
+                                    ->label('Cantidad de pasajeros')
+                                    ->required()
+                                    ->default(1)
+                                    ->live()
+                                    ->options([
+                                        '1' => '1',
+                                        '2' => '2',
+                                        '3' => '3',
+                                        '4' => '4',
+                                    ])
+                                    ->selectablePlaceholder(false)
+                                    ->rule('in:1,2,3,4')
+                                    ->validationMessages([
+                                        'required' => 'Ingrese la cantidad de pasajeros',
+                                        'in' => 'La cantidad de pasajeros debe ser entre 1 y 4',
+                                    ])
+                                    ->afterStateUpdated(function ($state, callable $set, Get $get) {
+
+                                        // ---- Reset de búsqueda de viaje ----
+                                        $set('trip_id', null);
+                                        $set('trip_search_status', null);
+                                        $set('trip_available_seats', null);
+                                        $set('return_trip_id', null);
+                                        $set('return_trip_search_status', null);
+                                        $set('return_trip_available_seats', null);
+                                        $set('is_round_trip', false);
+
+                                        // ---- Ajustar array de pasajeros ----
+                                        $required = (int) $state;
+                                        $current = $get('passengers') ?? [];
+
+                                        // Recortar si sobran
+                                        if (count($current) > $required) {
+                                            $current = array_slice($current, 0, $required);
+                                        }
+
+                                        // Expandir si faltan
+                                        if (count($current) < $required) {
+                                            for ($i = count($current); $i < $required; $i++) {
+                                                $current[$i] = [
+                                                    'passenger_number' => $i + 1,
+                                                ];
+                                            }
+                                        }
+
+                                        $set('passengers', $current);
+                                    }),
+
                                 Select::make('origin_location_id')
                                     ->label('Origen')
-                                    ->relationship(
-                                        name: 'origin',
-                                        titleAttribute: 'name',
-                                        modifyQueryUsing: fn($query) =>
-                                        $query
-                                            ->where('is_active', true)
-                                            ->orderBy('id')
-                                    )
-                                    ->preload()
                                     ->required()
+                                    ->disabled(fn(Get $get) => blank($get('bus_id')))
+                                    ->placeholder(fn(Get $get) => blank($get('bus_id')) ? 'Seleccione un colectivo primero' : 'Seleccione origen')
+                                    ->options(function (Get $get) {
+                                        $busId = $get('bus_id');
+                                        if (blank($busId)) {
+                                            return [];
+                                        }
+                                        $stops = RouteStop::query()
+                                            ->whereHas('route', fn($q) => $q->where('bus_id', $busId))
+                                            ->with('location')
+                                            ->orderBy('route_id')
+                                            ->orderBy('stop_order')
+                                            ->get();
+                                        $options = [];
+                                        foreach ($stops as $stop) {
+                                            if (!isset($options[$stop->location_id]) && $stop->location?->is_active !== false) {
+                                                $options[$stop->location_id] = $stop->location->name;
+                                            }
+                                        }
+                                        return $options;
+                                    })
                                     ->live()
                                     ->afterStateUpdated(fn($set) => [
                                         $set('destination_location_id', null),
@@ -331,10 +417,9 @@ class TicketForm
                                     ->disabled(fn(Get $get) => blank($get('origin_location_id')))
                                     ->placeholder('Seleccione un origen primero')
                                     ->options(function (Get $get) {
-
                                         $originId = $get('origin_location_id');
-
-                                        if (blank($originId)) {
+                                        $busId = $get('bus_id');
+                                        if (blank($originId) || blank($busId)) {
                                             return [];
                                         }
 
@@ -345,21 +430,14 @@ class TicketForm
                                                 $join->on('destination.route_id', '=', 'origin.route_id')
                                                     ->where('origin.location_id', $originId);
                                             })
-
-                                            // 🔒 SOLO paradas POSTERIORES
+                                            ->join('routes', 'routes.id', '=', 'destination.route_id')
+                                            ->whereNull('routes.deleted_at')
+                                            ->where('routes.bus_id', $busId)
                                             ->whereColumn('destination.stop_order', '>', 'origin.stop_order')
-
-                                            // evitar el origen
                                             ->where('destination.location_id', '!=', $originId)
-
                                             ->join('locations', 'locations.id', '=', 'destination.location_id')
                                             ->orderBy('destination.stop_order')
-
-                                            ->get([
-                                                'destination.location_id',
-                                                'locations.name',
-                                            ])
-
+                                            ->get(['destination.location_id', 'locations.name'])
                                             ->mapWithKeys(fn($row) => [
                                                 (int) $row->location_id => (string) $row->name,
                                             ])
@@ -420,8 +498,11 @@ class TicketForm
                                 Select::make('schedule_id')
                                     ->label('Horario de ida')
                                     ->required()
-                                    ->disabled(fn(Get $get) => blank($get('origin_location_id')) || blank($get('destination_location_id')) || blank($get('departure_date')))
+                                    ->disabled(fn(Get $get) => blank($get('bus_id')) || blank($get('origin_location_id')) || blank($get('destination_location_id')) || blank($get('departure_date')))
                                     ->placeholder(function (Get $get) {
+                                        if (blank($get('bus_id'))) {
+                                            return 'Seleccione un colectivo primero';
+                                        }
                                         if (blank($get('origin_location_id'))) {
                                             return 'Seleccione un origen primero';
                                         }
@@ -435,8 +516,8 @@ class TicketForm
                                         $departureDate = $get('departure_date');
                                         $now = Carbon::now();
 
-                                        // Verificar si hay horarios disponibles
                                         $schedules = Schedule::query()
+                                            ->whereHas('route', fn($q) => $q->where('bus_id', $get('bus_id')))
                                             ->whereHas('route.stops', fn($q) => $q->where('location_id', $get('origin_location_id')))
                                             ->whereHas('route.stops', fn($q) => $q->where('location_id', $get('destination_location_id')))
                                             ->where('is_active', true)
@@ -489,7 +570,7 @@ class TicketForm
                                         return 'Seleccione un horario';
                                     })
                                     ->options(function (Get $get) {
-                                        if (blank($get('origin_location_id')) || blank($get('destination_location_id')) || blank($get('departure_date'))) {
+                                        if (blank($get('bus_id')) || blank($get('origin_location_id')) || blank($get('destination_location_id')) || blank($get('departure_date'))) {
                                             return [];
                                         }
 
@@ -497,16 +578,11 @@ class TicketForm
                                         $now = Carbon::now();
 
                                         $schedules = Schedule::query()
-                                            ->whereHas(
-                                                'route.stops',
-                                                fn($q) => $q->where('location_id', $get('origin_location_id'))
-                                            )
-                                            ->whereHas(
-                                                'route.stops',
-                                                fn($q) => $q->where('location_id', $get('destination_location_id'))
-                                            )
+                                            ->whereHas('route', fn($q) => $q->where('bus_id', $get('bus_id')))
+                                            ->whereHas('route.stops', fn($q) => $q->where('location_id', $get('origin_location_id')))
+                                            ->whereHas('route.stops', fn($q) => $q->where('location_id', $get('destination_location_id')))
                                             ->where('is_active', true)
-                                            ->orderBy('departure_time') // Ordenar por hora de salida
+                                            ->orderBy('departure_time')
                                             ->get()
                                             ->filter(function ($schedule) use ($get, $departureDate, $now) {
                                                 // Validar que el segmento origen-destino sea válido para esta ruta
@@ -549,7 +625,7 @@ class TicketForm
                                         ]);
                                     })
                                     ->helperText(function (Get $get) {
-                                        if (blank($get('origin_location_id')) || blank($get('destination_location_id')) || blank($get('departure_date'))) {
+                                        if (blank($get('bus_id')) || blank($get('origin_location_id')) || blank($get('destination_location_id')) || blank($get('departure_date'))) {
                                             return null;
                                         }
 
@@ -557,6 +633,7 @@ class TicketForm
                                         $now = Carbon::now();
 
                                         $schedules = Schedule::query()
+                                            ->whereHas('route', fn($q) => $q->where('bus_id', $get('bus_id')))
                                             ->whereHas('route.stops', fn($q) => $q->where('location_id', $get('origin_location_id')))
                                             ->whereHas('route.stops', fn($q) => $q->where('location_id', $get('destination_location_id')))
                                             ->where('is_active', true)
@@ -623,54 +700,7 @@ class TicketForm
                                         'required' => 'Seleccione un horario',
                                     ]),
 
-                                Select::make('passengers_count')
-                                    ->label('Cantidad de pasajeros')
-                                    ->required()
-                                    ->default(1)
-                                    ->live()
-                                    ->options([
-                                        '1' => '1',
-                                        '2' => '2',
-                                        '3' => '3',
-                                        '4' => '4',
-                                    ])
-                                    ->selectablePlaceholder(false)
-                                    ->rule('in:1,2,3,4')
-                                    ->validationMessages([
-                                        'required' => 'Ingrese la cantidad de pasajeros',
-                                        'in' => 'La cantidad de pasajeros debe ser entre 1 y 4',
-                                    ])
-                                    ->afterStateUpdated(function ($state, callable $set, Get $get) {
 
-                                        // ---- Reset de búsqueda de viaje ----
-                                        $set('trip_id', null);
-                                        $set('trip_search_status', null);
-                                        $set('trip_available_seats', null);
-                                        $set('return_trip_id', null);
-                                        $set('return_trip_search_status', null);
-                                        $set('return_trip_available_seats', null);
-                                        $set('is_round_trip', false);
-
-                                        // ---- Ajustar array de pasajeros ----
-                                        $required = (int) $state;
-                                        $current = $get('passengers') ?? [];
-
-                                        // Recortar si sobran
-                                        if (count($current) > $required) {
-                                            $current = array_slice($current, 0, $required);
-                                        }
-
-                                        // Expandir si faltan
-                                        if (count($current) < $required) {
-                                            for ($i = count($current); $i < $required; $i++) {
-                                                $current[$i] = [
-                                                    'passenger_number' => $i + 1,
-                                                ];
-                                            }
-                                        }
-
-                                        $set('passengers', $current);
-                                    }),
                             ]),
 
 
@@ -1027,6 +1057,7 @@ class TicketForm
 
                                         // Buscar rutas que conecten el destino (origen de vuelta) con el origen (destino de vuelta)
                                         $schedules = Schedule::query()
+                                            ->whereHas('route', fn($q) => $q->where('bus_id', $get('bus_id')))
                                             ->whereHas('route.stops', fn($q) => $q->where('location_id', $get('destination_location_id')))
                                             ->whereHas('route.stops', fn($q) => $q->where('location_id', $get('origin_location_id')))
                                             ->where('is_active', true)
@@ -1089,13 +1120,13 @@ class TicketForm
 
                                         // Buscar rutas que conecten el destino (origen de vuelta) con el origen (destino de vuelta)
                                         $schedules = Schedule::query()
+                                            ->whereHas('route', fn($q) => $q->where('bus_id', $get('bus_id')))
                                             ->whereHas('route.stops', fn($q) => $q->where('location_id', $get('destination_location_id')))
                                             ->whereHas('route.stops', fn($q) => $q->where('location_id', $get('origin_location_id')))
                                             ->where('is_active', true)
-                                            ->orderBy('departure_time') // Ordenar por hora de salida
+                                            ->orderBy('departure_time')
                                             ->get()
                                             ->filter(function ($schedule) use ($get) {
-                                                // Validar que el segmento sea válido (destino -> origen)
                                                 return $schedule->route->isValidSegment(
                                                     $get('destination_location_id'),
                                                     $get('origin_location_id')
@@ -1105,11 +1136,9 @@ class TicketForm
                                         // Si es el mismo día y hay un horario de ida seleccionado, filtrar por departure_time
                                         if ($isSameDay && $departureTime) {
                                             $schedules = $schedules->filter(function ($schedule) use ($departureTime) {
-                                                // Solo mostrar horarios con departure_time posterior al de ida
                                                 if (!$schedule->departure_time) {
                                                     return false;
                                                 }
-                                                // Comparar los tiempos: solo mostrar horarios con hora de salida mayor
                                                 $scheduleTime = Carbon::parse($schedule->departure_time)->format('H:i:s');
                                                 $departureTimeStr = Carbon::parse($departureTime)->format('H:i:s');
                                                 return $scheduleTime > $departureTimeStr;
@@ -1149,6 +1178,7 @@ class TicketForm
 
                                         // Buscar rutas que conecten el destino (origen de vuelta) con el origen (destino de vuelta)
                                         $schedules = Schedule::query()
+                                            ->whereHas('route', fn($q) => $q->where('bus_id', $get('bus_id')))
                                             ->whereHas('route.stops', fn($q) => $q->where('location_id', $get('destination_location_id')))
                                             ->whereHas('route.stops', fn($q) => $q->where('location_id', $get('origin_location_id')))
                                             ->where('is_active', true)
@@ -1323,6 +1353,13 @@ class TicketForm
                         ]);
                     })
                     ->schema([
+                        ViewField::make('wizard_header_ida')
+                            ->view('tickets.wizard-step-header')
+                            ->viewData(fn (Get $get) => [
+                                'busName' => $get('bus_id') ? Bus::find($get('bus_id'))?->name : '—',
+                                'originName' => $get('origin_location_id') ? \App\Models\Location::find($get('origin_location_id'))?->name : '—',
+                                'destinationName' => $get('destination_location_id') ? \App\Models\Location::find($get('destination_location_id'))?->name : '—',
+                            ]),
                         ViewField::make('trip_required_info')
                             ->label('')
                             ->view('tickets.trip-required-info')
@@ -1584,6 +1621,13 @@ class TicketForm
                         }
                     })
                     ->schema([
+                        ViewField::make('wizard_header_vuelta')
+                            ->view('tickets.wizard-step-header')
+                            ->viewData(fn (Get $get) => [
+                                'busName' => $get('bus_id') ? Bus::find($get('bus_id'))?->name : '—',
+                                'originName' => $get('origin_location_id') ? \App\Models\Location::find($get('origin_location_id'))?->name : '—',
+                                'destinationName' => $get('destination_location_id') ? \App\Models\Location::find($get('destination_location_id'))?->name : '—',
+                            ]),
                         ViewField::make('return_trip_required_info')
                             ->label('')
                             ->view('tickets.return-trip-required-info')
@@ -1762,6 +1806,13 @@ class TicketForm
 
                 Step::make('Pasajeros')
                     ->schema([
+                        ViewField::make('wizard_header_pasajeros')
+                            ->view('tickets.wizard-step-header')
+                            ->viewData(fn (Get $get) => [
+                                'busName' => $get('bus_id') ? Bus::find($get('bus_id'))?->name : '—',
+                                'originName' => $get('origin_location_id') ? \App\Models\Location::find($get('origin_location_id'))?->name : '—',
+                                'destinationName' => $get('destination_location_id') ? \App\Models\Location::find($get('destination_location_id'))?->name : '—',
+                            ]),
                         /*                         Text::make('Pasajeros seleccionados')
                             ->content(fn(Get $get) => $get('passengers_count') . ' pasajero(s) seleccionado(s).'),
                         Text::make('Asientos de ida seleccionados')

@@ -26,6 +26,14 @@ class Bus extends Model
     }
 
     /**
+     * Rutas asignadas a este colectivo.
+     */
+    public function routes(): HasMany
+    {
+        return $this->hasMany(Route::class);
+    }
+
+    /**
      * Asientos activos del colectivo
      */
     public function activeSeats()

@@ -238,6 +238,7 @@
 
                                 <div class='section-title'>VIAJE</div>
                                 <div class='box'>
+                                    <strong>Colectivo:</strong> {{ $ticket->trip->bus->name ?? '—' }}<br>
                                     <strong>Fecha del viaje:</strong>
                                     {{ $ticket->trip->trip_date->format('d/m/Y') }}<br>
                                     <strong>Hora de salida:</strong>

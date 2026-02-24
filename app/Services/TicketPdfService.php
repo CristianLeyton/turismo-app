@@ -42,7 +42,7 @@ class TicketPdfService
         $pdfs = [];
         
         // Agrupar tickets por pasajero
-        $ticketsByPassenger = $sale->tickets()->with(['passenger', 'trip', 'returnTrip', 'origin', 'destination', 'seat'])->get()->groupBy('passenger_id');
+        $ticketsByPassenger = $sale->tickets()->with(['passenger', 'trip.bus', 'trip.schedule', 'trip.route', 'returnTrip', 'origin', 'destination', 'seat'])->get()->groupBy('passenger_id');
         
         foreach ($ticketsByPassenger as $passengerId => $tickets) {
             $passenger = $tickets->first()->passenger;
@@ -94,7 +94,7 @@ class TicketPdfService
     public function getTicketsByPassenger(Sale $sale): Collection
     {
         return $sale->tickets()
-            ->with(['passenger', 'trip', 'returnTrip', 'origin', 'destination'])
+            ->with(['passenger', 'trip.bus', 'trip.schedule', 'trip.route', 'returnTrip', 'origin', 'destination'])
             ->get()
             ->groupBy('passenger_id');
     }

@@ -2,18 +2,36 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Route extends Model
 {
-
     use SoftDeletes;
 
     protected $fillable = [
+        'bus_id',
         'name',
     ];
+
+    public function bus(): BelongsTo
+    {
+        return $this->belongsTo(Bus::class);
+    }
+
+    /**
+     * Scope para filtrar rutas por colectivo.
+     */
+    public function scopeForBus(Builder $query, ?int $busId): Builder
+    {
+        if ($busId === null) {
+            return $query;
+        }
+        return $query->where('bus_id', $busId);
+    }
 
     public function stops(): HasMany
     {

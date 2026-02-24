@@ -95,6 +95,7 @@ class TripResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
+            ->modifyQueryUsing(fn ($query) => $query->with(['bus', 'route', 'schedule']))
             ->columns([
                 TextColumn::make('id')
                     ->label('Viaje Nº')
@@ -138,7 +139,12 @@ class TripResource extends Resource
                     ->visibleFrom('md')
                     ->badge()
                     ->color('warning'),
-                    //->toggleable(isToggledHiddenByDefault: false),
+                TextColumn::make('bus.name')
+                    ->label('Unidad')
+                    ->sortable()
+                    ->visibleFrom('md')
+                    ->badge()
+                    ->color('gray'),
                 TextColumn::make('occupiedSeatsCount')
                     ->label('Asientos vendidos')
                     ->visibleFrom('md')
@@ -231,7 +237,12 @@ class TripResource extends Resource
                 SelectFilter::make('route')
                     ->relationship('route', 'name')
                     ->label('Ruta')
-                    ->preload(), 
+                    ->preload(),
+
+                SelectFilter::make('bus')
+                    ->relationship('bus', 'name')
+                    ->label('Unidad')
+                    ->preload(),
             ])
             ->filtersLayout(FiltersLayout::AboveContent)
             ->deferFilters(false)

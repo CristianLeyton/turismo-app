@@ -16,6 +16,7 @@
         $returnSchedule = null;
         $route = null;
         $returnRoute = null;
+        $bus = null;
     } else {
         $originLocation = $record->origin;
         $destinationLocation = $record->destination;
@@ -25,6 +26,7 @@
         $returnSchedule = $returnTrip?->schedule;
         $route = $trip?->route;
         $returnRoute = $returnTrip?->route;
+        $bus = $trip?->bus;
     }
 @endphp
 
@@ -38,6 +40,12 @@
 
         <div class="flex flex-col md:flex-row md:justify-between gap-4">
             <div>
+                @if ($bus ?? null)
+                <p class="text-sm text-gray-600 dark:text-gray-400 mb-1">
+                    <strong class="font-semibold">Colectivo:</strong>
+                    <span class="text-fuchsia-600 dark:text-fuchsia-400">{{ $bus->name }}</span>
+                </p>
+                @endif
                 <h2 class="text-2xl font-bold text-gray-900 dark:text-gray-100">
                     <span class="text-fuchsia-600">{{ $originLocation?->name ?? 'Origen' }} </span>
                     →

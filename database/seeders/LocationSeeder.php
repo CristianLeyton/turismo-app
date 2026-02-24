@@ -22,6 +22,7 @@ class LocationSeeder extends Seeder
             ['name' => 'Urundel'],
             ['name' => 'Gral. Güemes'],
             ['name' => 'Salta'],
+            ['name' => 'Embarcación'],
         ];
 
         foreach ($locations as $location) {

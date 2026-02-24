@@ -2,62 +2,73 @@
 
 namespace Database\Seeders;
 
-use Illuminate\Database\Console\Seeds\WithoutModelEvents;
-use Illuminate\Database\Seeder;
 use App\Models\Route;
 use App\Models\Schedule;
 use Carbon\Carbon;
+use Illuminate\Database\Console\Seeds\WithoutModelEvents;
+use Illuminate\Database\Seeder;
 
 class ScheduleSeeder extends Seeder
 {
     /**
-     * Run the database seeds.
+     * Horarios para rutas Orán-Salta / Salta-Orán (Unidad 1) y Embarcación-Salta / Salta-Embarcación (Unidad 2).
      */
     public function run(): void
     {
-        // Buscar las rutas
         $oranSalta = Route::where('name', 'Orán - Salta')->firstOrFail();
         $saltaOran = Route::where('name', 'Salta - Orán')->firstOrFail();
+        $embarcacionSalta = Route::where('name', 'Embarcación - Salta')->firstOrFail();
+        $saltaEmbarcacion = Route::where('name', 'Salta - Embarcación')->firstOrFail();
 
         /*
         |--------------------------------------------------------------------------
-        | Horarios para: Orán - Salta
+        | Unidad 1: Orán - Salta
         |--------------------------------------------------------------------------
         */
         Schedule::create([
             'route_id' => $oranSalta->id,
             'name' => 'Madrugada',
-            'departure_time' => Carbon::createFromTime(02, 0, 0), // 02:00
-            'arrival_time' => Carbon::createFromTime(06, 30, 0),   // 06:30
+            'departure_time' => Carbon::createFromTime(02, 0, 0),
+            'arrival_time' => Carbon::createFromTime(06, 30, 0),
             'is_active' => true,
         ]);
 
-/*         Schedule::create([
-            'route_id' => $oranSalta->id,
-            'name' => 'Noche',
-            'departure_time' => Carbon::createFromTime(19, 0, 0), // 19:00
-            'arrival_time' => Carbon::createFromTime(23, 30, 0),   // 23:30
-            'is_active' => true,
-        ]); */
-
         /*
         |--------------------------------------------------------------------------
-        | Horarios para: Salta - Orán
+        | Unidad 1: Salta - Orán
         |--------------------------------------------------------------------------
         */
-/*         Schedule::create([
-            'route_id' => $saltaOran->id,
-            'name' => 'Madrugada',
-            'departure_time' => Carbon::createFromTime(02, 0, 0), // 02:00
-            'arrival_time' => Carbon::createFromTime(06, 30, 0),    // 06:30
-            'is_active' => true,
-        ]); */
-
         Schedule::create([
             'route_id' => $saltaOran->id,
             'name' => 'Noche',
-            'departure_time' => Carbon::createFromTime(19, 0, 0), // 19:00
-            'arrival_time' => Carbon::createFromTime(23, 30, 0),    // 23:30 (medianoche)
+            'departure_time' => Carbon::createFromTime(19, 0, 0),
+            'arrival_time' => Carbon::createFromTime(23, 30, 0),
+            'is_active' => true,
+        ]);
+
+        /*
+        |--------------------------------------------------------------------------
+        | Unidad 2: Embarcación - Salta (salida 01:30, llegada 06:30)
+        |--------------------------------------------------------------------------
+        */
+        Schedule::create([
+            'route_id' => $embarcacionSalta->id,
+            'name' => 'Madrugada',
+            'departure_time' => Carbon::createFromTime(1, 30, 0),
+            'arrival_time' => Carbon::createFromTime(6, 30, 0),
+            'is_active' => true,
+        ]);
+
+        /*
+        |--------------------------------------------------------------------------
+        | Unidad 2: Salta - Embarcación (salida 15:00, llegada 20:00)
+        |--------------------------------------------------------------------------
+        */
+        Schedule::create([
+            'route_id' => $saltaEmbarcacion->id,
+            'name' => 'Tarde',
+            'departure_time' => Carbon::createFromTime(15, 0, 0),
+            'arrival_time' => Carbon::createFromTime(20, 0, 0),
             'is_active' => true,
         ]);
     }

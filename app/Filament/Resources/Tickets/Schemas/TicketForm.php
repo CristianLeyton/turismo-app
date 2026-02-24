@@ -2071,38 +2071,37 @@ class TicketForm
                             ->reorderable(false)
                             /* ->grid(2) */
                             ->itemLabel(function (array $state, ?string $uuid, $component): ?string {
-                                // Obtener número de pasajero
                                 $passengerNumber = $state['passenger_number'] ?? 1;
-
-                                // Obtener todos los datos del formulario
                                 $formData = $component->getContainer()->getRawState();
-
-                                // Obtener arrays de asientos
                                 $seatIds = $formData['seat_ids'] ?? [];
                                 $returnSeatIds = $formData['return_seat_ids'] ?? [];
 
-                                // Depuración
-                                logger()->info('itemLabel debug', [
-                                    'passengerNumber' => $passengerNumber,
-                                    'seatIds' => $seatIds,
-                                    'returnSeatIds' => $returnSeatIds,
-                                    'seatAtIndex' => $seatIds[$passengerNumber - 1] ?? 'NOT_FOUND',
-                                    'returnSeatAtIndex' => $returnSeatIds[$passengerNumber - 1] ?? 'NOT_FOUND',
-                                ]);
+                                $seatId = $seatIds[$passengerNumber - 1] ?? null;
+                                $returnSeatId = $returnSeatIds[$passengerNumber - 1] ?? null;
 
-                                // Construir label
+                                $idaBusId = Trip::find($formData['trip_id'] ?? null)?->bus_id;
+                                $vueltaBusId = Trip::find($formData['return_trip_id'] ?? null)?->bus_id;
+
+                                $seatNumberIda = null;
+                                if ($seatId !== null && $seatId !== '' && $idaBusId) {
+                                    $seatNumberIda = Seat::where('id', $seatId)->where('bus_id', $idaBusId)->value('seat_number');
+                                }
+                                $seatNumberVuelta = null;
+                                if ($returnSeatId !== null && $returnSeatId !== '' && $vueltaBusId) {
+                                    $seatNumberVuelta = Seat::where('id', $returnSeatId)->where('bus_id', $vueltaBusId)->value('seat_number');
+                                }
+
                                 $label = 'Pasajero ' . $passengerNumber;
-
-                                // Agregar asiento de ida si existe
-                                if (isset($seatIds[$passengerNumber - 1]) && $seatIds[$passengerNumber - 1] !== null) {
-                                    $label .= ' | Asiento ida: ' . $seatIds[$passengerNumber - 1];
+                                if ($seatNumberIda !== null) {
+                                    $label .= ' | Asiento ida: ' . $seatNumberIda;
+                                } elseif ($seatId !== null && $seatId !== '') {
+                                    $label .= ' | Asiento ida: ' . $seatId;
                                 }
-
-                                // Agregar asiento de vuelta si existe
-                                if (isset($returnSeatIds[$passengerNumber - 1]) && $returnSeatIds[$passengerNumber - 1] !== null) {
-                                    $label .= ' | Asiento vuelta: ' . $returnSeatIds[$passengerNumber - 1];
+                                if ($seatNumberVuelta !== null) {
+                                    $label .= ' | Asiento vuelta: ' . $seatNumberVuelta;
+                                } elseif ($returnSeatId !== null && $returnSeatId !== '') {
+                                    $label .= ' | Asiento vuelta: ' . $returnSeatId;
                                 }
-
                                 return $label;
                             }),
                     ]),

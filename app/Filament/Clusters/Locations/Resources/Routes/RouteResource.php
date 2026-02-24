@@ -14,6 +14,7 @@ use Filament\Actions\ForceDeleteAction;
 use Filament\Actions\ForceDeleteBulkAction;
 use Filament\Actions\RestoreAction;
 use Filament\Actions\RestoreBulkAction;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
@@ -44,7 +45,13 @@ class RouteResource extends Resource
     {
         return $schema
             ->components([
+                Select::make('bus_id')
+                    ->label('Colectivo')
+                    ->relationship('bus', 'name')
+                    ->preload()
+                    ->placeholder('Sin asignar'),
                 TextInput::make('name')
+                    ->label('Nombre')
                     ->required(),
             ]);
     }
@@ -52,11 +59,18 @@ class RouteResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
+            ->modifyQueryUsing(fn ($query) => $query->with('bus'))
             ->recordTitleAttribute('name')
             ->columns([
                 TextColumn::make('name')
                     ->label('Nombre')
                     ->searchable(),
+                TextColumn::make('bus.name')
+                    ->label('Colectivo')
+                    ->sortable()
+                    ->placeholder('—')
+                    ->badge()
+                    ->color('gray'),
                 TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable()

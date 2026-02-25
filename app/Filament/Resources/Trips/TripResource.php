@@ -246,6 +246,7 @@ class TripResource extends Resource
             ])
             ->filtersLayout(FiltersLayout::AboveContent)
             ->deferFilters(false)
+            ->filtersFormColumns(5)
             ->persistFiltersInSession()
             ->hiddenFilterIndicators()
             ->recordClasses(fn ($record) => $record->tickets()->count() === 0 ? 'bg-gray-100 opacity-70 dark:bg-gray-800' : '')

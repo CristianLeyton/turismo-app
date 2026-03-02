@@ -1055,7 +1055,6 @@ class TicketForm
 
                                         // Buscar rutas que conecten el destino (origen de vuelta) con el origen (destino de vuelta)
                                         $schedules = Schedule::query()
-                                            ->whereHas('route', fn($q) => $q->where('bus_id', $get('bus_id')))
                                             ->whereHas('route.stops', fn($q) => $q->where('location_id', $get('destination_location_id')))
                                             ->whereHas('route.stops', fn($q) => $q->where('location_id', $get('origin_location_id')))
                                             ->where('is_active', true)
@@ -1118,7 +1117,6 @@ class TicketForm
 
                                         // Buscar rutas que conecten el destino (origen de vuelta) con el origen (destino de vuelta)
                                         $schedules = Schedule::query()
-                                            ->whereHas('route', fn($q) => $q->where('bus_id', $get('bus_id')))
                                             ->whereHas('route.stops', fn($q) => $q->where('location_id', $get('destination_location_id')))
                                             ->whereHas('route.stops', fn($q) => $q->where('location_id', $get('origin_location_id')))
                                             ->where('is_active', true)
@@ -1176,7 +1174,6 @@ class TicketForm
 
                                         // Buscar rutas que conecten el destino (origen de vuelta) con el origen (destino de vuelta)
                                         $schedules = Schedule::query()
-                                            ->whereHas('route', fn($q) => $q->where('bus_id', $get('bus_id')))
                                             ->whereHas('route.stops', fn($q) => $q->where('location_id', $get('destination_location_id')))
                                             ->whereHas('route.stops', fn($q) => $q->where('location_id', $get('origin_location_id')))
                                             ->where('is_active', true)
@@ -1353,11 +1350,18 @@ class TicketForm
                     ->schema([
                         ViewField::make('wizard_header_ida')
                             ->view('tickets.wizard-step-header')
-                            ->viewData(fn (Get $get) => [
-                                'busName' => $get('bus_id') ? Bus::find($get('bus_id'))?->name : '—',
-                                'originName' => $get('origin_location_id') ? \App\Models\Location::find($get('origin_location_id'))?->name : '—',
-                                'destinationName' => $get('destination_location_id') ? \App\Models\Location::find($get('destination_location_id'))?->name : '—',
-                            ]),
+                            ->viewData(function (Get $get) {
+                                $returnTrip = $get('return_trip_id') ? Trip::find($get('return_trip_id')) : null;
+                                return [
+                                    'busName' => $get('bus_id') ? Bus::find($get('bus_id'))?->name : '—',
+                                    'originName' => $get('origin_location_id') ? \App\Models\Location::find($get('origin_location_id'))?->name : '—',
+                                    'destinationName' => $get('destination_location_id') ? \App\Models\Location::find($get('destination_location_id'))?->name : '—',
+                                    'isRoundTrip' => (bool) $get('is_round_trip') && $get('return_trip_id'),
+                                    'returnBusName' => $returnTrip?->bus?->name,
+                                    'returnOriginName' => $get('destination_location_id') ? \App\Models\Location::find($get('destination_location_id'))?->name : null,
+                                    'returnDestinationName' => $get('origin_location_id') ? \App\Models\Location::find($get('origin_location_id'))?->name : null,
+                                ];
+                            }),
                         ViewField::make('trip_required_info')
                             ->label('')
                             ->view('tickets.trip-required-info')
@@ -1621,11 +1625,18 @@ class TicketForm
                     ->schema([
                         ViewField::make('wizard_header_vuelta')
                             ->view('tickets.wizard-step-header')
-                            ->viewData(fn (Get $get) => [
-                                'busName' => $get('bus_id') ? Bus::find($get('bus_id'))?->name : '—',
-                                'originName' => $get('origin_location_id') ? \App\Models\Location::find($get('origin_location_id'))?->name : '—',
-                                'destinationName' => $get('destination_location_id') ? \App\Models\Location::find($get('destination_location_id'))?->name : '—',
-                            ]),
+                            ->viewData(function (Get $get) {
+                                $returnTrip = $get('return_trip_id') ? Trip::find($get('return_trip_id')) : null;
+                                return [
+                                    'busName' => $get('bus_id') ? Bus::find($get('bus_id'))?->name : '—',
+                                    'originName' => $get('origin_location_id') ? \App\Models\Location::find($get('origin_location_id'))?->name : '—',
+                                    'destinationName' => $get('destination_location_id') ? \App\Models\Location::find($get('destination_location_id'))?->name : '—',
+                                    'isRoundTrip' => (bool) $get('is_round_trip') && $get('return_trip_id'),
+                                    'returnBusName' => $returnTrip?->bus?->name,
+                                    'returnOriginName' => $get('destination_location_id') ? \App\Models\Location::find($get('destination_location_id'))?->name : null,
+                                    'returnDestinationName' => $get('origin_location_id') ? \App\Models\Location::find($get('origin_location_id'))?->name : null,
+                                ];
+                            }),
                         ViewField::make('return_trip_required_info')
                             ->label('')
                             ->view('tickets.return-trip-required-info')
@@ -1806,11 +1817,18 @@ class TicketForm
                     ->schema([
                         ViewField::make('wizard_header_pasajeros')
                             ->view('tickets.wizard-step-header')
-                            ->viewData(fn (Get $get) => [
-                                'busName' => $get('bus_id') ? Bus::find($get('bus_id'))?->name : '—',
-                                'originName' => $get('origin_location_id') ? \App\Models\Location::find($get('origin_location_id'))?->name : '—',
-                                'destinationName' => $get('destination_location_id') ? \App\Models\Location::find($get('destination_location_id'))?->name : '—',
-                            ]),
+                            ->viewData(function (Get $get) {
+                                $returnTrip = $get('return_trip_id') ? Trip::find($get('return_trip_id')) : null;
+                                return [
+                                    'busName' => $get('bus_id') ? Bus::find($get('bus_id'))?->name : '—',
+                                    'originName' => $get('origin_location_id') ? \App\Models\Location::find($get('origin_location_id'))?->name : '—',
+                                    'destinationName' => $get('destination_location_id') ? \App\Models\Location::find($get('destination_location_id'))?->name : '—',
+                                    'isRoundTrip' => (bool) $get('is_round_trip') && $get('return_trip_id'),
+                                    'returnBusName' => $returnTrip?->bus?->name,
+                                    'returnOriginName' => $get('destination_location_id') ? \App\Models\Location::find($get('destination_location_id'))?->name : null,
+                                    'returnDestinationName' => $get('origin_location_id') ? \App\Models\Location::find($get('origin_location_id'))?->name : null,
+                                ];
+                            }),
                         /*                         Text::make('Pasajeros seleccionados')
                             ->content(fn(Get $get) => $get('passengers_count') . ' pasajero(s) seleccionado(s).'),
                         Text::make('Asientos de ida seleccionados')

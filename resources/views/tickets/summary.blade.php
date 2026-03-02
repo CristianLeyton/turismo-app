@@ -38,17 +38,13 @@
 
         <div class="flex flex-col md:flex-row md:justify-between gap-4">
             <div>
-                @if($bus)
-                <p class="text-sm text-gray-600 dark:text-gray-400 mb-1">
-                    <strong class="font-semibold">Colectivo:</strong>
-                    <span class="text-fuchsia-600 dark:text-fuchsia-400">{{ $bus->name }}</span>
-                </p>
-                @endif
                 <h2 class="text-2xl font-bold text-gray-900 dark:text-gray-100">
                     <span class="text-fuchsia-600">{{ $originLocation?->name ?? 'Origen' }} </span>
                     →
                     <span class="text-fuchsia-600">{{ $destinationLocation?->name ?? 'Destino' }}</span>
                 </h2>
+
+                
 
                 <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">
                     <strong class="font-semibold"> Ida: </strong>
@@ -59,7 +55,14 @@
                     {{ $schedule?->arrival_time ? Carbon::parse($schedule->arrival_time)->format('H:i') : '--:--' }}
                 </p>
 
-                <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                @if($bus)
+                <p class="text-sm text-gray-600 dark:text-gray-400">
+                    <strong class="font-semibold">Colectivo:</strong>
+                    <span class="text-fuchsia-600 dark:text-fuchsia-400">{{ $bus->name }}</span>
+                </p>
+                @endif
+
+                <p class="text-sm text-gray-600 dark:text-gray-400">
                     <span class="font-semibold"> Ruta: </span>
                     <span class="text-fuchsia-600 dark:text-fuchsia-400">
                         {{ $route?->name ?? 'No especificada' }}
@@ -87,7 +90,10 @@
                 →
                 {{ $returnSchedule?->arrival_time ? Carbon::parse($returnSchedule->arrival_time)->format('H:i') : '--:--' }}
 
-
+                @if($returnTrip?->bus)
+                <br> <span class="font-semibold">Colectivo:</span>
+                <span class="text-fuchsia-600 dark:text-fuchsia-400">{{ $returnTrip->bus->name }}</span>
+                @endif
                 <br> <span class="font-semibold">Ruta:</span>
                 <span class="text-fuchsia-600 dark:text-fuchsia-400">
                     {{ $returnRoute?->name ?? 'No especificada' }}</span>

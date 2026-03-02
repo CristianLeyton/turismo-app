@@ -95,11 +95,18 @@ class TripResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
-            ->modifyQueryUsing(fn ($query) => $query->with(['bus', 'route', 'schedule']))
+            ->modifyQueryUsing(fn($query) => $query->with(['bus', 'route', 'schedule']))
             ->columns([
+                TextColumn::make('bus.name')
+                    ->label('Colectivo')
+                    ->sortable()
+                    ->badge()
+                    ->size('lg')
+                    ->color('primary'),
                 TextColumn::make('id')
                     ->label('Viaje Nº')
                     ->sortable()
+                    ->visibleFrom('md')
                     ->badge()
                     ->alignCenter()
                     ->color('gray'),
@@ -109,19 +116,19 @@ class TripResource extends Resource
                     ->badge()
                     ->color('info')
                     ->sortable()
-                    ->url(fn ($record) => static::getUrl(parameters: [
+                    ->url(fn($record) => static::getUrl(parameters: [
                         'tableAction' => 'view_details',
                         'tableActionRecord' => $record->id,
                     ]))
                     ->alignCenter(),
-/*                 TextColumn::make('schedule.name')
+                /*                 TextColumn::make('schedule.name')
                     ->label('Horario')
                     ->alignCenter()
                     ->toggleable(isToggledHiddenByDefault: true), */
                 TextColumn::make('departure_time')
                     ->label('Horario')
-/*                     ->sortable() */
-->visibleFrom('md')
+                    /*                     ->sortable() */
+                    ->visibleFrom('md')
                     ->badge()
                     ->color('info')
                     ->alignCenter()
@@ -132,19 +139,13 @@ class TripResource extends Resource
                             ' - ' .
                             Carbon::parse($record->arrival_time)->format('H:i')
                     ),
-                    //->toggleable(isToggledHiddenByDefault: false),
+                //->toggleable(isToggledHiddenByDefault: false),
                 TextColumn::make('route.name')
                     ->label('Ruta')
                     ->sortable()
                     ->visibleFrom('md')
                     ->badge()
                     ->color('warning'),
-                TextColumn::make('bus.name')
-                    ->label('Unidad')
-                    ->sortable()
-                    ->visibleFrom('md')
-                    ->badge()
-                    ->color('gray'),
                 TextColumn::make('occupiedSeatsCount')
                     ->label('Asientos vendidos')
                     ->visibleFrom('md')
@@ -152,16 +153,16 @@ class TripResource extends Resource
                     ->badge()
                     ->color('primary')
                     ->alignCenter(),
-                    //->toggleable(isToggledHiddenByDefault: false),
-/*                 TextColumn::make('total_passengers')
+                //->toggleable(isToggledHiddenByDefault: false),
+                /*                 TextColumn::make('total_passengers')
                     ->label('Pasajeros')
                     ->getStateUsing(fn($record) => $record->total_passengers)
                     ->visibleFrom('md')
                     ->badge()
                     ->color('success')
                     ->alignCenter(), */
-                    //->toggleable(isToggledHiddenByDefault: false),
-/*                 TextColumn::make('created_at')
+                //->toggleable(isToggledHiddenByDefault: false),
+                /*                 TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
@@ -175,8 +176,12 @@ class TripResource extends Resource
                     ->toggleable(isToggledHiddenByDefault: true), */
             ])
             ->defaultSort('trip_date', 'desc')
-/*             ->persistSortInSession() */
+            /*             ->persistSortInSession() */
             ->filters([
+                SelectFilter::make('bus')
+                    ->relationship('bus', 'name')
+                    ->label('Colectivo')
+                    ->preload(),
                 Filter::make('trip_id')
                     ->label('Viaje Nº')
                     ->form([
@@ -190,7 +195,7 @@ class TripResource extends Resource
                         return $query
                             ->when(
                                 $data['id'],
-                                fn (Builder $query, int $id): Builder => $query->where('id', $id),
+                                fn(Builder $query, int $id): Builder => $query->where('id', $id),
                             );
                     })
                     ->indicateUsing(function (array $data): array {
@@ -209,13 +214,13 @@ class TripResource extends Resource
                             ->native(true)
                             ->displayFormat('d/m/Y')
                             ->closeOnDateSelection()
-                            /* ->default(now()->format('Y-m-d')) */,
+                        /* ->default(now()->format('Y-m-d')) */,
                     ])
                     ->query(function (Builder $query, array $data): Builder {
                         return $query
                             ->when(
                                 $data['date'],
-                                fn (Builder $query, $date): Builder => $query->whereDate('trip_date', '=', $date),
+                                fn(Builder $query, $date): Builder => $query->whereDate('trip_date', '=', $date),
                             );
                     })
                     ->indicateUsing(function (array $data): array {
@@ -232,16 +237,11 @@ class TripResource extends Resource
                     ->preload()
                     ->getOptionLabelFromRecordUsing(function (Schedule $record) {
                         return $record->display_name;
-                    }), 
+                    }),
 
                 SelectFilter::make('route')
                     ->relationship('route', 'name')
                     ->label('Ruta')
-                    ->preload(),
-
-                SelectFilter::make('bus')
-                    ->relationship('bus', 'name')
-                    ->label('Unidad')
                     ->preload(),
             ])
             ->filtersLayout(FiltersLayout::AboveContent)
@@ -249,11 +249,11 @@ class TripResource extends Resource
             ->filtersFormColumns(5)
             ->persistFiltersInSession()
             ->hiddenFilterIndicators()
-            ->recordClasses(fn ($record) => $record->tickets()->count() === 0 ? 'bg-gray-100 opacity-70 dark:bg-gray-800' : '')
+            ->recordClasses(fn($record) => $record->tickets()->count() === 0 ? 'bg-gray-100 opacity-70 dark:bg-gray-800' : '')
             ->recordActions([
                 ViewAction::make('view_details')
                     ->label('Ver detalles')
-                    ->modalHeading(fn($record) => "Detalles del viaje N° {$record->id } - {$record->bus->name} - ({$record->trip_date->format('d/m/Y')})")
+                    ->modalHeading(fn($record) => "Detalles del viaje N° {$record->id} - {$record->bus->name} - ({$record->trip_date->format('d/m/Y')})")
                     ->modalContent(function ($record) {
                         $passengers = $record->getPassengersWithDetails();
 

@@ -301,13 +301,13 @@
                                     <strong>DEVOLUCIONES:</strong><br>
                                     • Más de 48hs antes de la salida del servicio: 10% de retención.<br>
                                     • Entre 24hs y 48hs antes de la salida: 20% de retención.<br>
-                                    * Dentro de las 24hs previas a la salida: 30% de retención.<br>
+                                    • Dentro de las 24hs previas a la salida: 30% de retención.<br>
                                     • Una vez iniciadas las 24hs previas a la salida del servicio no se admitirán devoluciones.<br>
                                     • Los servicios adquiridos con tarjeta de crédito no se tomarán en devolución bajo ningún concepto.<br>
                                     • Los boletos recibidos en carácter de donación y/o sin cargo son intransferibles, sin excepción.<br><br>
 
                                     <strong>CAMBIO DE FECHA U HORARIO:</strong><br>
-                                    * Se permitirá el cambio únicamente cuando sea solicitado con una anticipación mayor a 24hs respecto de la salida del servicio.
+                                    • Se permitirá el cambio únicamente cuando sea solicitado con una anticipación mayor a 24hs respecto de la salida del servicio.
 
                                     @if ($hasChild)
                                         <div class='child-warning'>

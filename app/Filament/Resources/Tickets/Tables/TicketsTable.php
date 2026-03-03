@@ -42,7 +42,7 @@ class TicketsTable
                     ->sortable()
                     ->visibleFrom('md'),
 
-/*                 TextColumn::make('passenger.first_name')
+                /*                 TextColumn::make('passenger.first_name')
                     ->label('Nombre')
                     ->limit(13)
                     ->tooltip(fn($state, $record) => $record->passenger->last_name . ' ' . $record->passenger->first_name)
@@ -311,9 +311,11 @@ class TicketsTable
             ->recordActions([
 
                 ActionGroup::make([
+                    ViewAction::make()->button()->size('sm')->extraAttributes(
+                        ['title' => 'Ver boleto', 'class' => 'inline-flex md:hidden']
+                    ),
                     Action::make('download_pdf')
                         ->label('Descargar')
-                        ->hiddenLabel()
                         ->size('sm')
                         ->icon('heroicon-m-arrow-down-tray')
                         ->color('primary')
@@ -348,8 +350,9 @@ class TicketsTable
                         })
                 ])->icon('heroicon-m-ellipsis-vertical')
                     ->hiddenLabel()
-                    ->buttonGroup()
+                    ->size('sm')
                     ->extraAttributes(['class' => 'md:hidden']),
+
                 ViewAction::make()->button()->hiddenLabel()->extraAttributes(
                     ['title' => 'Ver boleto', 'class' => 'hidden md:inline-flex']
                 ),

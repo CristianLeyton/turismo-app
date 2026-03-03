@@ -286,25 +286,28 @@
 
                                 <div class='conditions'>
                                     <strong>CONDICIONES:</strong><br>
-                                    Al adquirir el servicio verifique en el acto si la fecha, hora de viaje, precio
-                                    abonado y destino están conforme a lo solicitado.<br><br>
+                                    Al adquirir el servicio verifique en el acto si la fecha, hora de
+                                    viaje, precio abonado y destino están conforme a lo solicitado.<br>
+                                    Cada pasajero tiene derecho a transportar hasta 1 bolso y/o
+                                    valija (hasta 15kg), cuyo tamaño y acondicionamiento no
+                                    molesten al público ni al personal, y puedan llevarse en las bodegas
+                                    destinadas a tal fin.<br><br>
 
-                                    Cada pasajero tiene derecho a transportar hasta 1 bolso y/o valijas (hasta 15kg),
-                                    cuyo tamaño y acondicionamiento no molesten al público ni al personal, y puedan
-                                    llevarse en las bodegas destinadas a tal fin.<br><br>
+                                    <strong>PROMOCIÓN IDA Y VUELTA:</strong><br>
+                                    * La promoción ida y vuelta no admite devolución bajo ningún concepto.<br>
+                                    * Tiene una validez de 14 días corridos desde la fecha de emisión.<br>
+                                    * No permite cambios de fecha ni reutilización una vez vencido el plazo.<br><br>
 
                                     <strong>DEVOLUCIONES:</strong><br>
-                                    • 30% de retención desde las 24hs anteriores y hasta la salida del servicio.<br>
-                                    • 20% de retención desde las 48hs anteriores y hasta las 24hs a la salida del
-                                    servicio.<br>
-                                    • 10% de retención más de 48hs de la salida del servicio.<br>
-                                    • Los servicios adquiridos con tarjeta de crédito no se tomarán en devolución bajo
-                                    ningún concepto.<br>
-                                    • Los boletos recibidos en carácter de donación y/o sin cargo son intransferibles,
-                                    sin excepción.<br><br>
+                                    * Más de 48hs antes de la salida del servicio: 10% de retención.<br>
+                                    * Entre 24hs y 48hs antes de la salida del servicio: 20% de retención.<br>
+                                    * Dentro de las 24hs previas a la salida del servicio: 30% de retención.<br>
+                                    * Una vez iniciadas las 24hs previas a la salida del servicio no se admitirán devoluciones.<br>
+                                    * Los servicios adquiridos con tarjeta de crédito no se tomarán en devolución bajo ningún concepto.<br>
+                                    * Los boletos recibidos en carácter de donación y/o sin cargo son intransferibles, sin excepción.<br><br>
 
                                     <strong>CAMBIO DE FECHA U HORARIO:</strong><br>
-                                    No se admitirán cambios; solo se aceptará devolución según condiciones anteriores.
+                                    * Se permitirá el cambio únicamente cuando sea solicitado con una anticipación mayor a 24hs respecto de la salida del servicio.
 
                                     @if ($hasChild)
                                         <div class='child-warning'>

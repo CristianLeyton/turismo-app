@@ -22,6 +22,7 @@ use Filament\Forms\Components\Select;
 use App\Models\User;
 use App\Services\TicketPdfService;
 use App\Models\Ticket;
+use Filament\Actions\ActionGroup;
 use Livewire\Livewire;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -39,7 +40,32 @@ class TicketsTable
                     ->badge()
                     ->color('gray')
                     ->sortable()
-                    ->alignCenter(),
+                    ->visibleFrom('md'),
+
+/*                 TextColumn::make('passenger.first_name')
+                    ->label('Nombre')
+                    ->limit(13)
+                    ->tooltip(fn($state, $record) => $record->passenger->last_name . ' ' . $record->passenger->first_name)
+                    ->formatStateUsing(
+                        fn($state, $record) =>
+                        $record->passenger->last_name . ' ' . $record->passenger->first_name,
+                    )
+                    ->sortable()
+                    ->hiddenFrom('md'), */
+
+                TextColumn::make('passenger.last_name')
+                    ->label('Nombre')
+                    ->limit(22)
+                    ->tooltip(fn($state, $record) => $record->passenger->last_name . ' ' . $record->passenger->first_name)
+                    ->formatStateUsing(
+                        fn($state, $record) =>
+                        $record->passenger->last_name . ' ' . $record->passenger->first_name,
+                    )
+                    ->sortable(),
+
+                TextColumn::make('passenger.dni')
+                    ->label('DNI')
+                    ->visibleFrom('md'),
 
                 TextColumn::make('sale.sale_date')
                     ->label('Emisión')
@@ -49,7 +75,7 @@ class TicketsTable
                     ->date('d/m/Y')
                     ->url(fn(Ticket $record) => TicketResource::getUrl('view', ['record' => $record])),
 
-                TextColumn::make('sale.user.username')
+                TextColumn::make('sale.user.name')
                     ->label('Vendedor')
                     ->sortable()
                     ->badge()
@@ -71,19 +97,6 @@ class TicketsTable
                     ->color('info')
                     ->url(fn(Ticket $record) => TicketResource::getUrl('view', ['record' => $record])),
 
-                TextColumn::make('passenger.last_name')
-                    ->label('Nombre')
-                    ->formatStateUsing(
-                        fn($state, $record) =>
-                        $record->passenger->last_name . ' ' . $record->passenger->first_name,
-                    )
-                    ->sortable()
-                    ->visibleFrom('md'),
-
-                TextColumn::make('passenger.dni')
-                    ->label('DNI')
-                    ->visibleFrom('md'),
-
                 TextColumn::make('origin_location_id')
                     ->label('Ruta')
                     ->formatStateUsing(function ($record) {
@@ -102,6 +115,7 @@ class TicketsTable
                     ->label('Asiento')
                     ->badge()
                     ->color('primary')
+                    ->visibleFrom('md')
                     ->alignCenter(),
 
                 IconColumn::make('is_round_trip')
@@ -110,7 +124,7 @@ class TicketsTable
                     ->boolean()
                     ->alignCenter(),
 
-                TextColumn::make('companion_type')
+                /*                 TextColumn::make('companion_type')
                     ->label('Acompañante')
                     ->badge()
                     ->color(function ($record) {
@@ -122,7 +136,7 @@ class TicketsTable
                         return 'gray';
                     })
                     ->visibleFrom('md')
-                    ->alignCenter(),
+                    ->alignCenter(), */
             ])
             ->defaultSort('sale.sale_date', 'desc')
             ->recordUrl(null)
@@ -151,6 +165,32 @@ class TicketsTable
                         $indicators = [];
                         if ($data['id'] ?? null) {
                             $indicators[] = 'Boleto: ' . $data['id'];
+                        }
+                        return $indicators;
+                    }),
+
+                Filter::make('passenger_search')
+                    ->label('Pasajero')
+                    ->form([
+                        TextInput::make('query')
+                            ->label('Pasajero')
+                            ->placeholder('Nombre o DNI del pasajero')
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        return $query
+                            ->when(
+                                $data['query'],
+                                fn(Builder $query, string $search): Builder => $query->whereHas('passenger', function (Builder $q) use ($search) {
+                                    $q->where('first_name', 'like', "%{$search}%")
+                                        ->orWhere('last_name', 'like', "%{$search}%")
+                                        ->orWhere('dni', 'like', "%{$search}%");
+                                }),
+                            );
+                    })
+                    ->indicateUsing(function (array $data): array {
+                        $indicators = [];
+                        if ($data['query'] ?? null) {
+                            $indicators[] = 'Pasajero: ' . $data['query'];
                         }
                         return $indicators;
                     }),
@@ -188,12 +228,12 @@ class TicketsTable
                         Select::make('user_id')
                             ->label('Vendedor')
                             ->placeholder('Todos')
-                            ->options(fn () => User::query()->where('id', '!=', 1)->orderBy('name')->pluck('name', 'id')->toArray()),
+                            ->options(fn() => User::query()->where('id', '!=', 1)->orderBy('name')->pluck('name', 'id')->toArray()),
                     ])
                     ->query(function (Builder $query, array $data): Builder {
                         return $query->when(
                             $data['user_id'] ?? null,
-                            fn (Builder $query, $userId): Builder => $query->whereHas('sale', fn (Builder $q) => $q->where('user_id', $userId)),
+                            fn(Builder $query, $userId): Builder => $query->whereHas('sale', fn(Builder $q) => $q->where('user_id', $userId)),
                         );
                     })
                     ->indicateUsing(function (array $data): array {
@@ -229,32 +269,6 @@ class TicketsTable
                         $indicators = [];
                         if ($data['date'] ?? null) {
                             $indicators[] = 'Salida: ' . \Carbon\Carbon::parse($data['date'])->format('d/m/Y');
-                        }
-                        return $indicators;
-                    }),
-
-                Filter::make('passenger_search')
-                    ->label('Pasajero')
-                    ->form([
-                        TextInput::make('query')
-                            ->label('Pasajero')
-                            ->placeholder('Nombre o DNI del pasajero')
-                    ])
-                    ->query(function (Builder $query, array $data): Builder {
-                        return $query
-                            ->when(
-                                $data['query'],
-                                fn(Builder $query, string $search): Builder => $query->whereHas('passenger', function (Builder $q) use ($search) {
-                                    $q->where('first_name', 'like', "%{$search}%")
-                                        ->orWhere('last_name', 'like', "%{$search}%")
-                                        ->orWhere('dni', 'like', "%{$search}%");
-                                }),
-                            );
-                    })
-                    ->indicateUsing(function (array $data): array {
-                        $indicators = [];
-                        if ($data['query'] ?? null) {
-                            $indicators[] = 'Pasajero: ' . $data['query'];
                         }
                         return $indicators;
                     }),
@@ -295,8 +309,49 @@ class TicketsTable
             ->persistFiltersInSession()
             ->hiddenFilterIndicators()
             ->recordActions([
+
+                ActionGroup::make([
+                    Action::make('download_pdf')
+                        ->label('Descargar')
+                        ->hiddenLabel()
+                        ->size('sm')
+                        ->icon('heroicon-m-arrow-down-tray')
+                        ->color('primary')
+                        ->button()->extraAttributes(
+                            ['title' => 'Descargar boleto', 'class' => 'md:hidden']
+                        )
+                        ->action(function (Ticket $record) {
+
+                            $pdfService = new TicketPdfService();
+                            $sale = $record->sale;
+
+                            if ($record->is_round_trip) {
+                                $passengerTickets = $sale->tickets()
+                                    ->where('passenger_id', $record->passenger_id)
+                                    ->with(['trip', 'returnTrip', 'origin', 'destination', 'seat'])
+                                    ->get();
+
+                                $pdfContent = $pdfService->generateRoundTripTicket($sale, $passengerTickets);
+                            } else {
+                                $pdfContent = $pdfService->generatePassengerTickets($sale, collect([$record]));
+                            }
+
+                            $ticketId = $record->id;
+                            $colectivo = str_replace(' ', '_', $record->trip->bus->name);
+                            $filename = "Boleto_N°{$ticketId}_{$colectivo}.pdf";
+
+                            return response()->streamDownload(
+                                fn() => print($pdfContent),
+                                $filename,
+                                ['Content-Type' => 'application/pdf']
+                            );
+                        })
+                ])->icon('heroicon-m-ellipsis-vertical')
+                    ->hiddenLabel()
+                    ->buttonGroup()
+                    ->extraAttributes(['class' => 'md:hidden']),
                 ViewAction::make()->button()->hiddenLabel()->extraAttributes(
-                    ['title' => 'Ver boleto']
+                    ['title' => 'Ver boleto', 'class' => 'hidden md:inline-flex']
                 ),
                 //EditAction::make(),
                 Action::make('download_pdf')
@@ -304,7 +359,7 @@ class TicketsTable
                     ->icon('heroicon-m-arrow-down-tray')
                     ->color('primary')
                     ->button()->hiddenLabel()->extraAttributes(
-                        ['title' => 'Descargar boleto']
+                        ['title' => 'Descargar boleto', 'class' => 'hidden md:inline-flex']
                     )
                     ->action(function (Ticket $record) {
 

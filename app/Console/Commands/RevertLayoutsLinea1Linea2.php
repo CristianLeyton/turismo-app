@@ -8,25 +8,25 @@ use App\Models\Seat;
 use Illuminate\Console\Command;
 
 /**
- * Intercambia los layouts entre Línea 1 y Línea 2:
- * - Línea 1 (Orán): layout 60 plazas (piso 2: 1-48, piso 1: 49-60). Agrega 56-60 si faltan.
- * - Línea 2 (Embarcación): layout 55 plazas (desactiva 56-60, no los borra).
+ * Revierte el intercambio de layouts (vuelve al estado anterior):
+ * - Línea 1 (Orán): layout 55 plazas (desactiva 56-60 si existen).
+ * - Línea 2 (Embarcación): layout 60 plazas (piso 2: 1-48, piso 1: 49-60). Reactiva 56-60.
  *
- * Para volver al estado anterior: php artisan app:revert-layouts-linea1-linea2
+ * Para intercambiar de nuevo: php artisan app:swap-layouts-linea1-linea2
  * No borra asientos. Los boletos vendidos siguen funcionando.
  */
-class SwapLayoutsLinea1Linea2 extends Command
+class RevertLayoutsLinea1Linea2 extends Command
 {
-    protected $signature = 'app:swap-layouts-linea1-linea2';
+    protected $signature = 'app:revert-layouts-linea1-linea2';
 
-    protected $description = 'Intercambia layouts: Línea 1→60 plazas, Línea 2→55 plazas. Desactiva 56-60 en Línea 2. No afecta boletos vendidos.';
+    protected $description = 'Revierte el intercambio: Línea 1→55 plazas, Línea 2→60 plazas. Desactiva 56-60 en L1, reactiva en L2.';
 
     private const LINEA1_NAME = 'Linea 1 (Orán)';
     private const LINEA2_NAME = 'Linea 2 (Embarcacion)';
 
     public function handle(): int
     {
-        $this->info('Intercambiando layouts Línea 1 ↔ Línea 2');
+        $this->info('Revirtiendo layouts (Línea 1 → 55, Línea 2 → 60)');
         $this->newLine();
 
         $linea1 = Bus::where('name', self::LINEA1_NAME)->first();
@@ -37,23 +37,35 @@ class SwapLayoutsLinea1Linea2 extends Command
             return self::FAILURE;
         }
 
-        // 1. Línea 1 → layout 60 plazas
-        $this->applyLayout60ToLinea1($linea1);
+        $this->applyLayout55ToBus($linea1, 'Línea 1');
+        $this->newLine();
+        $this->applyLayout60ToBus($linea2, 'Línea 2');
 
         $this->newLine();
-
-        // 2. Línea 2 → layout 55 plazas (desactivar 56-60)
-        $this->applyLayout55ToLinea2($linea2);
-
-        $this->newLine();
-        $this->info('Layouts intercambiados. No se eliminó ningún asiento.');
+        $this->info('Layouts revertidos. No se eliminó ningún asiento.');
 
         return self::SUCCESS;
     }
 
-    private function applyLayout60ToLinea1(Bus $bus): void
+    private function applyLayout55ToBus(Bus $bus, string $label): void
     {
-        $this->info("Línea 1 ({$bus->name}) → layout 60 plazas");
+        $this->info("{$label} ({$bus->name}) → layout 55 plazas (desactivar 56-60)");
+
+        $bus->update(['seat_count' => 55, 'floors' => 2]);
+
+        Seat::where('bus_id', $bus->id)->whereBetween('seat_number', [56, 60])->update(['is_active' => false]);
+        Seat::where('bus_id', $bus->id)->whereBetween('seat_number', [1, 9])->update(['is_active' => true, 'floor' => '1']);
+        Seat::where('bus_id', $bus->id)->whereBetween('seat_number', [10, 55])->update(['is_active' => true, 'floor' => '2']);
+        $this->line('  ✓ Asientos 56-60 desactivados.');
+
+        $this->applyFloor1Layout55($bus);
+        $this->applyFloor2Layout55($bus);
+        $this->createLayoutAreas55($bus);
+    }
+
+    private function applyLayout60ToBus(Bus $bus, string $label): void
+    {
+        $this->info("{$label} ({$bus->name}) → layout 60 plazas (reactivar 56-60)");
 
         $bus->update(['seat_count' => 60, 'floors' => 2]);
 
@@ -61,6 +73,9 @@ class SwapLayoutsLinea1Linea2 extends Command
         $added = 0;
         for ($i = 1; $i <= 60; $i++) {
             if (isset($existing[$i])) {
+                if ($i >= 56 && $i <= 60) {
+                    Seat::where('bus_id', $bus->id)->where('seat_number', $i)->update(['is_active' => true, 'floor' => '1']);
+                }
                 continue;
             }
             $floor = $i <= 48 ? '2' : '1';
@@ -74,6 +89,9 @@ class SwapLayoutsLinea1Linea2 extends Command
         }
         if ($added > 0) {
             $this->line("  ✓ {$added} asiento(s) agregado(s).");
+        } else {
+            Seat::where('bus_id', $bus->id)->whereBetween('seat_number', [56, 60])->update(['is_active' => true, 'floor' => '1']);
+            $this->line('  ✓ Asientos 56-60 reactivados.');
         }
 
         // 60 plazas: piso 2 (arriba) = 1-48, piso 1 (abajo) = 49-60
@@ -83,22 +101,6 @@ class SwapLayoutsLinea1Linea2 extends Command
         $this->applyFloor1Layout60($bus);
         $this->applyFloor2Layout60($bus);
         $this->createLayoutAreas60($bus);
-    }
-
-    private function applyLayout55ToLinea2(Bus $bus): void
-    {
-        $this->info("Línea 2 ({$bus->name}) → layout 55 plazas (desactivar 56-60)");
-
-        $bus->update(['seat_count' => 55, 'floors' => 2]);
-
-        Seat::where('bus_id', $bus->id)->whereBetween('seat_number', [56, 60])->update(['is_active' => false]);
-        Seat::where('bus_id', $bus->id)->whereBetween('seat_number', [1, 9])->update(['is_active' => true, 'floor' => '1']);
-        Seat::where('bus_id', $bus->id)->whereBetween('seat_number', [10, 55])->update(['is_active' => true, 'floor' => '2']);
-        $this->line('  ✓ Asientos 56-60 desactivados.');
-
-        $this->applyFloor1Layout55($bus);
-        $this->applyFloor2Layout55($bus);
-        $this->createLayoutAreas55($bus);
     }
 
     private function applyFloor1Layout60(Bus $bus): void

@@ -36,6 +36,7 @@ use Filament\Schemas\Components\Wizard;
 use Filament\Schemas\Components\Wizard\Step;
 use Filament\Support\Exceptions\Halt;
 use Filament\Tables\Columns\Column;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\Facades\Log;
 
@@ -462,7 +463,7 @@ class TicketForm
                                     ->required()
                                     ->native(false)
                                     ->displayFormat('d/m/Y')
-                                    ->minDate(now()->startOfDay())
+                                    ->minDate(fn() => Auth::user()?->is_admin ? now()->subYear()->startOfDay() : now()->startOfDay())
                                     ->closeOnDateSelection()
                                     ->disabledDates(function (): array {
                                         // Deshabilitar solo domingos para los próximos 2 años
@@ -531,8 +532,8 @@ class TicketForm
                                                     return false;
                                                 }
 
-                                                // Si hay una fecha de salida seleccionada, validar si ya pasó la hora
-                                                if ($departureDate) {
+                                                // Si hay una fecha de salida seleccionada, validar si ya pasó la hora (admin puede vender aunque haya pasado)
+                                                if ($departureDate && !Auth::user()?->is_admin) {
                                                     $departure = is_string($departureDate)
                                                         ? Carbon::parse($departureDate)
                                                         : $departureDate;
@@ -553,8 +554,8 @@ class TicketForm
                                             });
 
                                         if ($schedules->isEmpty()) {
-                                            // Verificar si es porque ya pasaron las horas o porque no hay horarios
-                                            if ($departureDate) {
+                                            // Verificar si es porque ya pasaron las horas o porque no hay horarios (solo para no-admin)
+                                            if ($departureDate && !Auth::user()?->is_admin) {
                                                 $departure = is_string($departureDate)
                                                     ? Carbon::parse($departureDate)
                                                     : $departureDate;
@@ -594,8 +595,8 @@ class TicketForm
                                                     return false;
                                                 }
 
-                                                // Si hay una fecha de salida seleccionada, validar si ya pasó la hora
-                                                if ($departureDate) {
+                                                // Si hay una fecha de salida seleccionada, validar si ya pasó la hora (admin puede vender aunque haya pasado)
+                                                if ($departureDate && !Auth::user()?->is_admin) {
                                                     $departure = is_string($departureDate)
                                                         ? Carbon::parse($departureDate)
                                                         : $departureDate;
@@ -647,8 +648,8 @@ class TicketForm
                                                     return false;
                                                 }
 
-                                                // Si hay una fecha de salida seleccionada, validar si ya pasó la hora
-                                                if ($departureDate) {
+                                                // Si hay una fecha de salida seleccionada, validar si ya pasó la hora (admin puede vender aunque haya pasado)
+                                                if ($departureDate && !Auth::user()?->is_admin) {
                                                     $departure = is_string($departureDate)
                                                         ? Carbon::parse($departureDate)
                                                         : $departureDate;
@@ -669,8 +670,8 @@ class TicketForm
                                             });
 
                                         if ($schedules->isEmpty()) {
-                                            // Verificar si es porque ya pasaron las horas o porque no hay horarios
-                                            if ($departureDate) {
+                                            // Verificar si es porque ya pasaron las horas o porque no hay horarios (solo para no-admin)
+                                            if ($departureDate && !Auth::user()?->is_admin) {
                                                 $departure = is_string($departureDate)
                                                     ? Carbon::parse($departureDate)
                                                     : $departureDate;
@@ -680,6 +681,18 @@ class TicketForm
                                                 }
                                             }
                                             return 'Por favor, seleccione otra combinación de origen y destino.';
+                                        }
+
+                                        // Si admin seleccionó un horario cuya salida ya pasó, mostrar advertencia
+                                        if (Auth::user()?->is_admin && $get('schedule_id') && $departureDate) {
+                                            $departure = is_string($departureDate) ? Carbon::parse($departureDate) : $departureDate;
+                                            $schedule = Schedule::find($get('schedule_id'));
+                                            if ($schedule?->departure_time) {
+                                                $departureDateTime = $departure->copy()->setTimeFromTimeString($schedule->departure_time->format('H:i:s'));
+                                                if ($departureDateTime->lte($now)) {
+                                                    return 'Atención: la hora de salida de este viaje ya pasó.';
+                                                }
+                                            }
                                         }
 
                                         return null;

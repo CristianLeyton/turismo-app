@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Validation\ValidationException;
@@ -110,6 +111,52 @@ class Ticket extends Model
     public function deletedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'deleted_by');
+    }
+
+    /**
+     * Obtener la hora de salida de la parada donde sube el pasajero.
+     * Para viaje de ida: usa origin_location_id y trip.
+     * Para viaje de vuelta: usa destination_location_id y returnTrip.
+     *
+     * @param  Trip|null  $tripOverride  Viaje a usar (por defecto: trip del ticket)
+     * @param  bool  $forReturnTrip  Si true, usa destination como parada de subida y returnTrip como viaje
+     */
+    public function getBoardingDepartureTime(?Trip $tripOverride = null, bool $forReturnTrip = false): ?Carbon
+    {
+        $trip = $tripOverride ?? ($forReturnTrip ? $this->returnTrip : $this->trip);
+        if (!$trip?->route || !$trip->schedule) {
+            return null;
+        }
+
+        $boardingLocationId = $forReturnTrip ? $this->destination_location_id : $this->origin_location_id;
+        if (!$boardingLocationId) {
+            return $trip->schedule->departure_time;
+        }
+
+        return $trip->route->getDepartureTimeForStop($boardingLocationId, $trip->schedule);
+    }
+
+    /**
+     * Obtener la hora de llegada a la parada donde baja el pasajero.
+     * Para viaje de ida: usa destination_location_id y trip.
+     * Para viaje de vuelta: usa origin_location_id y returnTrip.
+     *
+     * @param  Trip|null  $tripOverride  Viaje a usar
+     * @param  bool  $forReturnTrip  Si true, usa origin como parada de bajada (destino del vuelta)
+     */
+    public function getBoardingArrivalTime(?Trip $tripOverride = null, bool $forReturnTrip = false): ?Carbon
+    {
+        $trip = $tripOverride ?? ($forReturnTrip ? $this->returnTrip : $this->trip);
+        if (!$trip?->route || !$trip->schedule) {
+            return null;
+        }
+
+        $alightingLocationId = $forReturnTrip ? $this->origin_location_id : $this->destination_location_id;
+        if (!$alightingLocationId) {
+            return $trip->schedule->arrival_time;
+        }
+
+        return $trip->route->getArrivalTimeForStop($alightingLocationId, $trip->schedule);
     }
 
     public static function validateTicketCreation(array $data): void

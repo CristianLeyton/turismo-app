@@ -242,9 +242,9 @@
                                     <strong>Fecha del viaje:</strong>
                                     {{ $ticket->trip->trip_date->format('d/m/Y') }}<br>
                                     <strong>Hora de salida:</strong>
-                                    {{ $ticket->trip->schedule->departure_time->format('H:i') }} hs<br>
+                                    {{ ($ticket->getBoardingDepartureTime() ?? $ticket->trip->schedule->departure_time)?->format('H:i') ?? '--:--' }} hs<br>
                                     <strong>Hora de llegada:</strong>
-                                    {{ $ticket->trip->schedule->arrival_time->format('H:i') }} hs<br>
+                                    {{ ($ticket->getBoardingArrivalTime() ?? $ticket->trip->schedule->arrival_time)?->format('H:i') ?? '--:--' }} hs<br>
                                     <strong>Ruta:</strong> {{ $ticket->trip->route->name ?? 'Regular' }}
                                 </div>
 

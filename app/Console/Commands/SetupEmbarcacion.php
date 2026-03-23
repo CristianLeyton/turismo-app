@@ -132,7 +132,7 @@ class SetupEmbarcacion extends Command
             }
             RouteStop::firstOrCreate(
                 ['route_id' => $routeIda->id, 'location_id' => $loc->id, 'stop_order' => $i + 1],
-                ['route_id' => $routeIda->id, 'location_id' => $loc->id, 'stop_order' => $i + 1]
+                ['route_id' => $routeIda->id, 'location_id' => $loc->id, 'stop_order' => $i + 1, 'departure_offset_minutes' => $i * 15, 'arrival_offset_minutes' => $i * 15]
             );
         }
         $this->info('  ✓ Paradas ruta Embarcación → Salta creadas.');
@@ -145,7 +145,7 @@ class SetupEmbarcacion extends Command
             }
             RouteStop::firstOrCreate(
                 ['route_id' => $routeVuelta->id, 'location_id' => $loc->id, 'stop_order' => $i + 1],
-                ['route_id' => $routeVuelta->id, 'location_id' => $loc->id, 'stop_order' => $i + 1]
+                ['route_id' => $routeVuelta->id, 'location_id' => $loc->id, 'stop_order' => $i + 1, 'departure_offset_minutes' => $i * 15, 'arrival_offset_minutes' => $i * 15]
             );
         }
         $this->info('  ✓ Paradas ruta Salta → Embarcación creadas.');

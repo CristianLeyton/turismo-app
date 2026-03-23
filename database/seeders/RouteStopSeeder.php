@@ -30,9 +30,11 @@ class RouteStopSeeder extends Seeder
         */
         foreach ($locationsOranSalta as $index => $location) {
             RouteStop::create([
-                'route_id'    => $oranSalta->id,
-                'location_id' => $location->id,
-                'stop_order'  => $index + 1,
+                'route_id'                 => $oranSalta->id,
+                'location_id'              => $location->id,
+                'stop_order'               => $index + 1,
+                'departure_offset_minutes' => $index * 15,
+                'arrival_offset_minutes'  => $index * 15,
             ]);
         }
 
@@ -43,9 +45,11 @@ class RouteStopSeeder extends Seeder
         */
         foreach ($locationsOranSalta->reverse()->values() as $index => $location) {
             RouteStop::create([
-                'route_id'    => $saltaOran->id,
-                'location_id' => $location->id,
-                'stop_order'  => $index + 1,
+                'route_id'                 => $saltaOran->id,
+                'location_id'              => $location->id,
+                'stop_order'               => $index + 1,
+                'departure_offset_minutes' => $index * 15,
+                'arrival_offset_minutes'  => $index * 15,
             ]);
         }
 
@@ -71,9 +75,11 @@ class RouteStopSeeder extends Seeder
 
         foreach ($paradasIdaEmbarcacion->values() as $index => $location) {
             RouteStop::create([
-                'route_id'    => $embarcacionSalta->id,
-                'location_id' => $location->id,
-                'stop_order'  => $index + 1,
+                'route_id'                 => $embarcacionSalta->id,
+                'location_id'              => $location->id,
+                'stop_order'               => $index + 1,
+                'departure_offset_minutes' => $index * 15,
+                'arrival_offset_minutes'  => $index * 15,
             ]);
         }
 
@@ -99,9 +105,11 @@ class RouteStopSeeder extends Seeder
 
         foreach ($paradasVueltaEmbarcacion->values() as $index => $location) {
             RouteStop::create([
-                'route_id'    => $saltaEmbarcacion->id,
-                'location_id' => $location->id,
-                'stop_order'  => $index + 1,
+                'route_id'                 => $saltaEmbarcacion->id,
+                'location_id'              => $location->id,
+                'stop_order'               => $index + 1,
+                'departure_offset_minutes' => $index * 15,
+                'arrival_offset_minutes'  => $index * 15,
             ]);
         }
     }

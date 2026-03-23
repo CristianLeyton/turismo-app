@@ -13,8 +13,24 @@
     $schedule = $get('schedule_id') ? \App\Models\Schedule::find($get('schedule_id')) : null;
     $returnSchedule = $get('return_schedule_id') ? \App\Models\Schedule::find($get('return_schedule_id')) : null;
 
-    $route = $trip?->route;
-    $returnRoute = $returnTrip?->route;
+    $route = $trip?->route ?? $schedule?->route;
+    $returnRoute = $returnTrip?->route ?? $returnSchedule?->route;
+
+    $idaBoardingDeparture = $route && $schedule && $get('origin_location_id')
+        ? $route->getDepartureTimeForStop($get('origin_location_id'), $schedule)
+        : $schedule?->departure_time;
+
+    $idaBoardingArrival = $route && $schedule && $get('destination_location_id')
+        ? $route->getArrivalTimeForStop($get('destination_location_id'), $schedule)
+        : $schedule?->arrival_time;
+
+    $vueltaBoardingDeparture = $returnRoute && $returnSchedule && $get('destination_location_id')
+        ? $returnRoute->getDepartureTimeForStop($get('destination_location_id'), $returnSchedule)
+        : $returnSchedule?->departure_time;
+
+    $vueltaBoardingArrival = $returnRoute && $returnSchedule && $get('origin_location_id')
+        ? $returnRoute->getArrivalTimeForStop($get('origin_location_id'), $returnSchedule)
+        : $returnSchedule?->arrival_time;
 
     $passengers = $get('passengers') ?? [];
     $seatIds = $get('seat_ids') ?? [];
@@ -50,9 +66,9 @@
                     <strong class="font-semibold"> Ida: </strong>
                     {{ Carbon::parse($get('departure_date'))->format('d/m/Y') }}
                     •
-                    {{ $schedule?->departure_time ? Carbon::parse($schedule->departure_time)->format('H:i') : '--:--' }}
+                    {{ $idaBoardingDeparture ? Carbon::parse($idaBoardingDeparture)->format('H:i') : '--:--' }}
                     →
-                    {{ $schedule?->arrival_time ? Carbon::parse($schedule->arrival_time)->format('H:i') : '--:--' }}
+                    {{ $idaBoardingArrival ? Carbon::parse($idaBoardingArrival)->format('H:i') : '--:--' }}
                 </p>
 
                 @if($bus)
@@ -86,9 +102,9 @@
                 <strong class="font-semibold"> Vuelta: </strong>
                 {{ Carbon::parse($get('return_date'))->format('d/m/Y') }}
                 •
-                {{ $returnSchedule?->departure_time ? Carbon::parse($returnSchedule->departure_time)->format('H:i') : '--:--' }}
+                {{ $vueltaBoardingDeparture ? Carbon::parse($vueltaBoardingDeparture)->format('H:i') : '--:--' }}
                 →
-                {{ $returnSchedule?->arrival_time ? Carbon::parse($returnSchedule->arrival_time)->format('H:i') : '--:--' }}
+                {{ $vueltaBoardingArrival ? Carbon::parse($vueltaBoardingArrival)->format('H:i') : '--:--' }}
 
                 @if($returnTrip?->bus)
                 <br> <span class="font-semibold">Colectivo:</span>

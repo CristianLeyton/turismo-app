@@ -56,6 +56,19 @@ class RouteStopResource extends Resource
                 TextInput::make('stop_order')
                     ->required()
                     ->numeric(),
+                TextInput::make('departure_offset_minutes')
+                    ->label('Offset de salida (minutos)')
+                    ->numeric()
+                    ->minValue(0)
+                    ->default(0)
+                    ->helperText('Minutos desde la salida de la primera parada. La primera parada debe tener 0.')
+                    ->placeholder('0'),
+                TextInput::make('arrival_offset_minutes')
+                    ->label('Offset de llegada (minutos)')
+                    ->numeric()
+                    ->minValue(0)
+                    ->helperText('Minutos desde la salida del origen hasta que el colectivo LLEGA a esta parada. Si vacío, se usa el offset de salida.')
+                    ->placeholder('Opcional'),
             ]);
     }
 
@@ -77,6 +90,18 @@ class RouteStopResource extends Resource
                     ->alignCenter()
                     ->numeric()
                     ->sortable(),
+                TextColumn::make('departure_offset_minutes')
+                    ->label('Salida (min)')
+                    ->alignCenter()
+                    ->numeric()
+                    ->sortable()
+                    ->placeholder('0'),
+                TextColumn::make('arrival_offset_minutes')
+                    ->label('Llegada (min)')
+                    ->alignCenter()
+                    ->numeric()
+                    ->sortable()
+                    ->placeholder('—'),
                 TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable()

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -114,4 +115,34 @@ public function trips(): HasMany
 {
     return $this->hasMany(Trip::class);
 }
+
+    /**
+     * Obtener hora de salida de una parada (cuando el colectivo sale de ahí).
+     * Centraliza la lógica para evitar duplicar consultas en vistas.
+     */
+    public function getDepartureTimeForStop(int $locationId, Schedule $schedule): ?Carbon
+    {
+        $routeStop = $this->stops()->where('location_id', $locationId)->first();
+
+        if (!$routeStop) {
+            return $schedule->departure_time;
+        }
+
+        return $routeStop->getDepartureTimeForSchedule($schedule) ?? $schedule->departure_time;
+    }
+
+    /**
+     * Obtener hora de llegada a una parada (cuando el colectivo llega ahí).
+     * Centraliza la lógica para evitar duplicar consultas en vistas.
+     */
+    public function getArrivalTimeForStop(int $locationId, Schedule $schedule): ?Carbon
+    {
+        $routeStop = $this->stops()->where('location_id', $locationId)->first();
+
+        if (!$routeStop) {
+            return $schedule->arrival_time;
+        }
+
+        return $routeStop->getArrivalTimeForSchedule($schedule) ?? $schedule->arrival_time;
+    }
 }

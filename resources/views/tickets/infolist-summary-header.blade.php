@@ -47,13 +47,17 @@
                 </h2>
 
                 @if ($trip)
+                    @php
+                        $idaDepartureTime = $record->getBoardingDepartureTime() ?? $schedule?->departure_time;
+                        $idaArrivalTime = $record->getBoardingArrivalTime() ?? $schedule?->arrival_time;
+                    @endphp
                     <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">
                         <strong class="font-semibold"> Ida: </strong>
                         {{ $trip->trip_date ? Carbon::parse($trip->trip_date)->format('d/m/Y') : '--/--/----' }}
                         •
-                        {{ $schedule?->departure_time ? Carbon::parse($schedule->departure_time)->format('H:i') : '--:--' }}
+                        {{ $idaDepartureTime ? Carbon::parse($idaDepartureTime)->format('H:i') : '--:--' }}
                         →
-                        {{ $schedule?->arrival_time ? Carbon::parse($schedule->arrival_time)->format('H:i') : '--:--' }}
+                        {{ $idaArrivalTime ? Carbon::parse($idaArrivalTime)->format('H:i') : '--:--' }}
                     </p>
 
                     @if ($bus)
@@ -88,15 +92,19 @@
 
         @if ($record?->is_round_trip)
             @if ($record->return_trip_id && $returnTrip)
+                @php
+                    $vueltaDepartureTime = $record->getBoardingDepartureTime(null, true) ?? $returnSchedule?->departure_time;
+                    $vueltaArrivalTime = $record->getBoardingArrivalTime(null, true) ?? $returnSchedule?->arrival_time;
+                @endphp
                 <div
                     class="flex flex-col md:flex-row gap-3 justify-between border-t border-gray-200 dark:border-gray-700 md:items-center mt-3 pt-3">
                     <div class="text-sm text-gray-600 dark:text-gray-400 mt-1">
                         <strong class="font-semibold"> Vuelta: </strong>
                         {{ $returnTrip->trip_date ? Carbon::parse($returnTrip->trip_date)->format('d/m/Y') : '--/--/----' }}
                         •
-                        {{ $returnSchedule?->departure_time ? Carbon::parse($returnSchedule->departure_time)->format('H:i') : '--:--' }}
+                        {{ $vueltaDepartureTime ? Carbon::parse($vueltaDepartureTime)->format('H:i') : '--:--' }}
                         →
-                        {{ $returnSchedule?->arrival_time ? Carbon::parse($returnSchedule->arrival_time)->format('H:i') : '--:--' }}
+                        {{ $vueltaArrivalTime ? Carbon::parse($vueltaArrivalTime)->format('H:i') : '--:--' }}
 
                         @if ($returnTrip->bus)
                         <br> <span class="font-semibold">Colectivo:</span>

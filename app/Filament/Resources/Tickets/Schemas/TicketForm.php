@@ -463,7 +463,7 @@ class TicketForm
                                     ->required()
                                     ->native(false)
                                     ->displayFormat('d/m/Y')
-                                    ->minDate(fn() => Auth::user()?->is_admin ? now()->subYear()->startOfDay() : now()->startOfDay())
+                                    ->minDate(fn() => now()->subYear()->startOfDay())
                                     ->closeOnDateSelection()
                                     ->disabledDates(function (): array {
                                         // Deshabilitar solo domingos para los próximos 2 años
@@ -513,16 +513,13 @@ class TicketForm
                                             return 'Seleccione una fecha primero';
                                         }
 
-                                        $departureDate = $get('departure_date');
-                                        $now = Carbon::now();
-
                                         $schedules = Schedule::query()
                                             ->whereHas('route', fn($q) => $q->where('bus_id', $get('bus_id')))
                                             ->whereHas('route.stops', fn($q) => $q->where('location_id', $get('origin_location_id')))
                                             ->whereHas('route.stops', fn($q) => $q->where('location_id', $get('destination_location_id')))
                                             ->where('is_active', true)
                                             ->get()
-                                            ->filter(function ($schedule) use ($get, $departureDate, $now) {
+                                            ->filter(function ($schedule) use ($get) {
                                                 if (
                                                     !$schedule->route->isValidSegment(
                                                         $get('origin_location_id'),
@@ -532,38 +529,10 @@ class TicketForm
                                                     return false;
                                                 }
 
-                                                // Si hay una fecha de salida seleccionada, validar si ya pasó la hora (admin puede vender aunque haya pasado)
-                                                if ($departureDate && !Auth::user()?->is_admin) {
-                                                    $departure = is_string($departureDate)
-                                                        ? Carbon::parse($departureDate)
-                                                        : $departureDate;
-
-                                                    // Si la fecha de salida es hoy, verificar que la hora no haya pasado
-                                                    if ($departure->format('Y-m-d') === $now->format('Y-m-d')) {
-                                                        $scheduleTime = Carbon::parse($schedule->departure_time)->format('H:i:s');
-                                                        $currentTime = $now->format('H:i:s');
-
-                                                        // Si la hora de salida ya pasó, no incluir este horario
-                                                        if ($scheduleTime <= $currentTime) {
-                                                            return false;
-                                                        }
-                                                    }
-                                                }
-
                                                 return true;
                                             });
 
                                         if ($schedules->isEmpty()) {
-                                            // Verificar si es porque ya pasaron las horas o porque no hay horarios (solo para no-admin)
-                                            if ($departureDate && !Auth::user()?->is_admin) {
-                                                $departure = is_string($departureDate)
-                                                    ? Carbon::parse($departureDate)
-                                                    : $departureDate;
-
-                                                if ($departure->format('Y-m-d') === $now->format('Y-m-d')) {
-                                                    return 'No hay horarios disponibles (ya pasaron las horas de salida)';
-                                                }
-                                            }
                                             return 'No hay horarios disponibles para esta ruta';
                                         }
 
@@ -574,9 +543,6 @@ class TicketForm
                                             return [];
                                         }
 
-                                        $departureDate = $get('departure_date');
-                                        $now = Carbon::now();
-
                                         $schedules = Schedule::query()
                                             ->whereHas('route', fn($q) => $q->where('bus_id', $get('bus_id')))
                                             ->whereHas('route.stops', fn($q) => $q->where('location_id', $get('origin_location_id')))
@@ -584,7 +550,7 @@ class TicketForm
                                             ->where('is_active', true)
                                             ->orderBy('departure_time')
                                             ->get()
-                                            ->filter(function ($schedule) use ($get, $departureDate, $now) {
+                                            ->filter(function ($schedule) use ($get) {
                                                 // Validar que el segmento origen-destino sea válido para esta ruta
                                                 if (
                                                     !$schedule->route->isValidSegment(
@@ -593,24 +559,6 @@ class TicketForm
                                                     )
                                                 ) {
                                                     return false;
-                                                }
-
-                                                // Si hay una fecha de salida seleccionada, validar si ya pasó la hora (admin puede vender aunque haya pasado)
-                                                if ($departureDate && !Auth::user()?->is_admin) {
-                                                    $departure = is_string($departureDate)
-                                                        ? Carbon::parse($departureDate)
-                                                        : $departureDate;
-
-                                                    // Si la fecha de salida es hoy, verificar que la hora no haya pasado
-                                                    if ($departure->format('Y-m-d') === $now->format('Y-m-d')) {
-                                                        $scheduleTime = Carbon::parse($schedule->departure_time)->format('H:i:s');
-                                                        $currentTime = $now->format('H:i:s');
-
-                                                        // Si la hora de salida ya pasó, no incluir este horario
-                                                        if ($scheduleTime <= $currentTime) {
-                                                            return false;
-                                                        }
-                                                    }
                                                 }
 
                                                 return true;
@@ -638,7 +586,7 @@ class TicketForm
                                             ->whereHas('route.stops', fn($q) => $q->where('location_id', $get('destination_location_id')))
                                             ->where('is_active', true)
                                             ->get()
-                                            ->filter(function ($schedule) use ($get, $departureDate, $now) {
+                                            ->filter(function ($schedule) use ($get) {
                                                 if (
                                                     !$schedule->route->isValidSegment(
                                                         $get('origin_location_id'),
@@ -648,43 +596,15 @@ class TicketForm
                                                     return false;
                                                 }
 
-                                                // Si hay una fecha de salida seleccionada, validar si ya pasó la hora (admin puede vender aunque haya pasado)
-                                                if ($departureDate && !Auth::user()?->is_admin) {
-                                                    $departure = is_string($departureDate)
-                                                        ? Carbon::parse($departureDate)
-                                                        : $departureDate;
-
-                                                    // Si la fecha de salida es hoy, verificar que la hora no haya pasado
-                                                    if ($departure->format('Y-m-d') === $now->format('Y-m-d')) {
-                                                        $scheduleTime = Carbon::parse($schedule->departure_time)->format('H:i:s');
-                                                        $currentTime = $now->format('H:i:s');
-
-                                                        // Si la hora de salida ya pasó, no incluir este horario
-                                                        if ($scheduleTime <= $currentTime) {
-                                                            return false;
-                                                        }
-                                                    }
-                                                }
-
                                                 return true;
                                             });
 
                                         if ($schedules->isEmpty()) {
-                                            // Verificar si es porque ya pasaron las horas o porque no hay horarios (solo para no-admin)
-                                            if ($departureDate && !Auth::user()?->is_admin) {
-                                                $departure = is_string($departureDate)
-                                                    ? Carbon::parse($departureDate)
-                                                    : $departureDate;
-
-                                                if ($departure->format('Y-m-d') === $now->format('Y-m-d')) {
-                                                    return 'Por favor, seleccione otra fecha.';
-                                                }
-                                            }
                                             return 'Por favor, seleccione otra combinación de origen y destino.';
                                         }
 
-                                        // Si admin seleccionó un horario cuya salida ya pasó, mostrar advertencia
-                                        if (Auth::user()?->is_admin && $get('schedule_id') && $departureDate) {
+                                        // Si se seleccionó un horario cuya salida ya pasó, mostrar advertencia
+                                        if ($get('schedule_id') && $departureDate) {
                                             $departure = is_string($departureDate) ? Carbon::parse($departureDate) : $departureDate;
                                             $schedule = Schedule::find($get('schedule_id'));
                                             if ($schedule?->departure_time) {
@@ -739,37 +659,7 @@ class TicketForm
                         Hidden::make('return_trip_available_seats')
                             ->live(),
 
-                        // Información del viaje y botón de búsqueda
-                        /* ViewField::make('search_trip_section')
-                            ->label('')
-                            ->view('tickets.search-trip-section')
-                            ->viewData(function (Get $get) {
-                                $hasAllFields = !blank($get('origin_location_id')) &&
-                                    !blank($get('destination_location_id')) &&
-                                    !blank($get('schedule_id')) &&
-                                    !blank($get('departure_date')) &&
-                                    !blank($get('passengers_count'));
-
-                                $tripId = $get('trip_id');
-                                $searchStatus = $get('trip_search_status');
-                                $availableSeats = $get('trip_available_seats');
-                                $requiredSeats = (int) $get('passengers_count');
-
-                                $trip = null;
-                                if ($tripId) {
-                                    $trip = Trip::find($tripId);
-                                }
-
-                                return [
-                                    'hasAllFields' => $hasAllFields,
-                                    'tripId' => $tripId,
-                                    'trip' => $trip,
-                                    'searchStatus' => $searchStatus,
-                                    'availableSeats' => $availableSeats,
-                                    'requiredSeats' => $requiredSeats,
-                                ];
-                            })
-                            ->visible(fn(Get $get) => !blank($get('schedule_id')) && !blank($get('departure_date'))), */
+        
 
                         ViewField::make('search_trip_button')
                             ->label('')
@@ -832,13 +722,7 @@ class TicketForm
                                                     $set('trip_search_status', 'available');
                                                     $set('trip_available_seats', $availableSeats);
 
-                                                    // Notificar éxito
-                                                    /* Notification::make()
-                                                        ->title('Viaje de ida disponible')
-                                                        ->icon('heroicon-m-check-circle')
-                                                        ->body("Viaje de ida verificado. Asientos disponibles: {$availableSeats}")
-                                                        ->success()
-                                                        ->send(); */
+                                                  
                                                 } else {
                                                     // Asientos insuficientes
                                                     Notification::make()

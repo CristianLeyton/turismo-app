@@ -302,8 +302,8 @@ class TicketForm
                             ->schema([
                                 Select::make('bus_id')
                                     ->label('Colectivo')
-                                    ->options(Bus::query()->orderBy('id')->pluck('name', 'id')->toArray())
-                                    ->default(fn() => Bus::query()->orderBy('id')->value('id'))
+                                    ->options(Bus::query()->orderBy('name')->pluck('name', 'id')->toArray())
+                                    ->default(fn() => Bus::query()->orderBy('name')->value('id'))
                                     ->required()
                                     ->selectablePlaceholder(false)
                                     ->live()
@@ -548,7 +548,6 @@ class TicketForm
                                             ->whereHas('route.stops', fn($q) => $q->where('location_id', $get('origin_location_id')))
                                             ->whereHas('route.stops', fn($q) => $q->where('location_id', $get('destination_location_id')))
                                             ->where('is_active', true)
-                                            ->orderBy('departure_time')
                                             ->get()
                                             ->filter(function ($schedule) use ($get) {
                                                 // Validar que el segmento origen-destino sea válido para esta ruta
@@ -562,7 +561,8 @@ class TicketForm
                                                 }
 
                                                 return true;
-                                            });
+                                            })
+                                            ->sortBy(fn($schedule) => $schedule->display_name, SORT_NATURAL | SORT_FLAG_CASE);
 
                                         if ($schedules->isEmpty()) {
                                             return [];
@@ -955,14 +955,14 @@ class TicketForm
                                             ->whereHas('route.stops', fn($q) => $q->where('location_id', $get('destination_location_id')))
                                             ->whereHas('route.stops', fn($q) => $q->where('location_id', $get('origin_location_id')))
                                             ->where('is_active', true)
-                                            ->orderBy('departure_time')
                                             ->get()
                                             ->filter(function ($schedule) use ($get) {
                                                 return $schedule->route->isValidSegment(
                                                     $get('destination_location_id'),
                                                     $get('origin_location_id')
                                                 );
-                                            });
+                                            })
+                                            ->sortBy(fn($schedule) => $schedule->display_name, SORT_NATURAL | SORT_FLAG_CASE);
 
                                         // Si es el mismo día y hay un horario de ida seleccionado, filtrar por departure_time
                                         if ($isSameDay && $departureTime) {
@@ -1017,14 +1017,14 @@ class TicketForm
                                             ->whereHas('route.stops', fn($q) => $q->where('location_id', $get('destination_location_id')))
                                             ->whereHas('route.stops', fn($q) => $q->where('location_id', $get('origin_location_id')))
                                             ->where('is_active', true)
-                                            ->orderBy('departure_time')
                                             ->get()
                                             ->filter(function ($schedule) use ($get) {
                                                 return $schedule->route->isValidSegment(
                                                     $get('destination_location_id'),
                                                     $get('origin_location_id')
                                                 );
-                                            });
+                                            })
+                                            ->sortBy(fn($schedule) => $schedule->display_name, SORT_NATURAL | SORT_FLAG_CASE);
 
                                         // Si es el mismo día y hay un horario de ida seleccionado, filtrar por departure_time
                                         if ($isSameDay && $departureTime) {
@@ -1074,14 +1074,14 @@ class TicketForm
                                             ->whereHas('route.stops', fn($q) => $q->where('location_id', $get('destination_location_id')))
                                             ->whereHas('route.stops', fn($q) => $q->where('location_id', $get('origin_location_id')))
                                             ->where('is_active', true)
-                                            ->orderBy('departure_time')
                                             ->get()
                                             ->filter(function ($schedule) use ($get) {
                                                 return $schedule->route->isValidSegment(
                                                     $get('destination_location_id'),
                                                     $get('origin_location_id')
                                                 );
-                                            });
+                                            })
+                                            ->sortBy(fn($schedule) => $schedule->display_name, SORT_NATURAL | SORT_FLAG_CASE);
 
                                         // Si es el mismo día y hay un horario de ida seleccionado, filtrar por departure_time
                                         if ($isSameDay && $departureTime) {

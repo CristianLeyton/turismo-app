@@ -19,7 +19,7 @@ class SetupLayoutLinea2_60 extends Command
 
     protected $description = 'Línea 2 → layout 60 plazas (igual que Línea 1). Reactiva 56-60. No toca Línea 1 ni borra asientos.';
 
-    private const LINEA2_NAME = 'Linea 2 (Embarcacion)';
+    private const LINEA2_NAME = 'Línea 2 (Refuerzo)';
 
     public function handle(): int
     {

@@ -1,5 +1,5 @@
 <div>
     <h1 class="logo-personalizado">
-        Expresso Sofia Turismo
+        Expresso Sofia
     </h1>
 </div>

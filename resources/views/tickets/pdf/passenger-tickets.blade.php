@@ -195,7 +195,7 @@
                                 <table width='100%' cellspacing='0' cellpadding='0'>
                                     <tr>
                                         <td valign='top'>
-                                            <div class='company-name'>EXPRESSO SOFIA TURISMO</div>
+                                            <div class='company-name'>EXPRESSO SOFIA</div>
                                         </td>
 
                                         <td align='right' valign='top'>

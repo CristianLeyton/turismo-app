@@ -383,7 +383,7 @@ class TicketForm
                                             return [];
                                         }
                                         $stops = RouteStop::query()
-                                            ->whereHas('route', fn($q) => $q->where('bus_id', $busId))
+                                            ->whereHas('route', fn($q) => $q->where('bus_id', $busId)->where('is_active', true))
                                             ->with('location')
                                             ->orderBy('route_id')
                                             ->orderBy('stop_order')
@@ -433,6 +433,7 @@ class TicketForm
                                             })
                                             ->join('routes', 'routes.id', '=', 'destination.route_id')
                                             ->whereNull('routes.deleted_at')
+                                            ->where('routes.is_active', true)
                                             ->where('routes.bus_id', $busId)
                                             ->whereColumn('destination.stop_order', '>', 'origin.stop_order')
                                             ->where('destination.location_id', '!=', $originId)
@@ -514,10 +515,10 @@ class TicketForm
                                         }
 
                                         $schedules = Schedule::query()
+                                            ->bookable()
                                             ->whereHas('route', fn($q) => $q->where('bus_id', $get('bus_id')))
                                             ->whereHas('route.stops', fn($q) => $q->where('location_id', $get('origin_location_id')))
                                             ->whereHas('route.stops', fn($q) => $q->where('location_id', $get('destination_location_id')))
-                                            ->where('is_active', true)
                                             ->get()
                                             ->filter(function ($schedule) use ($get) {
                                                 if (
@@ -544,10 +545,10 @@ class TicketForm
                                         }
 
                                         $schedules = Schedule::query()
+                                            ->bookable()
                                             ->whereHas('route', fn($q) => $q->where('bus_id', $get('bus_id')))
                                             ->whereHas('route.stops', fn($q) => $q->where('location_id', $get('origin_location_id')))
                                             ->whereHas('route.stops', fn($q) => $q->where('location_id', $get('destination_location_id')))
-                                            ->where('is_active', true)
                                             ->get()
                                             ->filter(function ($schedule) use ($get) {
                                                 // Validar que el segmento origen-destino sea válido para esta ruta
@@ -581,10 +582,10 @@ class TicketForm
                                         $now = Carbon::now();
 
                                         $schedules = Schedule::query()
+                                            ->bookable()
                                             ->whereHas('route', fn($q) => $q->where('bus_id', $get('bus_id')))
                                             ->whereHas('route.stops', fn($q) => $q->where('location_id', $get('origin_location_id')))
                                             ->whereHas('route.stops', fn($q) => $q->where('location_id', $get('destination_location_id')))
-                                            ->where('is_active', true)
                                             ->get()
                                             ->filter(function ($schedule) use ($get) {
                                                 if (
@@ -778,6 +779,7 @@ class TicketForm
 
                                 // Ahora que tenemos viaje de ida, verificar la ruta de vuelta
                                 $route = Route::query()
+                                    ->where('is_active', true)
                                     ->whereHas(
                                         'stops',
                                         fn($q) =>
@@ -952,9 +954,9 @@ class TicketForm
 
                                         // Buscar rutas que conecten el destino (origen de vuelta) con el origen (destino de vuelta)
                                         $schedules = Schedule::query()
+                                            ->bookable()
                                             ->whereHas('route.stops', fn($q) => $q->where('location_id', $get('destination_location_id')))
                                             ->whereHas('route.stops', fn($q) => $q->where('location_id', $get('origin_location_id')))
-                                            ->where('is_active', true)
                                             ->get()
                                             ->filter(function ($schedule) use ($get) {
                                                 return $schedule->route->isValidSegment(
@@ -1014,9 +1016,9 @@ class TicketForm
 
                                         // Buscar rutas que conecten el destino (origen de vuelta) con el origen (destino de vuelta)
                                         $schedules = Schedule::query()
+                                            ->bookable()
                                             ->whereHas('route.stops', fn($q) => $q->where('location_id', $get('destination_location_id')))
                                             ->whereHas('route.stops', fn($q) => $q->where('location_id', $get('origin_location_id')))
-                                            ->where('is_active', true)
                                             ->get()
                                             ->filter(function ($schedule) use ($get) {
                                                 return $schedule->route->isValidSegment(
@@ -1071,9 +1073,9 @@ class TicketForm
 
                                         // Buscar rutas que conecten el destino (origen de vuelta) con el origen (destino de vuelta)
                                         $schedules = Schedule::query()
+                                            ->bookable()
                                             ->whereHas('route.stops', fn($q) => $q->where('location_id', $get('destination_location_id')))
                                             ->whereHas('route.stops', fn($q) => $q->where('location_id', $get('origin_location_id')))
-                                            ->where('is_active', true)
                                             ->get()
                                             ->filter(function ($schedule) use ($get) {
                                                 return $schedule->route->isValidSegment(

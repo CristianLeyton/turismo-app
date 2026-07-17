@@ -308,6 +308,16 @@ class Trip extends Model
             ->where('schedule_id', $scheduleId)
             ->first();
 
+        // Solo bloquear nuevas ventas; viajes ya creados siguen operativos
+        if (!$trip && (!$route->is_active || !$schedule->is_active)) {
+            return [
+                'trip' => null,
+                'available_seats' => 0,
+                'has_enough_seats' => false,
+                'message' => 'Esta ruta u horario no está disponible para nuevas ventas.',
+            ];
+        }
+
         // Si no existe, crearlo
         if (!$trip) {
             // Preferir el colectivo asignado a la ruta; si no, usar uno de un viaje previo de la ruta; si no, el primer bus disponible

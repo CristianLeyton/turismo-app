@@ -16,11 +16,14 @@ use Filament\Actions\RestoreAction;
 use Filament\Actions\RestoreBulkAction;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Toggle;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Columns\ToggleColumn;
 use Filament\Tables\Filters\TrashedFilter;
+use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
@@ -53,6 +56,10 @@ class RouteResource extends Resource
                 TextInput::make('name')
                     ->label('Nombre')
                     ->required(),
+                Toggle::make('is_active')
+                    ->label('Activa')
+                    ->default(true)
+                    ->helperText('Las rutas inactivas no aparecen en nuevas ventas, pero siguen funcionando para viajes y boletos ya vendidos.'),
             ]);
     }
 
@@ -71,6 +78,9 @@ class RouteResource extends Resource
                     ->placeholder('—')
                     ->badge()
                     ->color('gray'),
+                ToggleColumn::make('is_active')
+                    ->label('Activa')
+                    ->sortable(),
                 TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable()
@@ -85,6 +95,8 @@ class RouteResource extends Resource
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
+                TernaryFilter::make('is_active')
+                    ->label('Activa'),
                 TrashedFilter::make(),
             ])
             ->recordActions([

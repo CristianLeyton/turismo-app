@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -28,6 +29,15 @@ class Schedule extends Model
     public function route(): BelongsTo
     {
         return $this->belongsTo(Route::class);
+    }
+
+    /**
+     * Horarios disponibles para nuevas ventas (horario y ruta activos).
+     */
+    public function scopeBookable(Builder $query): Builder
+    {
+        return $query->where('is_active', true)
+            ->whereHas('route', fn (Builder $q) => $q->where('is_active', true));
     }
 
     public function trips(): HasMany

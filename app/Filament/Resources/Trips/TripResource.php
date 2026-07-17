@@ -56,7 +56,7 @@ class TripResource extends Resource
                     ->visibleOn('create'),
                 Select::make('route_id')
                     ->label('Ruta')
-                    ->relationship('route', 'name')
+                    ->relationship('route', 'name', fn ($query) => $query->where('is_active', true))
                     ->required()
                     ->visibleOn('create')
                     ->reactive(),

@@ -433,6 +433,8 @@ class TicketForm
                                             })
                                             ->join('routes', 'routes.id', '=', 'destination.route_id')
                                             ->whereNull('routes.deleted_at')
+                                            ->whereNull('destination.deleted_at')
+                                            ->whereNull('origin.deleted_at')
                                             ->where('routes.is_active', true)
                                             ->where('routes.bus_id', $busId)
                                             ->whereColumn('destination.stop_order', '>', 'origin.stop_order')

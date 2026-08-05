@@ -53,7 +53,7 @@ class UserResource extends Resource
     {
         return $schema
             ->components([
-                    TextInput::make('username')
+                TextInput::make('username')
                     ->label('Usuario')
                     ->minLength(3)
                     ->maxLength(255)
@@ -65,7 +65,7 @@ class UserResource extends Resource
                         'max' => 'El nombre de usuario no debe exceder los :max caracteres.',
                         'unique' => 'El nombre de usuario ya está en uso.',
                     ]),
-                                    TextInput::make('password')
+                TextInput::make('password')
                     /* ->password() */
                     ->required()
                     ->label('Contraseña')

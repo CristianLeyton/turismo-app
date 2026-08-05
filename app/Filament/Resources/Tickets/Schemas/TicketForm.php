@@ -3,7 +3,9 @@
 namespace App\Filament\Resources\Tickets\Schemas;
 
 use App\Filament\Resources\Tickets\TicketResource;
+use App\Filament\Tables\ClientsPickerTable;
 use App\Models\Bus;
+use App\Models\Clients;
 use App\Models\Route;
 use App\Models\RouteStop;
 use App\Models\Schedule;
@@ -19,13 +21,17 @@ use Filament\Forms\Components\Repeater;
 use App\Models\Trip;
 use App\Models\Seat;
 use Filament\Actions\Action;
+use Filament\Actions\Contracts\HasActions;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\ViewField;
 use Filament\Forms\Components\Button;
 use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\Radio;
+use Filament\Forms\Components\TableSelect;
 use Filament\Notifications\Notification;
+use Filament\Support\Icons\Heroicon;
 use Filament\Schemas\Components\Fieldset;
+use Filament\Schemas\Components\Actions as SchemaActions;
 use Filament\Schemas\Components\Section;
 use Illuminate\Support\HtmlString;
 use Filament\Schemas\Components\Grid;
@@ -662,7 +668,7 @@ class TicketForm
                         Hidden::make('return_trip_available_seats')
                             ->live(),
 
-        
+
 
                         ViewField::make('search_trip_button')
                             ->label('')
@@ -724,8 +730,6 @@ class TicketForm
                                                     $set('trip_id', $trip->id);
                                                     $set('trip_search_status', 'available');
                                                     $set('trip_available_seats', $availableSeats);
-
-                                                  
                                                 } else {
                                                     // Asientos insuficientes
                                                     Notification::make()
@@ -1745,6 +1749,7 @@ class TicketForm
                                             ->label('Apellido')
                                             ->minLength(2)
                                             ->maxLength(80)
+                                            ->live()
                                             ->required()
                                             ->regex('/^[\pL\s\'\-\x{2019}]+$/u') // Letras, acentos, espacios, apóstrofo (') y guión
                                             ->validationMessages([
@@ -1757,6 +1762,7 @@ class TicketForm
                                             ->label('Nombre')
                                             ->minLength(2)
                                             ->maxLength(80)
+                                            ->live()
                                             ->required()
                                             ->regex('/^[\pL\s\'\-\x{2019}]+$/u') // Letras, acentos, espacios, apóstrofo (') y guión
                                             ->validationMessages([
@@ -1772,6 +1778,7 @@ class TicketForm
                                         TextInput::make('dni')
                                             ->label('DNI')
                                             ->required()
+                                            ->live()
                                             ->numeric()
                                             ->rules([
                                                 'digits_between:7,8',
@@ -1834,7 +1841,7 @@ class TicketForm
                                                     $set('child_data', []);
                                                 }
                                             }),
-                                    ]),
+                                    ])->visible(fn(Get $get) => $get('dni') !== null && $get('dni') !== '' && $get('dni') !== '' && $get('first_name') !== null && $get('first_name') !== '' && $get('first_name') !== '' && $get('last_name') !== null && $get('last_name') !== '' && $get('last_name') !== ''),
 
 
 
@@ -1953,7 +1960,162 @@ class TicketForm
                                             ->validationMessages([
                                                 'required' => 'Debe seleccionar un método de pago.',
                                             ]),
-                                    ]),
+                                    ])->visible(fn(Get $get) => $get('dni') !== null && $get('dni') !== '' && $get('dni') !== '' && $get('first_name') !== null && $get('first_name') !== '' && $get('first_name') !== '' && $get('last_name') !== null && $get('last_name') !== '' && $get('last_name') !== ''),
+                            ])
+                            ->extraItemActions([
+                                Action::make('createClient')
+                                    ->label('Crear cliente')
+                                    ->icon(Heroicon::UserPlus)
+                                    ->color('primary')
+                                    ->modalHeading('Crear cliente')
+                                    ->modalDescription('Cree un nuevo cliente para completar los datos del pasajero.')
+                                    ->modalSubmitActionLabel('Crear cliente')
+                                    ->modalWidth('4xl')
+                                    ->schema([
+
+                                        Grid::make(2)
+                                            ->schema([
+                                                TextInput::make('nombre')
+                                                    ->label('Nombre')
+                                                    ->minLength(2)
+                                                    ->maxLength(255)
+                                                    ->required()
+                                                    ->regex('/^[\pL\s\'\-\x{2019}]+$/u') // Letras, acentos, espacios, apóstrofo (') y guión
+                                                    ->validationMessages([
+                                                        'min' => 'El nombre debe tener al menos :min caracteres.',
+                                                        'required' => 'El nombre es obligatorio.',
+                                                        'max' => 'El nombre no debe exceder los :max caracteres.',
+                                                        'regex' => 'El nombre solo puede contener letras y espacios.',
+                                                    ]),
+                                                TextInput::make('apellido')
+                                                    ->label('Apellido')
+                                                    ->minLength(2)
+                                                    ->maxLength(255)
+                                                    ->required()
+                                                    ->regex('/^[\pL\s\'\-\x{2019}]+$/u') // Letras, acentos, espacios, apóstrofo (') y guión
+                                                    ->validationMessages([
+                                                        'min' => 'El apellido debe tener al menos :min caracteres.',
+                                                        'required' => 'El apellido es obligatorio.',
+                                                        'max' => 'El apellido no debe exceder los :max caracteres.',
+                                                        'regex' => 'El apellido solo puede contener letras y espacios.',
+                                                    ]),
+
+                                                TextInput::make('dni')
+                                                    ->required()
+                                                    ->label('DNI')
+                                                    ->unique(table: 'clients', column: 'dni')
+                                                    ->numeric()
+                                                    ->minLength(6)
+                                                    ->maxLength(9)
+                                                    ->rules([
+                                                        'digits_between:7,8',
+                                                    ])
+                                                    ->validationMessages([
+                                                        'min' => 'El DNI debe tener al menos :min caracteres.',
+                                                        'required' => 'El DNI es obligatorio.',
+                                                        'max' => 'El DNI no debe exceder los :max caracteres.',
+                                                        'unique' => 'El DNI ya está en uso.',
+                                                        'numeric' => 'El DNI debe ser un número.',
+                                                        'digits_between' => 'El DNI debe tener entre 7 y 8 dígitos.',
+                                                    ]),
+                                                TextInput::make('telefono')
+                                                    ->label('Teléfono')
+                                                    ->numeric()
+                                                    ->minLength(6)
+                                                    ->maxLength(20)
+                                                    ->rules([
+                                                        'digits_between:7,12',
+                                                    ])
+                                                    ->validationMessages([
+                                                        'min' => 'El teléfono debe tener al menos :min caracteres.',
+                                                        'max' => 'El teléfono no debe exceder los :max caracteres.',
+                                                        'numeric' => 'El teléfono debe ser un número.',
+                                                        'digits_between' => 'El teléfono debe tener entre 7 y 12 dígitos.',
+                                                    ]),
+                                            ])
+                                    ])
+                                    ->action(function (array $arguments, array $data, Repeater $component): void {
+                                        $client = Clients::create([
+                                            'nombre' => $data['nombre'],
+                                            'apellido' => $data['apellido'],
+                                            'dni' => $data['dni'],
+                                            'telefono' => $data['telefono'] ?? null,
+                                        ]);
+
+                                        if (! $client) {
+                                            Notification::make()
+                                                ->title('Error al crear el cliente')
+                                                ->danger()
+                                                ->send();
+
+                                            return;
+                                        }
+
+                                        $itemKey = $arguments['item'];
+                                        $state = $component->getState();
+
+                                        $state[$itemKey] = array_merge($state[$itemKey] ?? [], [
+                                            'last_name' => $client->apellido,
+                                            'first_name' => $client->nombre,
+                                            'dni' => $client->dni,
+                                            'phone_number' => $client->telefono,
+                                        ]);
+
+                                        $component->state($state);
+
+                                        Notification::make()
+                                            ->title('Datos cargados')
+                                            ->body("Se cargaron los datos de {$client->nombre} {$client->apellido}.")
+                                            ->success()
+                                            ->send();
+                                    }),
+                                Action::make('loadClient')
+                                    ->label('Cargar cliente')
+                                    ->icon(Heroicon::User)
+                                    ->color('primary')
+                                    ->modalHeading('Buscar cliente')
+                                    ->modalDescription('Seleccione un cliente para completar los datos del pasajero.')
+                                    ->modalSubmitActionLabel('Cargar datos')
+                                    ->modalWidth('4xl')
+                                    ->schema([
+                                        TableSelect::make('client_id')
+                                            ->hiddenLabel()
+                                            ->tableConfiguration(ClientsPickerTable::class)
+                                            ->required()
+                                            ->validationMessages([
+                                                'required' => 'Debe seleccionar un cliente.',
+                                            ]),
+                                    ])
+                                    ->action(function (array $arguments, array $data, Repeater $component): void {
+                                        $client = Clients::find($data['client_id']);
+
+                                        if (! $client) {
+                                            Notification::make()
+                                                ->title('Cliente no encontrado')
+                                                ->danger()
+                                                ->send();
+
+                                            return;
+                                        }
+
+                                        $itemKey = $arguments['item'];
+                                        $state = $component->getState();
+
+                                        $state[$itemKey] = array_merge($state[$itemKey] ?? [], [
+                                            'last_name' => $client->apellido,
+                                            'first_name' => $client->nombre,
+                                            'dni' => $client->dni,
+                                            'phone_number' => $client->telefono,
+                                        ]);
+
+                                        $component->state($state);
+
+                                        Notification::make()
+                                            ->title('Datos cargados')
+                                            ->body("Se cargaron los datos de {$client->nombre} {$client->apellido}.")
+                                            ->success()
+                                            ->send();
+                                    }),
                             ])
 
                             ->extraAttributes(

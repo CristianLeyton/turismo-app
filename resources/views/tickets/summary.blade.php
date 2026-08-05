@@ -16,32 +16,44 @@
     $route = $trip?->route ?? $schedule?->route;
     $returnRoute = $returnTrip?->route ?? $returnSchedule?->route;
 
-    $idaBoardingDeparture = $route && $schedule && $get('origin_location_id')
-        ? $route->getDepartureTimeForStop($get('origin_location_id'), $schedule)
-        : $schedule?->departure_time;
+    $idaBoardingDeparture =
+        $route && $schedule && $get('origin_location_id')
+            ? $route->getDepartureTimeForStop($get('origin_location_id'), $schedule)
+            : $schedule?->departure_time;
 
-    $idaBoardingArrival = $route && $schedule && $get('destination_location_id')
-        ? $route->getArrivalTimeForStop($get('destination_location_id'), $schedule)
-        : $schedule?->arrival_time;
+    $idaBoardingArrival =
+        $route && $schedule && $get('destination_location_id')
+            ? $route->getArrivalTimeForStop($get('destination_location_id'), $schedule)
+            : $schedule?->arrival_time;
 
-    $vueltaBoardingDeparture = $returnRoute && $returnSchedule && $get('destination_location_id')
-        ? $returnRoute->getDepartureTimeForStop($get('destination_location_id'), $returnSchedule)
-        : $returnSchedule?->departure_time;
+    $vueltaBoardingDeparture =
+        $returnRoute && $returnSchedule && $get('destination_location_id')
+            ? $returnRoute->getDepartureTimeForStop($get('destination_location_id'), $returnSchedule)
+            : $returnSchedule?->departure_time;
 
-    $vueltaBoardingArrival = $returnRoute && $returnSchedule && $get('origin_location_id')
-        ? $returnRoute->getArrivalTimeForStop($get('origin_location_id'), $returnSchedule)
-        : $returnSchedule?->arrival_time;
+    $vueltaBoardingArrival =
+        $returnRoute && $returnSchedule && $get('origin_location_id')
+            ? $returnRoute->getArrivalTimeForStop($get('origin_location_id'), $returnSchedule)
+            : $returnSchedule?->arrival_time;
 
     $passengers = $get('passengers') ?? [];
     $seatIds = $get('seat_ids') ?? [];
     $returnSeatIds = $get('return_seat_ids') ?? [];
 
-    $seatNumbersByIda = (is_array($seatIds) && $trip?->bus_id)
-        ? \App\Models\Seat::whereIn('id', $seatIds)->where('bus_id', $trip->bus_id)->pluck('seat_number', 'id')->toArray()
-        : [];
-    $seatNumbersByVuelta = (is_array($returnSeatIds) && $returnTrip?->bus_id)
-        ? \App\Models\Seat::whereIn('id', $returnSeatIds)->where('bus_id', $returnTrip->bus_id)->pluck('seat_number', 'id')->toArray()
-        : [];
+    $seatNumbersByIda =
+        is_array($seatIds) && $trip?->bus_id
+            ? \App\Models\Seat::whereIn('id', $seatIds)
+                ->where('bus_id', $trip->bus_id)
+                ->pluck('seat_number', 'id')
+                ->toArray()
+            : [];
+    $seatNumbersByVuelta =
+        is_array($returnSeatIds) && $returnTrip?->bus_id
+            ? \App\Models\Seat::whereIn('id', $returnSeatIds)
+                ->where('bus_id', $returnTrip->bus_id)
+                ->pluck('seat_number', 'id')
+                ->toArray()
+            : [];
 @endphp
 
 <div class="space-y-6">
@@ -60,7 +72,7 @@
                     <span class="text-fuchsia-600">{{ $destinationLocation?->name ?? 'Destino' }}</span>
                 </h2>
 
-                
+
 
                 <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">
                     <strong class="font-semibold"> Ida: </strong>
@@ -71,11 +83,11 @@
                     {{ $idaBoardingArrival ? Carbon::parse($idaBoardingArrival)->format('H:i') : '--:--' }}
                 </p>
 
-                @if($bus)
-                <p class="text-sm text-gray-600 dark:text-gray-400">
-                    <strong class="font-semibold">Colectivo:</strong>
-                    <span class="text-fuchsia-600 dark:text-fuchsia-400">{{ $bus->name }}</span>
-                </p>
+                @if ($bus)
+                    <p class="text-sm text-gray-600 dark:text-gray-400">
+                        <strong class="font-semibold">Colectivo:</strong>
+                        <span class="text-fuchsia-600 dark:text-fuchsia-400">{{ $bus->name }}</span>
+                    </p>
                 @endif
 
                 <p class="text-sm text-gray-600 dark:text-gray-400">
@@ -106,9 +118,9 @@
                 →
                 {{ $vueltaBoardingArrival ? Carbon::parse($vueltaBoardingArrival)->format('H:i') : '--:--' }}
 
-                @if($returnTrip?->bus)
-                <br> <span class="font-semibold">Colectivo:</span>
-                <span class="text-fuchsia-600 dark:text-fuchsia-400">{{ $returnTrip->bus->name }}</span>
+                @if ($returnTrip?->bus)
+                    <br> <span class="font-semibold">Colectivo:</span>
+                    <span class="text-fuchsia-600 dark:text-fuchsia-400">{{ $returnTrip->bus->name }}</span>
                 @endif
                 <br> <span class="font-semibold">Ruta:</span>
                 <span class="text-fuchsia-600 dark:text-fuchsia-400">
@@ -148,8 +160,12 @@
                     }
                 }
 
-                $seatNumber = ($seatId !== null && isset($seatNumbersByIda[$seatId])) ? $seatNumbersByIda[$seatId] : $seatId;
-                $returnSeatNumber = ($returnSeatId !== null && isset($seatNumbersByVuelta[$returnSeatId])) ? $seatNumbersByVuelta[$returnSeatId] : $returnSeatId;
+                $seatNumber =
+                    $seatId !== null && isset($seatNumbersByIda[$seatId]) ? $seatNumbersByIda[$seatId] : $seatId;
+                $returnSeatNumber =
+                    $returnSeatId !== null && isset($seatNumbersByVuelta[$returnSeatId])
+                        ? $seatNumbersByVuelta[$returnSeatId]
+                        : $returnSeatId;
             @endphp
 
             <div
@@ -290,7 +306,9 @@
                                 Precio
                             </div>
                             <div class="text-lg font-semibold text-fuchsia-600 dark:text-fuchsia-400">
-                                ${{ number_format($passenger['price'] ?? 0, 2, ',', '.') }}
+                                ${{ isset($passenger['price']) && is_numeric($passenger['price'])
+                                    ? number_format($passenger['price'], 2, ',', '.')
+                                    : 'No especificado' }}
                             </div>
                         </div>
                         <div class="flex-1 text-right">

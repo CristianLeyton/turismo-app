@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Filament\Models\Contracts\FilamentUser;
 use Filament\Panel;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class User extends Authenticatable implements FilamentUser, MustVerifyEmail
 {
@@ -67,5 +68,10 @@ class User extends Authenticatable implements FilamentUser, MustVerifyEmail
     public function sendEmailVerificationNotification(): void
     {
         $this->notify(new VerifyEmail());
+    }
+
+    public function sales(): HasMany
+    {
+        return $this->hasMany(Sale::class);
     }
 }

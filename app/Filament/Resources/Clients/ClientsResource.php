@@ -43,18 +43,6 @@ class ClientsResource extends Resource
     {
         return $schema
             ->components([
-                TextInput::make('nombre')
-                    ->label('Nombre')
-                    ->minLength(2)
-                    ->maxLength(255)
-                    ->required()
-                    ->regex('/^[\pL\s\'\-\x{2019}]+$/u') // Letras, acentos, espacios, apóstrofo (') y guión
-                    ->validationMessages([
-                        'min' => 'El nombre debe tener al menos :min caracteres.',
-                        'required' => 'El nombre es obligatorio.',
-                        'max' => 'El nombre no debe exceder los :max caracteres.',
-                        'regex' => 'El nombre solo puede contener letras y espacios.',
-                    ]),
                 TextInput::make('apellido')
                     ->label('Apellido')
                     ->minLength(2)
@@ -66,6 +54,18 @@ class ClientsResource extends Resource
                         'required' => 'El apellido es obligatorio.',
                         'max' => 'El apellido no debe exceder los :max caracteres.',
                         'regex' => 'El apellido solo puede contener letras y espacios.',
+                    ]),
+                TextInput::make('nombre')
+                    ->label('Nombre')
+                    ->minLength(2)
+                    ->maxLength(255)
+                    ->required()
+                    ->regex('/^[\pL\s\'\-\x{2019}]+$/u') // Letras, acentos, espacios, apóstrofo (') y guión
+                    ->validationMessages([
+                        'min' => 'El nombre debe tener al menos :min caracteres.',
+                        'required' => 'El nombre es obligatorio.',
+                        'max' => 'El nombre no debe exceder los :max caracteres.',
+                        'regex' => 'El nombre solo puede contener letras y espacios.',
                     ]),
                 TextInput::make('dni')
                     ->required()

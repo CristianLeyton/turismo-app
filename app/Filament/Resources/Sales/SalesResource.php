@@ -159,6 +159,11 @@ class SalesResource extends Resource
                     ->sortable(['name', 'surname']),
                 TextColumn::make('tickets_count')
                     ->label('Boletos vendidos')
+                    ->badge()
+                    ->color('primary')
+                    ->icon('heroicon-o-ticket')
+                    ->iconPosition('after')
+                    ->alignCenter()
                     ->getStateUsing(function (Model $record): int {
                         $ticketCount = 0;
 
@@ -209,6 +214,8 @@ class SalesResource extends Resource
                             $direction
                         );
                     })
+                    ->badge()
+                    ->color('success')
                     ->summarize(
                         Summarizer::make()
                             ->label('Total')
@@ -237,6 +244,8 @@ class SalesResource extends Resource
                             $direction
                         );
                     })
+                    ->badge()
+                    ->color('info')
                     ->summarize(
                         Summarizer::make()
                             ->label('Total')
@@ -354,6 +363,7 @@ class SalesResource extends Resource
                 Action::make('view_tickets')
                     ->label('Ver boletos')
                     ->button()
+                    ->color('gray')
                     ->hiddenLabel()
                     ->icon('heroicon-m-eye')
                     ->extraAttributes([

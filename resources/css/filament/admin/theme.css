@@ -1,8 +1,10 @@
 @import "../../../../vendor/filament/filament/resources/css/theme.css";
 
 @source '../../../../app/Filament/**/*';
+@source '../../../../app/Livewire/**/*';
 @source '../../../../resources/views/filament/**/*';
 @source '../../../../resources/views/tickets/**/*.blade.php';
+@source '../../../../resources/views/livewire/**/*.blade.php';
 
 /* Personalización del botón de resetear filtros */
 

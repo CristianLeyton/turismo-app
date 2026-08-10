@@ -4,6 +4,7 @@ namespace App\Filament\Resources\Sales;
 
 use App\Filament\Resources\Sales\Pages\ManageSales;
 use BackedEnum;
+use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
@@ -14,6 +15,7 @@ use Filament\Actions\RestoreAction;
 use Filament\Actions\RestoreBulkAction;
 use Filament\Forms\Components\TextInput;
 use Filament\Resources\Resource;
+use Filament\Support\Enums\Width;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\Summarizers\Summarizer;
@@ -31,7 +33,6 @@ use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
 use Filament\Tables\Filters\Filter;
 use Filament\Tables\Enums\FiltersLayout;
-use Filament\Actions\ViewAction;
 
 class SalesResource extends Resource
 {
@@ -275,6 +276,8 @@ class SalesResource extends Resource
                             })
                     ),
             ])
+            ->recordUrl(null)
+            ->recordAction(null)
             ->filters([
                 Filter::make('date_range')
                     ->form([
@@ -348,9 +351,33 @@ class SalesResource extends Resource
             ->persistFiltersInSession()
             ->hiddenFilterIndicators()
             ->recordActions([
-                ViewAction::make()->button()->hiddenLabel()->extraAttributes([
-                    'title' => 'Ver',
-                ]),
+                Action::make('view_tickets')
+                    ->label('Ver boletos')
+                    ->button()
+                    ->hiddenLabel()
+                    ->icon('heroicon-m-eye')
+                    ->extraAttributes([
+                        'title' => 'Ver boletos',
+                    ])
+                    ->modalHeading(fn (Model $record) => 'Boletos de ' . trim($record->name . ' ' . ($record->surname ?? '')))
+                    ->modalDescription('Boletos vendidos en el período seleccionado')
+                    ->modalWidth(Width::SevenExtraLarge)
+                    ->modalSubmitAction(false)
+                    ->modalCancelActionLabel('Cerrar')
+                    ->modalContent(function (Model $record, Action $action) {
+                        // El modal abre con el mismo rango de fechas que la tabla
+                        // está mostrando en ese momento.
+                        $livewire = $action->getLivewire();
+                        $range = $livewire
+                            ? data_get($livewire->getTableFiltersForm()?->getState(), 'date_range', [])
+                            : [];
+
+                        return view('filament.resources.sales.tickets-modal', [
+                            'user' => $record,
+                            'from' => $range['from'] ?? null,
+                            'to' => $range['to'] ?? null,
+                        ]);
+                    }),
                 /*                 EditAction::make(),
                 DeleteAction::make(),
                 ForceDeleteAction::make(),

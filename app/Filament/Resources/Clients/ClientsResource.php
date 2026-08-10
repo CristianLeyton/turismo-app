@@ -152,11 +152,11 @@ class ClientsResource extends Resource
                 ]),
             ])
             ->toolbarActions([
-                BulkActionGroup::make([
+                /* BulkActionGroup::make([
                     DeleteBulkAction::make(),
-                    /*                     ForceDeleteBulkAction::make(),
-                    RestoreBulkAction::make(), */
-                ]),
+                                         ForceDeleteBulkAction::make(),
+                    RestoreBulkAction::make(), 
+                ]), */
             ]);
     }
 

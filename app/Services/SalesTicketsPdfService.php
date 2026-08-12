@@ -4,26 +4,24 @@ namespace App\Services;
 
 use App\Models\User;
 use Barryvdh\DomPDF\Facade\Pdf;
-use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Collection;
 
 class SalesTicketsPdfService
 {
     /**
-     * Generar PDF de los boletos vendidos por un usuario en un período.
+     * Generar PDF del detalle (boletos y pagos) de un usuario en un período.
      *
-     * @param  Collection<int, \App\Models\Ticket>  $tickets
-     * @param  array{from: ?string, to: ?string, payment: string}  $filters
+     * @param  Collection<int, array{type: string, id: int, date: mixed, sort: int, payment_method: ?string, amount: float, model: mixed}>  $records
+     * @param  array{from: ?string, to: ?string, payment: string, type: string}  $filters
+     * @param  array{count: int, tickets_count: int, payments_count: int, cash: float, transfer: float, ventas_total: float, payments_cash: float, payments_transfer: float, payments_total: float, saldo: float}  $totals
      */
-    public function generatePdf(Collection $tickets, User $user, array $filters)
+    public function generatePdf(Collection $records, User $user, array $filters, array $totals)
     {
         $pdf = Pdf::loadView('pdf.sales-tickets', [
-            'tickets' => $tickets,
+            'records' => $records,
             'user' => $user,
             'filters' => $filters,
-            'ticketsCount' => $tickets->count(),
-            'cashTotal' => $tickets->where('payment_method', 'cash')->sum('price'),
-            'transferTotal' => $tickets->where('payment_method', 'transfer')->sum('price'),
-            'total' => $tickets->sum('price'),
+            'totals' => $totals,
         ]);
 
         // Misma configuración que el PDF de viajes que ya funciona
@@ -45,14 +43,15 @@ class SalesTicketsPdfService
     }
 
     /**
-     * Descargar PDF de los boletos vendidos.
+     * Descargar PDF del detalle (boletos y pagos).
      *
-     * @param  Collection<int, \App\Models\Ticket>  $tickets
-     * @param  array{from: ?string, to: ?string, payment: string}  $filters
+     * @param  Collection<int, array{type: string, id: int, date: mixed, sort: int, payment_method: ?string, amount: float, model: mixed}>  $records
+     * @param  array{from: ?string, to: ?string, payment: string, type: string}  $filters
+     * @param  array{count: int, tickets_count: int, payments_count: int, cash: float, transfer: float, ventas_total: float, payments_cash: float, payments_transfer: float, payments_total: float, saldo: float}  $totals
      */
-    public function downloadPdf(Collection $tickets, User $user, array $filters, string $filename)
+    public function downloadPdf(Collection $records, User $user, array $filters, array $totals, string $filename)
     {
-        $pdf = $this->generatePdf($tickets, $user, $filters);
+        $pdf = $this->generatePdf($records, $user, $filters, $totals);
 
         return response()->streamDownload(function () use ($pdf) {
             echo $pdf->output();

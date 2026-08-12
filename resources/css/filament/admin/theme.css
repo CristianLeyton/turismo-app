@@ -134,6 +134,18 @@ input[type="checkbox"].toggle-checkbox.fi-checkbox-input:checked::before {
 }
 
 
+/* Modal de detalle de ventas (7xl): que la ventana y su contenido se
+   ajusten al viewport (sobre todo en mobile) y solo la tabla de
+   resultados scrollee en horizontal. Los flex items con min-width:auto
+   crecen hasta el ancho mínimo de la tabla y desbordan la pantalla. */
+.fi-modal-window.fi-width-7xl {
+    min-width: 0;
+}
+
+.fi-modal-window.fi-width-7xl .fi-modal-content {
+    min-width: 0;
+}
+
 /* Logo personalizado */
 .logo-personalizado {
     margin-top: -0.30rem;

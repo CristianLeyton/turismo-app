@@ -2,9 +2,11 @@
 
 namespace App\Filament\Resources\Sales;
 
+use App\Filament\Clusters\Sales\SalesCluster;
 use App\Filament\Resources\Sales\Pages\ManageSales;
 use BackedEnum;
 use Filament\Actions\Action;
+use Filament\Actions\ActionGroup;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
@@ -13,7 +15,10 @@ use Filament\Actions\ForceDeleteAction;
 use Filament\Actions\ForceDeleteBulkAction;
 use Filament\Actions\RestoreAction;
 use Filament\Actions\RestoreBulkAction;
+use Filament\Forms\Components\DatePicker;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
+use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Support\Enums\Width;
 use Filament\Schemas\Schema;
@@ -38,13 +43,15 @@ class SalesResource extends Resource
 {
     protected static ?string $model = User::class;
 
+    protected static ?string $cluster = SalesCluster::class;
+
     protected static string|BackedEnum|null $navigationIcon = Heroicon::PresentationChartBar;
 
     protected static ?string $modelLabel = 'venta';
     protected static ?string $pluralModelLabel = 'Ventas';
     protected static bool $hasTitleCaseModelLabel = false;
     /*     protected static string | UnitEnum | null $navigationGroup = 'Sistema'; */
-    protected static ?int $navigationSort = 6;
+    protected static ?int $navigationSort = 1;
 
     protected static ?string $recordTitleAttribute = 'username';
 
@@ -131,6 +138,57 @@ class SalesResource extends Resource
         return (float) $sumQuery->sum('tickets.price');
     }
 
+    /**
+     * Subquery reutilizable: cantidad de pagos recibidos de un usuario en el
+     * rango de fechas vigente.
+     */
+    protected static function paymentsCountSubquery(?string $from, ?string $to): QueryBuilder
+    {
+        return DB::table('payments')
+            ->whereColumn('payments.user_id', 'users.id')
+            ->whereNull('payments.deleted_at')
+            ->when($from, fn($q, $date) => $q->where('payments.payment_date', '>=', $date))
+            ->when($to, fn($q, $date) => $q->where('payments.payment_date', '<=', $date))
+            ->selectRaw('COUNT(payments.id)');
+    }
+
+    /**
+     * Subquery reutilizable: suma de montos de los pagos recibidos de un
+     * usuario en el rango de fechas vigente.
+     */
+    protected static function paymentsSumSubquery(?string $from, ?string $to): QueryBuilder
+    {
+        return DB::table('payments')
+            ->whereColumn('payments.user_id', 'users.id')
+            ->whereNull('payments.deleted_at')
+            ->when($from, fn($q, $date) => $q->where('payments.payment_date', '>=', $date))
+            ->when($to, fn($q, $date) => $q->where('payments.payment_date', '<=', $date))
+            ->selectRaw('COALESCE(SUM(payments.amount), 0)');
+    }
+
+    /**
+     * Totales para el footer: toma los IDs de usuarios que la tabla ya está
+     * mostrando (respeta búsqueda + filtro de fecha) y cuenta/suma sus pagos
+     * acotado al mismo rango de fechas ($from/$to).
+     *
+     * @return array{count: int, sum: float}
+     */
+    protected static function paymentsForFooter(QueryBuilder $query, ?string $from, ?string $to): array
+    {
+        $userIds = (clone $query)->pluck('users.id');
+
+        $paymentQuery = DB::table('payments')
+            ->whereNull('payments.deleted_at')
+            ->whereIn('payments.user_id', $userIds)
+            ->when($from, fn($q, $date) => $q->where('payments.payment_date', '>=', $date))
+            ->when($to, fn($q, $date) => $q->where('payments.payment_date', '<=', $date));
+
+        return [
+            'count' => (clone $paymentQuery)->count(),
+            'sum' => (float) (clone $paymentQuery)->sum('payments.amount'),
+        ];
+    }
+
     public static function table(Table $table): Table
     {
         // Rango de fechas actualmente seleccionado. Se completa dentro del
@@ -156,7 +214,8 @@ class SalesResource extends Resource
                     ->label('Nombre')
                     ->getStateUsing(fn(Model $record): string => $record->name . ' ' . ($record->surname ?? ''))
                     ->searchable()
-                    ->sortable(['name', 'surname']),
+                    ->sortable(['name', 'surname'])
+                    ->limit(22),
                 TextColumn::make('tickets_count')
                     ->label('Boletos vendidos')
                     ->badge()
@@ -164,6 +223,8 @@ class SalesResource extends Resource
                     ->icon('heroicon-o-ticket')
                     ->iconPosition('after')
                     ->alignCenter()
+                    ->toggleable()
+                    ->visibleFrom('md')
                     ->getStateUsing(function (Model $record): int {
                         $ticketCount = 0;
 
@@ -182,6 +243,7 @@ class SalesResource extends Resource
                     ->summarize(
                         Summarizer::make()
                             ->label('Total')
+                            ->extraAttributes(['class' => 'hidden md:flex md:flex-col'])
                             ->using(function (QueryBuilder $query) use (&$dateFilter): int {
                                 $userIds = (clone $query)->pluck('users.id');
 
@@ -197,6 +259,7 @@ class SalesResource extends Resource
                     ),
                 TextColumn::make('cash_amount')
                     ->label('Efectivo')
+                    ->visibleFrom('md')
                     ->getStateUsing(function (Model $record) {
                         $total = 0;
                         foreach ($record->sales as $sale) {
@@ -216,9 +279,12 @@ class SalesResource extends Resource
                     })
                     ->badge()
                     ->color('success')
+                    ->toggleable()
                     ->summarize(
                         Summarizer::make()
                             ->label('Total')
+                            ->extraAttributes(['class' => 'hidden md:flex md:flex-col'])
+                            ->hiddenOn('sm')
                             ->using(function (QueryBuilder $query) use (&$dateFilter): string {
                                 return static::formatMoney(
                                     static::sumTicketsForFooter($query, 'cash', [], $dateFilter['from'], $dateFilter['to'])
@@ -227,6 +293,7 @@ class SalesResource extends Resource
                     ),
                 TextColumn::make('transfer_amount')
                     ->label('Transferencia')
+                    ->visibleFrom('md')
                     ->getStateUsing(function (Model $record) {
                         $total = 0;
                         foreach ($record->sales as $sale) {
@@ -246,9 +313,11 @@ class SalesResource extends Resource
                     })
                     ->badge()
                     ->color('info')
+                    ->toggleable()
                     ->summarize(
                         Summarizer::make()
                             ->label('Total')
+                            ->extraAttributes(['class' => 'hidden md:flex md:flex-col'])
                             ->using(function (QueryBuilder $query) use (&$dateFilter): string {
                                 return static::formatMoney(
                                     static::sumTicketsForFooter($query, 'transfer', [], $dateFilter['from'], $dateFilter['to'])
@@ -256,7 +325,9 @@ class SalesResource extends Resource
                             })
                     ),
                 TextColumn::make('total_amount')
-                    ->label('Total')
+                    ->label('Total ventas')
+                    ->color('primary')
+                    ->visibleFrom('md')
                     ->getStateUsing(function (Model $record) {
                         $total = 0;
                         foreach ($record->sales as $sale) {
@@ -269,6 +340,7 @@ class SalesResource extends Resource
                         return static::formatMoney($total);
                     })
                     ->weight('bold')
+                    ->toggleable()
                     ->sortable(query: function (Builder $query, string $direction) use (&$dateFilter): Builder {
                         return $query->orderBy(
                             static::ticketsSumSubquery(null, ['cash', 'transfer'], $dateFilter['from'], $dateFilter['to']),
@@ -278,10 +350,120 @@ class SalesResource extends Resource
                     ->summarize(
                         Summarizer::make()
                             ->label('Total')
+                            ->extraAttributes(['class' => 'hidden md:flex md:flex-col'])
                             ->using(function (QueryBuilder $query) use (&$dateFilter): string {
                                 return static::formatMoney(
                                     static::sumTicketsForFooter($query, null, ['cash', 'transfer'], $dateFilter['from'], $dateFilter['to'])
                                 );
+                            })
+                    ),
+                TextColumn::make('payments_count')
+                    ->label('Pagos')
+                    ->badge()
+                    ->visibleFrom('md')
+                    ->color('warning')
+                    ->icon('heroicon-o-banknotes')
+                    ->iconPosition('after')
+                    ->alignCenter()
+                    ->toggleable()
+                    ->getStateUsing(function (Model $record): int {
+                        return $record->payments->count();
+                    })
+                    ->sortable(query: function (Builder $query, string $direction) use (&$dateFilter): Builder {
+                        return $query->orderBy(
+                            static::paymentsCountSubquery($dateFilter['from'], $dateFilter['to']),
+                            $direction
+                        );
+                    })
+                    ->summarize(
+                        Summarizer::make()
+                            ->label('Total')
+                            ->extraAttributes(['class' => 'hidden md:flex md:flex-col'])
+                            ->using(function (QueryBuilder $query) use (&$dateFilter): int {
+                                return static::paymentsForFooter($query, $dateFilter['from'], $dateFilter['to'])['count'];
+                            })
+                    ),
+                TextColumn::make('payments_total')
+                    ->label('Total pagos')
+                    ->badge()
+                    ->visibleFrom('md')
+                    ->color('warning')
+                    ->toggleable()
+                    ->getStateUsing(function (Model $record): string {
+                        $total = 0;
+
+                        foreach ($record->payments as $payment) {
+                            $total += (float) $payment->amount;
+                        }
+
+                        return static::formatMoney($total);
+                    })
+                    ->sortable(query: function (Builder $query, string $direction) use (&$dateFilter): Builder {
+                        return $query->orderBy(
+                            static::paymentsSumSubquery($dateFilter['from'], $dateFilter['to']),
+                            $direction
+                        );
+                    })
+                    ->summarize(
+                        Summarizer::make()
+                            ->label('Total')
+                            ->extraAttributes(['class' => 'hidden md:flex md:flex-col'])
+                            ->using(function (QueryBuilder $query) use (&$dateFilter): string {
+                                return static::formatMoney(
+                                    static::paymentsForFooter($query, $dateFilter['from'], $dateFilter['to'])['sum']
+                                );
+                            })
+                    ),
+                TextColumn::make('saldo')
+                    ->label('Saldo')
+                    ->toggleable()
+                    ->getStateUsing(function (Model $record): float {
+                        $ventas = 0;
+
+                        foreach ($record->sales as $sale) {
+                            foreach ($sale->tickets as $ticket) {
+                                if (in_array($ticket->payment_method, ['cash', 'transfer'])) {
+                                    $ventas += (float) $ticket->price;
+                                }
+                            }
+                        }
+
+                        $pagos = 0;
+
+                        foreach ($record->payments as $payment) {
+                            $pagos += (float) $payment->amount;
+                        }
+
+                        return $ventas - $pagos;
+                    })
+                    ->formatStateUsing(fn(float $state): string => static::formatMoney($state))
+                    ->color(fn(float $state): string => $state > 0 ? 'warning' : ($state < 0 ? 'danger' : 'success'))
+                    ->weight('bold')
+                    ->alignEnd()
+                    ->sortable(query: function (Builder $query, string $direction) use (&$dateFilter): Builder {
+                        $ventas = static::ticketsSumSubquery(null, ['cash', 'transfer'], $dateFilter['from'], $dateFilter['to']);
+                        $pagos = static::paymentsSumSubquery($dateFilter['from'], $dateFilter['to']);
+
+                        return $query->orderByRaw(
+                            '(' . $ventas->toSql() . ') - (' . $pagos->toSql() . ') ' . ($direction === 'asc' ? 'asc' : 'desc'),
+                            [...$ventas->getBindings(), ...$pagos->getBindings()]
+                        );
+                    })
+                    ->summarize(
+                        Summarizer::make()
+                            ->label('Total')
+                            ->extraAttributes(['class' => 'hidden md:flex md:flex-col'])
+                            ->using(function (QueryBuilder $query) use (&$dateFilter): string {
+                                $ventas = static::sumTicketsForFooter(
+                                    $query,
+                                    null,
+                                    ['cash', 'transfer'],
+                                    $dateFilter['from'],
+                                    $dateFilter['to']
+                                );
+                                $pagos = static::paymentsForFooter($query, $dateFilter['from'], $dateFilter['to'])['sum'];
+
+                                return static::formatMoney($ventas - $pagos);
                             })
                     ),
             ])
@@ -328,6 +510,13 @@ class SalesResource extends Resource
                                 if ($to) {
                                     $query->where('sale_date', '<=', $to);
                                 }
+                            }, 'payments' => function ($query) use ($from, $to) {
+                                if ($from) {
+                                    $query->where('payment_date', '>=', $from);
+                                }
+                                if ($to) {
+                                    $query->where('payment_date', '<=', $to);
+                                }
                             }])
                             ->when(
                                 $from,
@@ -361,16 +550,16 @@ class SalesResource extends Resource
             ->hiddenFilterIndicators()
             ->recordActions([
                 Action::make('view_tickets')
-                    ->label('Ver boletos')
+                    ->label('Ver detalle')
                     ->button()
                     ->color('gray')
                     ->hiddenLabel()
                     ->icon('heroicon-m-eye')
                     ->extraAttributes([
-                        'title' => 'Ver boletos',
+                        'title' => 'Ver detalle',
                     ])
-                    ->modalHeading(fn (Model $record) => 'Boletos de ' . trim($record->name . ' ' . ($record->surname ?? '')))
-                    ->modalDescription('Boletos vendidos en el período seleccionado')
+                    ->modalHeading(fn(Model $record) => 'Detalle de ' . trim($record->name . ' ' . ($record->surname ?? '')))
+                    ->modalDescription('Boletos vendidos y pagos recibidos en el período seleccionado')
                     ->modalWidth(Width::SevenExtraLarge)
                     ->modalSubmitAction(false)
                     ->modalCancelActionLabel('Cerrar')
@@ -387,11 +576,144 @@ class SalesResource extends Resource
                             'from' => $range['from'] ?? null,
                             'to' => $range['to'] ?? null,
                         ]);
-                    }),
+                    })->extraAttributes(['class' => 'hidden md:inline-flex']),
+                Action::make('register_payment')
+                    ->label('Registrar pago')
+                    ->button()
+                    ->hiddenLabel()
+                    ->color('success')
+                    ->icon(Heroicon::Banknotes)
+                    ->extraAttributes([
+                        'title' => 'Registrar pago',
+                    ])
+                    ->modalHeading(fn(Model $record) => 'Registrar pago de ' . trim($record->name . ' ' . ($record->surname ?? '')))
+                    ->modalDescription('Cargá un pago recibido de este vendedor')
+                    ->modalSubmitActionLabel('Guardar pago')
+                    ->form([
+                        TextInput::make('amount')
+                            ->label('Monto')
+                            ->numeric()
+                            ->required()
+                            ->minValue(0)
+                            ->prefix('$')
+                            ->placeholder('0,00'),
+                        Select::make('payment_method')
+                            ->label('Método de pago')
+                            ->options([
+                                'cash' => 'Efectivo',
+                                'transfer' => 'Transferencia',
+                            ])
+                            ->required()
+                            ->default('cash'),
+                        DatePicker::make('payment_date')
+                            ->label('Fecha de recepción')
+                            ->required()
+                            ->default(now()),
+                    ])
+                    ->action(function (Model $record, array $data): void {
+                        $record->payments()->create([
+                            'amount' => $data['amount'],
+                            'payment_method' => $data['payment_method'],
+                            'payment_date' => $data['payment_date'],
+                        ]);
+
+                        Notification::make()
+                            ->title('Pago registrado')
+                            ->body(
+                                'Se registró $' . number_format((float) $data['amount'], 0, ',', '.')
+                                    . ' (' . ($data['payment_method'] === 'cash' ? 'efectivo' : 'transferencia') . ')'
+                                    . ' de ' . trim($record->name . ' ' . ($record->surname ?? ''))
+                            )
+                            ->success()
+                            ->duration(4000)
+                            ->send();
+                    })->extraAttributes(['class' => 'hidden md:inline-flex']),
+                ActionGroup::make([
+                    Action::make('view_tickets')
+                        ->label('Ver detalle')
+                        ->button()
+                        ->color('gray')
+                        ->hiddenLabel()
+                        ->icon('heroicon-m-eye')
+                        ->extraAttributes([
+                            'title' => 'Ver detalle',
+                        ])
+                        ->modalHeading(fn(Model $record) => 'Detalle de ' . trim($record->name . ' ' . ($record->surname ?? '')))
+                        ->modalDescription('Boletos vendidos y pagos recibidos en el período seleccionado')
+                        ->modalWidth(Width::SevenExtraLarge)
+                        ->modalSubmitAction(false)
+                        ->modalCancelActionLabel('Cerrar')
+                        ->modalContent(function (Model $record, Action $action) {
+                            // El modal abre con el mismo rango de fechas que la tabla
+                            // está mostrando en ese momento.
+                            $livewire = $action->getLivewire();
+                            $range = $livewire
+                                ? data_get($livewire->getTableFiltersForm()?->getState(), 'date_range', [])
+                                : [];
+
+                            return view('filament.resources.sales.tickets-modal', [
+                                'user' => $record,
+                                'from' => $range['from'] ?? null,
+                                'to' => $range['to'] ?? null,
+                            ]);
+                        }),
+                    Action::make('register_payment')
+                        ->label('Registrar pago')
+                        ->button()
+                        ->hiddenLabel()
+                        ->color('success')
+                        ->icon(Heroicon::Banknotes)
+                        ->extraAttributes([
+                            'title' => 'Registrar pago',
+                        ])
+                        ->modalHeading(fn(Model $record) => 'Registrar pago de ' . trim($record->name . ' ' . ($record->surname ?? '')))
+                        ->modalDescription('Cargá un pago recibido de este vendedor')
+                        ->modalSubmitActionLabel('Guardar pago')
+                        ->form([
+                            TextInput::make('amount')
+                                ->label('Monto')
+                                ->numeric()
+                                ->required()
+                                ->minValue(0)
+                                ->prefix('$')
+                                ->placeholder('0,00'),
+                            Select::make('payment_method')
+                                ->label('Método de pago')
+                                ->options([
+                                    'cash' => 'Efectivo',
+                                    'transfer' => 'Transferencia',
+                                ])
+                                ->required()
+                                ->default('cash'),
+                            DatePicker::make('payment_date')
+                                ->label('Fecha de recepción')
+                                ->required()
+                                ->default(now()),
+                        ])
+                        ->action(function (Model $record, array $data): void {
+                            $record->payments()->create([
+                                'amount' => $data['amount'],
+                                'payment_method' => $data['payment_method'],
+                                'payment_date' => $data['payment_date'],
+                            ]);
+
+                            Notification::make()
+                                ->title('Pago registrado')
+                                ->body(
+                                    'Se registró $' . number_format((float) $data['amount'], 0, ',', '.')
+                                        . ' (' . ($data['payment_method'] === 'cash' ? 'efectivo' : 'transferencia') . ')'
+                                        . ' de ' . trim($record->name . ' ' . ($record->surname ?? ''))
+                                )
+                                ->success()
+                                ->duration(4000)
+                                ->send();
+                        })
+                ])->extraAttributes(['class' => 'md:hidden']),
                 /*                 EditAction::make(),
                 DeleteAction::make(),
                 ForceDeleteAction::make(),
-                RestoreAction::make(), */])
+                RestoreAction::make(), */
+            ])
             ->toolbarActions([
                 /*                 BulkActionGroup::make([
                     DeleteBulkAction::make(),

@@ -3,8 +3,8 @@
 namespace App\Services;
 
 use App\Models\User;
-use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Contracts\View\View;
+use Illuminate\Support\Collection;
 use Maatwebsite\Excel\Concerns\FromView;
 use Maatwebsite\Excel\Concerns\WithStyles;
 use Maatwebsite\Excel\Concerns\WithTitle;
@@ -12,27 +12,26 @@ use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
 class SalesTicketsExcelExport implements FromView, WithStyles, WithTitle
 {
-    protected $tickets;
+    protected $records;
     protected $user;
     protected $filters;
+    protected $totals;
 
-    public function __construct(Collection $tickets, User $user, array $filters)
+    public function __construct(Collection $records, User $user, array $filters, array $totals)
     {
-        $this->tickets = $tickets;
+        $this->records = $records;
         $this->user = $user;
         $this->filters = $filters;
+        $this->totals = $totals;
     }
 
     public function view(): View
     {
         return view('excel.sales-tickets', [
-            'tickets' => $this->tickets,
+            'records' => $this->records,
             'user' => $this->user,
             'filters' => $this->filters,
-            'ticketsCount' => $this->tickets->count(),
-            'cashTotal' => $this->tickets->where('payment_method', 'cash')->sum('price'),
-            'transferTotal' => $this->tickets->where('payment_method', 'transfer')->sum('price'),
-            'total' => $this->tickets->sum('price'),
+            'totals' => $this->totals,
         ]);
     }
 
@@ -54,32 +53,34 @@ class SalesTicketsExcelExport implements FromView, WithStyles, WithTitle
 
     public function title(): string
     {
-        return 'Boletos Vendidos';
+        return 'Detalle de ventas';
     }
 }
 
 class SalesTicketsExcelService
 {
     /**
-     * Generar Excel de los boletos vendidos por un usuario en un período.
+     * Generar Excel del detalle (boletos y pagos) de un usuario en un período.
      *
-     * @param  Collection<int, \App\Models\Ticket>  $tickets
-     * @param  array{from: ?string, to: ?string, payment: string}  $filters
+     * @param  Collection<int, array{type: string, id: int, date: mixed, sort: int, payment_method: ?string, amount: float, model: mixed}>  $records
+     * @param  array{from: ?string, to: ?string, payment: string, type: string}  $filters
+     * @param  array{count: int, tickets_count: int, payments_count: int, cash: float, transfer: float, ventas_total: float, payments_cash: float, payments_transfer: float, payments_total: float, saldo: float}  $totals
      */
-    public function generateExcel(Collection $tickets, User $user, array $filters)
+    public function generateExcel(Collection $records, User $user, array $filters, array $totals)
     {
-        return new SalesTicketsExcelExport($tickets, $user, $filters);
+        return new SalesTicketsExcelExport($records, $user, $filters, $totals);
     }
 
     /**
-     * Descargar Excel de los boletos vendidos.
+     * Descargar Excel del detalle (boletos y pagos).
      *
-     * @param  Collection<int, \App\Models\Ticket>  $tickets
-     * @param  array{from: ?string, to: ?string, payment: string}  $filters
+     * @param  Collection<int, array{type: string, id: int, date: mixed, sort: int, payment_method: ?string, amount: float, model: mixed}>  $records
+     * @param  array{from: ?string, to: ?string, payment: string, type: string}  $filters
+     * @param  array{count: int, tickets_count: int, payments_count: int, cash: float, transfer: float, ventas_total: float, payments_cash: float, payments_transfer: float, payments_total: float, saldo: float}  $totals
      */
-    public function downloadExcel(Collection $tickets, User $user, array $filters, string $filename)
+    public function downloadExcel(Collection $records, User $user, array $filters, array $totals, string $filename)
     {
-        $export = $this->generateExcel($tickets, $user, $filters);
+        $export = $this->generateExcel($records, $user, $filters, $totals);
 
         return \Maatwebsite\Excel\Facades\Excel::download($export, $filename);
     }

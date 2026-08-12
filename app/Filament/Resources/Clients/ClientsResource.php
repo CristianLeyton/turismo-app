@@ -24,6 +24,7 @@ use Filament\Tables\Filters\TrashedFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
+use Illuminate\Support\Facades\Auth;
 
 class ClientsResource extends Resource
 {
@@ -143,7 +144,7 @@ class ClientsResource extends Resource
                 ]),
                 DeleteAction::make()->button()->hiddenLabel()->extraAttributes([
                     'title' => 'Eliminar',
-                ]),
+                ])->visible(fn() => Auth::user()?->is_admin),
                 ForceDeleteAction::make()->button()->hiddenLabel()->extraAttributes([
                     'title' => 'Eliminar permanentemente',
                 ]),

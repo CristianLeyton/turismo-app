@@ -79,7 +79,7 @@ class Panel extends StatsOverviewWidget
                 ->descriptionIcon('heroicon-m-arrow-up-right')
                 ->extraAttributes(['class' => 'group [&_.fi-wi-stats-overview-stat-value]:text-2xl [&_.fi-wi-stats-overview-stat-value]:group-hover:text-primary-600 [&_.fi-wi-stats-overview-stat-value]:transition
                 [&_.fi-icon:nth-child(2)]:group-hover:translate-x-0.5 [&_.fi-icon:nth-child(2)]:group-hover:-translate-y-0.5 [&_.fi-icon]:transition'])
-                ->visible(fn(): bool => Auth::user()->is_admin ?? false),
+                ,
         ];
     }
 }

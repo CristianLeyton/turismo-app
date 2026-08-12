@@ -576,7 +576,7 @@ class SalesResource extends Resource
                             'from' => $range['from'] ?? null,
                             'to' => $range['to'] ?? null,
                         ]);
-                    })->extraAttributes(['class' => 'hidden md:inline-flex']),
+                    })->extraAttributes(['class' => 'hidden md:inline-flex', 'title' => 'Ver detalles']),
                 Action::make('register_payment')
                     ->label('Registrar pago')
                     ->button()
@@ -627,13 +627,12 @@ class SalesResource extends Resource
                             ->success()
                             ->duration(4000)
                             ->send();
-                    })->extraAttributes(['class' => 'hidden md:inline-flex']),
+                    })->extraAttributes(['class' => 'hidden md:inline-flex', 'title' => 'Registrar pago']),
                 ActionGroup::make([
                     Action::make('view_tickets')
                         ->label('Ver detalle')
                         ->button()
                         ->color('gray')
-                        ->hiddenLabel()
                         ->icon('heroicon-m-eye')
                         ->extraAttributes([
                             'title' => 'Ver detalle',
@@ -660,7 +659,6 @@ class SalesResource extends Resource
                     Action::make('register_payment')
                         ->label('Registrar pago')
                         ->button()
-                        ->hiddenLabel()
                         ->color('success')
                         ->icon(Heroicon::Banknotes)
                         ->extraAttributes([

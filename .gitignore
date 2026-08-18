@@ -1,4 +1,6 @@
 *.log
+.cursor
+.freebuff
 .DS_Store
 .env
 .env.backup

@@ -307,7 +307,8 @@
                                     • Los boletos recibidos en carácter de donación y/o sin cargo son intransferibles, sin excepción.<br><br>
 
                                     <strong>CAMBIO DE FECHA U HORARIO:</strong><br>
-                                    • Se permitirá el cambio únicamente cuando sea solicitado con una anticipación mayor a 24hs respecto de la salida del servicio.
+                                    • Se permitirá el cambio únicamente cuando sea solicitado con una anticipación mayor a 24hs respecto de la salida del servicio. <br>
+                                    • Dentro de las 24hs previas a la salida: 30% de retención. 
 
                                     @if ($hasChild)
                                         <div class='child-warning'>

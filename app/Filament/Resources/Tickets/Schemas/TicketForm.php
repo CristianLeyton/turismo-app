@@ -468,21 +468,7 @@ class TicketForm
                                     ->displayFormat('d/m/Y')
                                     ->minDate(fn() => now()->subYear()->startOfDay())
                                     ->closeOnDateSelection()
-                                    ->disabledDates(function (): array {
-                                        // Deshabilitar solo domingos para los próximos 2 años
-                                        $disabledDates = [];
-                                        $start = Carbon::today();
-                                        $end = Carbon::today()->addYears(2);
-
-                                        while ($start->lte($end)) {
-                                            if ($start->dayOfWeek === 0) { // 0 = Domingo
-                                                $disabledDates[] = $start->copy()->format('Y-m-d');
-                                            }
-                                            $start->addDay();
-                                        }
-
-                                        return $disabledDates;
-                                    })
+                                    ->disabledDates(fn (): array => self::getDisabledTravelDates())
                                     /* ->helperText('Solo se permiten días laborables (lunes a viernes)') */
                                     ->live()
                                     ->afterStateUpdated(fn($set) => [
@@ -882,21 +868,7 @@ class TicketForm
 
                                         return $date->startOfDay();
                                     })
-                                    ->disabledDates(function (): array {
-                                        // Deshabilitar solo domingos para los próximos 2 años
-                                        $disabledDates = [];
-                                        $start = Carbon::today();
-                                        $end = Carbon::today()->addYears(2);
-
-                                        while ($start->lte($end)) {
-                                            if ($start->dayOfWeek === 0) { // 0 = Domingo
-                                                $disabledDates[] = $start->copy()->format('Y-m-d');
-                                            }
-                                            $start->addDay();
-                                        }
-
-                                        return $disabledDates;
-                                    })
+                                    ->disabledDates(fn (): array => self::getDisabledTravelDates())
                                     /*                                     ->helperText(function (Get $get) {
                                                                             $departureDate = $get('departure_date');
                                                                             if ($departureDate) {
@@ -2034,5 +2006,30 @@ class TicketForm
                 ->submitAction(new HtmlString('<button type="submit" class="fi-color fi-color-primary fi-bg-color-600 hover:fi-bg-color-500 dark:fi-bg-color-600 dark:hover:fi-bg-color-500 fi-text-color-0 hover:fi-text-color-0 dark:fi-text-color-0 dark:hover:fi-text-color-0 fi-btn fi-size-md  fi-ac-btn-action">Finalizar</button>'))
                 ->skippable(false)
         ])->columns(0);
+    }
+
+    /**
+     * Domingos deshabilitados para venta, excepto el 13/09/2026.
+     *
+     * @return list<string>
+     */
+    private static function getDisabledTravelDates(): array
+    {
+        $allowedSunday = '2026-09-13';
+        $disabledDates = [];
+        $start = Carbon::today()->subYear();
+        $end = Carbon::today()->addYears(2);
+
+        while ($start->lte($end)) {
+            if ($start->dayOfWeek === 0) {
+                $date = $start->copy()->format('Y-m-d');
+                if ($date !== $allowedSunday) {
+                    $disabledDates[] = $date;
+                }
+            }
+            $start->addDay();
+        }
+
+        return $disabledDates;
     }
 }

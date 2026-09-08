@@ -4,8 +4,10 @@
         <div class="flex items-center justify-between">
             <p class="text-xs font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500">Resumen</p>
             @if ($this->type === 'all')
+                @php($groupedCount = $this->groupedRecords->count())
                 <p class="text-xs text-gray-400 dark:text-gray-500">
-                    {{ $this->totals['count'] }} {{ $this->totals['count'] === 1 ? 'registro' : 'registros' }}
+                    {{ $groupedCount }} {{ $groupedCount === 1 ? 'registro' : 'registros' }} ·
+                    {{ $this->totals['tickets_count'] }} boletos
                 </p>
             @endif
         </div>
@@ -162,17 +164,22 @@
 
     {{-- Conteo de resultados + exportaciones --}}
     <div class="flex flex-wrap items-center justify-between gap-2">
+        @php($salesCount = $this->groupedRecords->where('type', 'sale')->count())
+        @php($groupedPaymentsCount = $this->groupedRecords->where('type', 'payment')->count())
         <p class="text-sm text-gray-500 dark:text-gray-400">
-            <span class="font-semibold text-gray-700 dark:text-gray-200">{{ $this->totals['count'] }}</span>
-            {{ $this->totals['count'] === 1 ? 'resultado' : 'resultados' }}
+            <span class="font-semibold text-gray-700 dark:text-gray-200">{{ $this->groupedRecords->count() }}</span>
+            {{ $this->groupedRecords->count() === 1 ? 'resultado' : 'resultados' }}
             @if ($this->type === 'all')
-                (<span class="font-medium text-gray-700 dark:text-gray-200">{{ $this->totals['tickets_count'] }}</span>
-                boletos
+                (<span class="font-medium text-gray-700 dark:text-gray-200">{{ $salesCount }}</span>
+                {{ $salesCount === 1 ? 'venta' : 'ventas' }}
                 ·
-                <span class="font-medium text-gray-700 dark:text-gray-200">{{ $this->totals['payments_count'] }}</span>
-                pagos)
+                <span class="font-medium text-gray-700 dark:text-gray-200">{{ $groupedPaymentsCount }}</span>
+                {{ $groupedPaymentsCount === 1 ? 'pago' : 'pagos' }}
+                ·
+                <span class="font-medium text-gray-700 dark:text-gray-200">{{ $this->totals['tickets_count'] }}</span>
+                boletos)
             @elseif ($this->type === 'tickets')
-                (solo boletos)
+                (solo ventas · {{ $this->totals['tickets_count'] }} boletos)
             @else
                 (solo pagos)
             @endif
@@ -221,113 +228,170 @@
                 <tr>
                     <th class="px-3 py-2.5 font-medium">N°</th>
                     <th class="px-3 py-2.5 font-medium">Fecha</th>
-                    <th class="px-3 py-2.5 font-medium">Salida</th>
-                    <th class="px-3 py-2.5 font-medium">Ruta</th>
-                    <th class="px-3 py-2.5 font-medium">Pasajero</th>
-                    <th class="px-3 py-2.5 text-center font-medium">Asiento</th>
+                    <th class="px-3 py-2.5 text-center font-medium">Boletos</th>
                     <th class="px-3 py-2.5 text-center font-medium">Pago</th>
                     <th class="px-3 py-2.5 text-right font-medium">Monto</th>
+                    <th class="px-3 py-2.5 text-center font-medium">Detalle</th>
                 </tr>
             </thead>
             <tbody class="divide-y divide-gray-100 bg-white dark:divide-white/10 dark:bg-gray-900">
                 @forelse ($this->records as $record)
                     @php($isPayment = $record['type'] === 'payment')
+                    @php($isSale = $record['type'] === 'sale')
+                    @php($saleExpanded = $isSale && $this->isSaleExpanded((int) $record['id']))
+                    @php($saleTickets = $isSale ? $record['tickets'] : collect())
                     <tr
                         class="{{ $isPayment
                             ? 'bg-amber-50/40 transition hover:bg-amber-50 dark:bg-amber-500/5 dark:hover:bg-amber-500/10'
-                            : 'transition hover:bg-gray-50 dark:hover:bg-white/5' }}">
+                            : ($saleExpanded
+                                ? 'bg-gray-50 transition dark:bg-white/5'
+                                : 'transition hover:bg-gray-50 dark:hover:bg-white/5') }}">
+                        {{-- N° --}}
                         <td class="px-3 py-2.5 align-top">
                             @if ($isPayment)
-                                <span
-                                    class="font-medium text-gray-900 dark:text-white">#{{ $record['model']->id }}</span>
+                                <span class="font-medium text-gray-900 dark:text-white">#{{ $record['model']->id }}</span>
                                 <span
                                     class="mt-1 block w-fit rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400">
                                     Pago recibido
                                 </span>
                             @else
-                                <span class="text-gray-500 dark:text-gray-400">#{{ $record['model']->id }}</span>
+                                <span class="font-medium text-gray-900 dark:text-white">#{{ $record['id'] }}</span>
+                                <span
+                                    class="mt-1 block w-fit rounded-full bg-fuchsia-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-fuchsia-700 dark:text-fuchsia-400">
+                                    Venta
+                                </span>
                             @endif
                         </td>
+                        {{-- Fecha --}}
                         <td class="whitespace-nowrap px-3 py-2.5 text-gray-700 dark:text-gray-300">
                             @if ($isPayment)
                                 {{ $record['model']->payment_date?->format('d/m/Y') ?? '—' }}
                             @else
-                                {{ $record['model']->sale?->sale_date?->format('d/m/Y H:i') ?? '—' }}
+                                {{ $record['date']?->format('d/m/Y H:i') ?? '—' }}
                             @endif
                         </td>
-                        <td class="whitespace-nowrap px-3 py-2.5 text-gray-700 dark:text-gray-300">
-                            @if ($isPayment)
-                                <span class="text-gray-300 dark:text-gray-600">—</span>
-                            @else
-                                @if ($record['model']->trip)
-                                    {{ $record['model']->trip->trip_date?->format('d/m/Y') }}
-                                    {{ $record['model']->trip->schedule?->departure_time?->format('H:i') }} hs
-                                @else
-                                    —
-                                @endif
-                                @if ($record['model']->is_round_trip)
-                                    <span
-                                        class="ml-1 rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-400">Diferido</span>
-                                @endif
-                            @endif
-                        </td>
-                        <td class="whitespace-nowrap px-3 py-2.5 text-gray-700 dark:text-gray-300">
-                            @if ($isPayment)
-                                <span class="text-gray-300 dark:text-gray-600">—</span>
-                            @else
-                                {{ $record['model']->origin?->name ?? '—' }} <span aria-hidden="true"
-                                    class="text-gray-400">→</span> {{ $record['model']->destination?->name ?? '—' }}
-                            @endif
-                        </td>
-                        <td class="px-3 py-2.5">
-                            @if ($isPayment)
-                                <span class="text-gray-300 dark:text-gray-600">—</span>
-                            @else
-                                <p class="truncate font-medium text-gray-800 dark:text-gray-200">
-                                    {{ $record['model']->passenger?->full_name ?? 'Pasajero no disponible' }}
-                                </p>
-                                <p class="text-xs text-gray-400 dark:text-gray-500">
-                                    @if ($record['model']->passenger?->dni)
-                                        DNI {{ $record['model']->passenger->dni }}
-                                    @else
-                                        —
-                                    @endif
-                                    @if ($record['model']->travels_with_child || $record['model']->travels_with_pets)
-                                        <span class="text-gray-400 dark:text-gray-500">·</span>
-                                        {{ $record['model']->travels_with_child ? 'Con menor' : '' }}
-                                        {{ $record['model']->travels_with_child && $record['model']->travels_with_pets ? ' · ' : '' }}
-                                        {{ $record['model']->travels_with_pets ? 'Con mascota' : '' }}
-                                    @endif
-                                </p>
-                            @endif
-                        </td>
+                        {{-- Boletos --}}
                         <td class="whitespace-nowrap px-3 py-2.5 text-center">
                             @if ($isPayment)
                                 <span class="text-gray-300 dark:text-gray-600">—</span>
-                            @elseif ($record['model']->seat)
-                                <span
-                                    class="rounded-full bg-fuchsia-500/10 px-2 py-0.5 text-xs font-semibold text-fuchsia-700 dark:text-fuchsia-400">
-                                    {{ $record['model']->seat->seat_number }}
+                            @else
+                                <span class="rounded-full bg-gray-500/10 px-2 py-0.5 text-xs font-semibold text-gray-600 dark:text-gray-300">
+                                    {{ $record['tickets_count'] }} {{ $record['tickets_count'] === 1 ? 'boleto' : 'boletos' }}
                                 </span>
-                            @else
-                                <span class="text-gray-400 dark:text-gray-500">—</span>
                             @endif
                         </td>
+                        {{-- Pago --}}
                         <td class="whitespace-nowrap px-3 py-2.5 text-center">
-                            <span
-                                class="rounded-full px-2.5 py-1 text-xs font-semibold {{ $this->paymentBadgeClasses($record['payment_method']) }}">
-                                {{ $this->paymentLabel($record['payment_method']) }}
-                            </span>
+                            @forelse ($record['payment_methods'] as $method)
+                                <span class="rounded-full px-2.5 py-1 text-xs font-semibold {{ $this->paymentBadgeClasses($method) }}">
+                                    {{ $this->paymentLabel($method) }}
+                                </span>
+                            @empty
+                                <span class="text-gray-300 dark:text-gray-600">—</span>
+                            @endforelse
                         </td>
-                        <td
-                            class="whitespace-nowrap px-3 py-2.5 text-right font-semibold text-gray-900 dark:text-white">
+                        {{-- Monto --}}
+                        <td class="whitespace-nowrap px-3 py-2.5 text-right font-bold text-gray-900 dark:text-white">
                             {{ $this->money($record['amount']) }}
                         </td>
+                        {{-- Acción: ver detalle --}}
+                        <td class="whitespace-nowrap px-3 py-2.5 text-center">
+                            @if ($isSale)
+                                <button type="button"
+                                    wire:click="toggleSale({{ $record['id'] }})"
+                                    class="inline-flex items-center gap-1 rounded-lg border border-gray-300 bg-white px-2.5 py-1 text-xs font-medium text-gray-600 transition hover:bg-gray-100 dark:border-white/10 dark:bg-transparent dark:text-gray-300 dark:hover:bg-white/5">
+                                    @if ($saleExpanded)
+                                        <span aria-hidden="true">▲</span> Ocultar detalle
+                                    @else
+                                        <span aria-hidden="true">▼</span> Ver detalle
+                                    @endif
+                                </button>
+                            @else
+                                <span class="text-gray-300 dark:text-gray-600">—</span>
+                            @endif
+                        </td>
                     </tr>
+
+                    {{-- Detalle de boletos de la venta --}}
+                    @if ($saleExpanded)
+                        <tr class="bg-gray-50/60 dark:bg-white/[0.02]">
+                            <td colspan="6" class="px-3 pb-4 pt-1">
+                                <div class="ml-4 overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm dark:border-white/10 dark:bg-gray-900">
+                                    <table class="w-full text-left text-xs">
+                                        <thead class="bg-gray-50 text-[10px] uppercase tracking-wide text-gray-400 dark:bg-white/5 dark:text-gray-500">
+                                            <tr>
+                                                <th class="px-3 py-2 font-medium">Pasajero</th>
+                                                <th class="px-3 py-2 text-center font-medium">Asiento</th>
+                                                <th class="px-3 py-2 font-medium">Salida</th>
+                                                <th class="px-3 py-2 font-medium">Ruta</th>
+                                                <th class="px-3 py-2 text-center font-medium">Pago</th>
+                                                <th class="px-3 py-2 text-right font-medium">Monto</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody class="divide-y divide-gray-100 dark:divide-white/10">
+                                            @foreach ($saleTickets as $ticket)
+                                                <tr class="transition hover:bg-gray-50 dark:hover:bg-white/5">
+                                                    <td class="px-3 py-2">
+                                                        <p class="truncate font-medium text-gray-800 dark:text-gray-200">
+                                                            {{ $ticket->passenger?->full_name ?? 'Pasajero no disponible' }}
+                                                        </p>
+                                                        <p class="text-[11px] text-gray-400 dark:text-gray-500">
+                                                            @if ($ticket->passenger?->dni)
+                                                                DNI {{ $ticket->passenger->dni }}
+                                                            @else
+                                                                —
+                                                            @endif
+                                                            @if ($ticket->travels_with_child || $ticket->travels_with_pets)
+                                                                <span class="text-gray-400 dark:text-gray-500">·</span>
+                                                                {{ $ticket->travels_with_child ? 'Con menor' : '' }}
+                                                                {{ $ticket->travels_with_child && $ticket->travels_with_pets ? ' · ' : '' }}
+                                                                {{ $ticket->travels_with_pets ? 'Con mascota' : '' }}
+                                                            @endif
+                                                        </p>
+                                                    </td>
+                                                    <td class="whitespace-nowrap px-3 py-2 text-center">
+                                                        @if ($ticket->seat)
+                                                            <span class="rounded-full bg-fuchsia-500/10 px-2 py-0.5 text-[11px] font-semibold text-fuchsia-700 dark:text-fuchsia-400">
+                                                                {{ $ticket->seat->seat_number }}
+                                                            </span>
+                                                        @else
+                                                            <span class="text-gray-400 dark:text-gray-500">—</span>
+                                                        @endif
+                                                    </td>
+                                                    <td class="whitespace-nowrap px-3 py-2 text-gray-700 dark:text-gray-300">
+                                                        @if ($ticket->trip)
+                                                            {{ $ticket->trip->trip_date?->format('d/m/Y') }}
+                                                            {{ $ticket->trip->schedule?->departure_time?->format('H:i') }} hs
+                                                        @else
+                                                            —
+                                                        @endif
+                                                        @if ($ticket->is_round_trip)
+                                                            <span class="ml-1 rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-400">Diferido</span>
+                                                        @endif
+                                                    </td>
+                                                    <td class="whitespace-nowrap px-3 py-2 text-gray-700 dark:text-gray-300">
+                                                        {{ $ticket->origin?->name ?? '—' }} <span aria-hidden="true" class="text-gray-400">→</span> {{ $ticket->destination?->name ?? '—' }}
+                                                    </td>
+                                                    <td class="whitespace-nowrap px-3 py-2 text-center">
+                                                        <span class="rounded-full px-2 py-0.5 text-[11px] font-semibold {{ $this->paymentBadgeClasses($ticket->payment_method) }}">
+                                                            {{ $this->paymentLabel($ticket->payment_method) }}
+                                                        </span>
+                                                    </td>
+                                                    <td class="whitespace-nowrap px-3 py-2 text-right font-semibold text-gray-900 dark:text-white">
+                                                        {{ $this->money((float) $ticket->price) }}
+                                                    </td>
+                                                </tr>
+                                            @endforeach
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </td>
+                        </tr>
+                    @endif
                 @empty
                     <tr>
-                        <td colspan="8" class="px-3 py-12 text-center">
-                            <p class="text-sm font-medium text-gray-700 dark:text-gray-200">No hay registros para
+                        <td colspan="6" class="px-3 py-12 text-center">
+                            <p class="text-sm font-medium text-gray-700 dark:text-gray-200">No hay ventas ni pagos para
                                 mostrar</p>
                             <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
                                 Probá ampliar el rango de fechas o cambiar los filtros.

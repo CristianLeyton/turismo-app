@@ -39,6 +39,29 @@ class SalesUserTickets extends Component
     /** Registros por página (máximo 50). */
     public int $perPage = 50;
 
+    /** IDs de ventas con el detalle de boletos expandido. */
+    public array $expandedSales = [];
+
+    /**
+     * Expande o colapsa el detalle de boletos de una venta.
+     */
+    public function toggleSale(int $saleId): void
+    {
+        if (in_array($saleId, $this->expandedSales, true)) {
+            $this->expandedSales = array_values(array_diff($this->expandedSales, [$saleId]));
+        } else {
+            $this->expandedSales[] = $saleId;
+        }
+    }
+
+    /**
+     * Verifica si una venta tiene el detalle expandido.
+     */
+    public function isSaleExpanded(int $saleId): bool
+    {
+        return in_array($saleId, $this->expandedSales, true);
+    }
+
     public function mount(int $userId, ?string $from = null, ?string $to = null): void
     {
         $this->userId = $userId;
@@ -149,11 +172,72 @@ class SalesUserTickets extends Component
     }
 
     /**
-     * Registros de la página actual, con paginación estilo Filament.
+     * Registros agrupados para la tabla: una fila por venta (con el total
+     * de dinero de la venta y sus boletos para el detalle expandible) y una
+     * fila por cada pago recibido. Mantiene el mismo orden que allRecords.
+     *
+     * @return Collection<int, array{type: string, id: int, date: mixed, sort: int, payment_methods: array, amount: float, tickets: Collection, tickets_count: int, model: mixed}>
+     */
+    public function getGroupedRecordsProperty(): Collection
+    {
+        $grouped = collect();
+
+        // Pagos: una fila por pago, igual que siempre.
+        $this->allRecords
+            ->where('type', 'payment')
+            ->each(function (array $record) use ($grouped) {
+                $grouped->push([
+                    'type' => 'payment',
+                    'id' => $record['id'],
+                    'date' => $record['date'],
+                    'sort' => $record['sort'],
+                    'payment_methods' => array_values(array_unique([$record['payment_method']])),
+                    'amount' => $record['amount'],
+                    'tickets' => collect(),
+                    'tickets_count' => 0,
+                    'model' => $record['model'],
+                ]);
+            });
+
+        // Boletos: agrupados por venta. El monto de la fila es la suma de los
+        // boletos FILTRADOS de esa venta (el movimiento de dinero real).
+        $this->allRecords
+            ->where('type', 'ticket')
+            ->groupBy(fn (array $record) => $record['model']->sale_id ?? ('sale-' . $record['model']->id))
+            ->each(function (Collection $tickets) use ($grouped) {
+                $first = $tickets->first()['model'];
+                $sale = $first->sale;
+
+                $grouped->push([
+                    'type' => 'sale',
+                    'id' => $sale?->id ?? $first->id,
+                    'date' => $sale?->sale_date ?? $tickets->first()['date'],
+                    'sort' => $sale?->sale_date?->getTimestamp() ?? $tickets->first()['sort'],
+                    'payment_methods' => $tickets->map(fn (array $r) => $r['payment_method'])->filter()->unique()->values()->all(),
+                    'amount' => (float) $tickets->sum('amount'),
+                    'tickets' => $tickets->pluck('model')->values(),
+                    'tickets_count' => $tickets->count(),
+                    'model' => $sale,
+                ]);
+            });
+
+        $direction = $this->sort === 'desc' ? 'desc' : 'asc';
+
+        return $grouped
+            ->sortBy([
+                ['sort', $direction],
+                ['type', $direction],
+                ['id', $direction],
+            ])
+            ->values();
+    }
+
+    /**
+     * Registros agrupados de la página actual, con paginación estilo Filament.
      */
     public function getRecordsProperty(): LengthAwarePaginator
     {
-        $all = $this->allRecords;
+        $all = $this->groupedRecords;
 
         $perPage = max((int) $this->perPage, 1);
         $totalPages = max((int) ceil($all->count() / $perPage), 1);
@@ -232,14 +316,15 @@ class SalesUserTickets extends Component
     }
 
     /**
-     * Exportar en PDF todo lo filtrado (sin paginar).
+     * Exportar en PDF todo lo filtrado (sin paginar), agrupado por venta
+     * con el detalle de boletos de cada una.
      */
     public function exportPdf()
     {
         $service = app(SalesTicketsPdfService::class);
 
         return $service->downloadPdf(
-            $this->allRecords,
+            $this->groupedRecords,
             $this->getUser(),
             $this->getExportContext(),
             $this->totals,
@@ -248,14 +333,15 @@ class SalesUserTickets extends Component
     }
 
     /**
-     * Exportar en Excel todo lo filtrado (sin paginar).
+     * Exportar en Excel todo lo filtrado (sin paginar), agrupado por venta
+     * (sin el detalle de boletos: para eso está la app).
      */
     public function exportExcel()
     {
         $service = app(SalesTicketsExcelService::class);
 
         return $service->downloadExcel(
-            $this->allRecords,
+            $this->groupedRecords,
             $this->getUser(),
             $this->getExportContext(),
             $this->totals,

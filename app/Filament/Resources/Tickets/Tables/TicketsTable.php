@@ -39,7 +39,6 @@ class TicketsTable
                     ->label('N°')
                     ->badge()
                     ->color('gray')
-                    ->sortable()
                     ->visibleFrom('md'),
 
                 /*                 TextColumn::make('passenger.first_name')
@@ -50,7 +49,6 @@ class TicketsTable
                         fn($state, $record) =>
                         $record->passenger->last_name . ' ' . $record->passenger->first_name,
                     )
-                    ->sortable()
                     ->hiddenFrom('md'), */
 
                 TextColumn::make('passenger.last_name')
@@ -60,8 +58,7 @@ class TicketsTable
                     ->formatStateUsing(
                         fn($state, $record) =>
                         $record->passenger->last_name . ' ' . $record->passenger->first_name,
-                    )
-                    ->sortable(),
+                    ),
 
                 TextColumn::make('passenger.dni')
                     ->label('DNI')
@@ -71,27 +68,28 @@ class TicketsTable
                     ->label('Emisión')
                     ->badge()
                     ->color('success')
-                    ->sortable()
                     ->date('d/m/Y')
                     ->url(fn(Ticket $record) => TicketResource::getUrl('view', ['record' => $record])),
 
                 TextColumn::make('sale.user.name')
                     ->label('Vendedor')
-                    ->sortable()
                     ->badge()
                     ->color('warning')
-
                     ->visibleFrom('md')
                     ->placeholder('—'),
 
                 TextColumn::make('trip.trip_date')
                     ->label('Salida')
                     ->formatStateUsing(function ($record) {
-                        $date = $record->trip->trip_date?->format('d/m/Y');
-                        $time = $record->trip->schedule->departure_time?->format('H:i');
-                        return $date && $time ? "$date $time" : '—';
+                        $date = $record->trip?->trip_date?->format('d/m/Y');
+                        $time = $record->trip?->schedule?->departure_time?->format('H:i');
+
+                        if ($date && $time) {
+                            return "$date $time";
+                        }
+
+                        return $date ?: '—';
                     })
-                    ->sortable()
                     ->badge()
                     ->visibleFrom('md')
                     ->color('info')
@@ -106,7 +104,6 @@ class TicketsTable
                         return 'Ruta no disponible';
                     })
                     ->alignCenter()
-                    ->sortable()
                     ->badge()
                     ->visibleFrom('md')
                     ->color('warning'),
@@ -137,8 +134,8 @@ class TicketsTable
                     })
                     ->visibleFrom('md')
                     ->alignCenter(), */
-            ])
-            ->defaultSort('sale.sale_date', 'desc')
+            ]) 
+            ->defaultSort('id', 'desc') 
             ->recordUrl(null)
             /* ->persistSortInSession() */
             ->paginated([5, 10, 25, 50, 100])

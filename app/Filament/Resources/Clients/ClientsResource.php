@@ -9,16 +9,21 @@ use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
+use Filament\Actions\Action;
 use Filament\Actions\ForceDeleteAction;
 use Filament\Actions\ForceDeleteBulkAction;
 use Filament\Actions\RestoreAction;
 use Filament\Actions\RestoreBulkAction;
 use Filament\Actions\ViewAction;
+use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Toggle;
+use Filament\Infolists\Components\IconEntry;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
+use Filament\Notifications\Notification;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\TrashedFilter;
 use Filament\Tables\Table;
@@ -100,6 +105,17 @@ class ClientsResource extends Resource
                         'numeric' => 'El teléfono debe ser un número.',
                         'digits_between' => 'El teléfono debe tener entre 7 y 12 dígitos.',
                     ]),
+                Toggle::make('can_buy')
+                    ->label('¿Puede comprar boletos?')
+                    ->helperText('Si se deshabilita, el cliente queda baneado y no se le podrán vender boletos.')
+                    ->default(true)
+                    ->live()
+                    ->columnSpanFull(),
+                Textarea::make('comments')
+                    ->label('Motivo / Comentarios')
+                    ->helperText('Se muestra al vendedor cuando intenta venderle a un cliente baneado.')
+                    ->maxLength(65535)
+                    ->columnSpanFull(),
             ]);
     }
 
@@ -111,6 +127,13 @@ class ClientsResource extends Resource
                 TextEntry::make('apellido'),
                 TextEntry::make('dni'),
                 TextEntry::make('telefono'),
+                TextEntry::make('can_buy')
+                    ->label('¿Puede comprar?')
+                    ->icon(fn (Clients $record): Heroicon => $record->can_buy ? Heroicon::CheckCircle : Heroicon::NoSymbol)
+                    ->color(fn (Clients $record): string => $record->can_buy ? 'success' : 'danger'),
+                TextEntry::make('comments')
+                    ->label('Motivo / Comentarios')
+                    ->placeholder('—'),
             ]);
     }
 
@@ -118,6 +141,10 @@ class ClientsResource extends Resource
     {
         return $table
             ->recordTitleAttribute('dni')
+            ->recordClasses(fn (Clients $record): array => $record->can_buy ? [] : [
+                '!bg-red-100',
+                'hover:!bg-red-200',
+            ])
             ->columns([
                 TextColumn::make('dni')
                     ->label('DNI')
@@ -132,13 +159,39 @@ class ClientsResource extends Resource
                 TextColumn::make('telefono')
                     ->label('Teléfono')
                     ->searchable(),
+                TextColumn::make('can_buy')
+                    ->label('Estado')
+                    ->badge()
+                    ->state(fn (Clients $record): string => $record->can_buy ? 'Habilitado' : 'Baneado')
+                    ->color(fn (Clients $record): string => $record->can_buy ? 'success' : 'danger'),
             ])
             ->recordUrl(null)
             ->recordAction(null)
             ->filters([/* 
                 TrashedFilter::make(), */])
-            ->recordActions([/* 
-                ViewAction::make(), */
+            ->recordActions([
+                Action::make('toggleBan')
+                    ->label(fn (Clients $record): string => $record->can_buy ? 'Banear' : 'Habilitar')
+                    ->icon(fn (Clients $record): Heroicon => $record->can_buy ? Heroicon::NoSymbol : Heroicon::CheckCircle)
+                    ->color(fn (Clients $record): string => $record->can_buy ? 'danger' : 'success')
+                    ->requiresConfirmation()
+                    ->modalHeading(fn (Clients $record): string => $record->can_buy ? 'Banear cliente' : 'Habilitar cliente')
+                    ->modalDescription(fn (Clients $record): string => $record->can_buy
+                        ? "¿Confirmás banear a {$record->nombre} {$record->apellido}? No se le podrán vender más boletos."
+                        : "¿Confirmás habilitar a {$record->nombre} {$record->apellido}? Volverá a poder comprar boletos.")
+                    ->modalSubmitActionLabel(fn (Clients $record): string => $record->can_buy ? 'Banear' : 'Habilitar')
+                    ->action(function (Clients $record): void {
+                        $record->update(['can_buy' => ! $record->can_buy]);
+
+                        Notification::make()
+                            ->title($record->can_buy ? 'Cliente habilitado' : 'Cliente baneado')
+                            ->body("{$record->nombre} {$record->apellido} " . ($record->can_buy ? 'puede volver a comprar boletos.' : 'no podrá comprar boletos.'))
+                            ->success()
+                            ->send();
+                    })
+                    ->button()
+                    ->hiddenLabel()
+                    ->extraAttributes(['title' => 'Banear / Habilitar']),
                 EditAction::make()->button()->hiddenLabel()->extraAttributes([
                     'title' => 'Editar',
                 ]),

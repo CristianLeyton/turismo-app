@@ -1755,6 +1755,26 @@ class TicketForm
                                             ->rules([
                                                 'digits_between:7,8',
                                             ])
+                                            ->rule(static function (Get $get): \Closure {
+                                                return static function (string $attribute, $value, \Closure $fail) use ($get): void {
+                                                    if (blank($value)) {
+                                                        return;
+                                                    }
+
+                                                    $banned = Clients::query()
+                                                        ->where('dni', $value)
+                                                        ->where('can_buy', false)
+                                                        ->first();
+
+                                                    if ($banned) {
+                                                        $reason = filled($banned->comments)
+                                                            ? " Motivo: {$banned->comments}"
+                                                            : '';
+
+                                                        $fail("El cliente {$banned->nombre} {$banned->apellido} (DNI {$banned->dni}) está baneado y no se le pueden vender boletos.{$reason}");
+                                                    }
+                                                };
+                                            })
                                             ->validationMessages([
                                                 'required' => 'Debe ingresar un DNI.',
                                                 'numeric' => 'El DNI debe ser numérico.',
@@ -2066,6 +2086,22 @@ class TicketForm
                                             Notification::make()
                                                 ->title('Cliente no encontrado')
                                                 ->danger()
+                                                ->send();
+
+                                            return;
+                                        }
+
+                                        // Bloquear clientes baneados (defensa extra: no deberían poder seleccionarse en el listado)
+                                        if (! $client->can_buy) {
+                                            $reason = filled($client->comments)
+                                                ? " Motivo: {$client->comments}"
+                                                : '';
+
+                                            Notification::make()
+                                                ->title('Cliente baneado')
+                                                ->body("{$client->nombre} {$client->apellido} (DNI {$client->dni}) está baneado y no se le pueden vender boletos.{$reason}")
+                                                ->danger()
+                                                ->persistent()
                                                 ->send();
 
                                             return;

@@ -249,6 +249,39 @@ class CreateTicket extends CreateRecord
 
     protected function handleRecordCreation(array $data): Model
     {
+        // 0. Validar que ningún pasajero sea un cliente baneado (defensa server-side).
+        // Va antes del try para que el Halt no sea capturado por el catch genérico de abajo.
+        $bannedDnis = collect($data['passengers'] ?? [])
+            ->pluck('dni')
+            ->filter(fn ($dni) => filled($dni))
+            ->unique()
+            ->values();
+
+        if ($bannedDnis->isNotEmpty()) {
+            $bannedClients = \App\Models\Clients::query()
+                ->whereIn('dni', $bannedDnis->all())
+                ->where('can_buy', false)
+                ->get();
+
+            if ($bannedClients->isNotEmpty()) {
+                $details = $bannedClients
+                    ->map(fn (\App\Models\Clients $client) => "{$client->nombre} {$client->apellido} (DNI {$client->dni})" . (filled($client->comments) ? " - Motivo: {$client->comments}" : ''))
+                    ->implode('; ');
+
+                Notification::make()
+                    ->title('No se puede completar la venta')
+                    ->icon('heroicon-m-shield-exclamation')
+                    ->body('Hay pasajeros con prohibición de compra: ' . $details)
+                    ->danger()
+                    ->persistent()
+                    ->send();
+
+                $this->halt();
+
+                return $data;
+            }
+        }
+
         try {
             // 1. Crear la venta usando el método del modelo
             $sale = Sale::createNew(Auth::id());

@@ -41,7 +41,7 @@ class TicketInfolist
                             ->badge()
                             ->color('info'),
 
-                        TextEntry::make('price')
+                        TextEntry::make('display_price')
                             ->label('Precio')
                             ->badge()
                             ->prefix('$')

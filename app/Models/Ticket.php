@@ -114,6 +114,28 @@ class Ticket extends Model
     }
 
     /**
+     * Precio para mostrar en PDF y panel.
+     * Para tickets de vuelta (is_round_trip=true, return_trip_id=null),
+     * busca el precio del boleto de ida asociado (mismo pasajero, misma venta).
+     */
+    public function getDisplayPriceAttribute(): float
+    {
+        // Si no es ticket de vuelta, devolver precio propio
+        if (!($this->is_round_trip && is_null($this->return_trip_id))) {
+            return (float) $this->price;
+        }
+
+        // Es ticket de vuelta: buscar el boleto de ida asociado
+        $outbound = self::where('sale_id', $this->sale_id)
+            ->where('passenger_id', $this->passenger_id)
+            ->where('is_round_trip', true)
+            ->whereNotNull('return_trip_id')
+            ->first();
+
+        return $outbound ? (float) $outbound->price : 0;
+    }
+
+    /**
      * Obtener la hora de salida de la parada donde sube el pasajero.
      * Para viaje de ida: usa origin_location_id y trip.
      * Para viaje de vuelta: usa destination_location_id y returnTrip.

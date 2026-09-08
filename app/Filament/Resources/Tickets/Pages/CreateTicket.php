@@ -430,7 +430,7 @@ class CreateTicket extends CreateRecord
                         'pet_count' => $petCount,
                         'origin_location_id' => $data['destination_location_id'],
                         'destination_location_id' => $data['origin_location_id'],
-                        'price' => $passengerData['price'] ?? 0,
+                        'price' => 0, // Return trip price is already captured on the outbound ticket
                         'payment_method' => $passengerData['payment_method'] ?? null,
                     ];
                 }

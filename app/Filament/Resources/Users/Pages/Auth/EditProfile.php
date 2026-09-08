@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Filament\Pages\Auth;
+namespace App\Filament\Resources\Users\Pages\Auth;
 
 use Filament\Auth\Pages\EditProfile as BaseEditProfile;
 use Filament\Forms\Components\TextInput;
@@ -26,25 +26,39 @@ class EditProfile extends BaseEditProfile
                     ->label('Apellido')
                     ->disabled(fn() => !Auth::user()?->is_admin)
                     ->maxLength(255)
-                    ->nullable()
+                    ->required()
                     ->validationMessages([
+                        'required' => 'El apellido es obligatorio.',
                         'max' => 'El apellido no debe exceder los :max caracteres.',
                     ]),
-
+                TextInput::make('email')
+                    ->label('Correo electrónico')
+                    ->disabled(fn() => !Auth::user()?->is_admin)
+                    ->maxLength(255)
+                    ->email()
+                    ->required()
+                    ->validationMessages([
+                        'required' => 'El correo electrónico es obligatorio.',
+                        'email' => 'Ingrese un correo electrónico válido.',
+                        'max' => 'El correo electrónico no debe exceder los :max caracteres.',
+                    ]),
+                TextInput::make('phone')
+                    ->label('Teléfono')
+                    ->disabled(fn() => !Auth::user()?->is_admin)
+                    ->maxLength(255)
+                    ->tel()
+                    ->validationMessages([
+                        'max' => 'El teléfono no debe exceder los :max caracteres.',
+                    ]),
                 TextInput::make('username')
-                    ->label('Usuario')
-                    ->minLength(3)
+                    ->label('Nombre de usuario')
+                    ->disabled(fn() => !Auth::user()?->is_admin)
                     ->maxLength(255)
                     ->required()
-                    ->unique()
                     ->validationMessages([
-                        'min' => 'El nombre de usuario debe tener al menos :min caracteres.',
                         'required' => 'El nombre de usuario es obligatorio.',
                         'max' => 'El nombre de usuario no debe exceder los :max caracteres.',
-                        'unique' => 'El nombre de usuario ya está en uso.',
                     ]),
-                $this->getPasswordFormComponent(),
-                $this->getPasswordConfirmationFormComponent(),
             ]);
     }
 }

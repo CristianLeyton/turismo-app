@@ -250,7 +250,7 @@
 
                                 <div class='section-title'>PAGO</div>
                                 <div class='box'>
-                                    <strong>Precio:</strong> ${{ number_format($ticket->price, 2, ',', '.') }}<br>
+                                    <strong>Precio:</strong> ${{ number_format($ticket->display_price, 2, ',', '.') }}<br>
                                     <strong>Método de pago:</strong>
                                     @if ($ticket->payment_method === 'cash')
                                         Efectivo

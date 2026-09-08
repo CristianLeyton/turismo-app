@@ -2,7 +2,7 @@
 
 namespace App\Providers\Filament;
 
-use app\Filament\Resources\Users\Pages\Auth\CustomLogin;
+use App\Filament\Resources\Users\Pages\Auth\CustomLogin;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;

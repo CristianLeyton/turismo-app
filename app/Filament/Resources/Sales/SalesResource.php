@@ -729,6 +729,18 @@ class SalesResource extends Resource
         ];
     }
 
+    /**
+     * Usuario reservado para pruebas (id=1): sus ventas solo se muestran
+     * cuando él mismo está logueado.
+     */
+    protected const TEST_USER_ID = 1;
+
+    public static function getEloquentQuery(): Builder
+    {
+        return parent::getEloquentQuery()
+            ->when(auth()->id() !== self::TEST_USER_ID, fn (Builder $query) => $query->where('users.id', '!=', self::TEST_USER_ID));
+    }
+
     public static function getRecordRouteBindingEloquentQuery(): Builder
     {
         return parent::getRecordRouteBindingEloquentQuery()

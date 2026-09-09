@@ -37,7 +37,7 @@ class PaymentPolicy
      */
     public function update(User $user, Payment $payment): bool
     {
-        return (bool) $user->is_admin;
+        return (bool) $user->is_admin && $payment->deleted_at === null;
     }
 
     /**
@@ -61,6 +61,6 @@ class PaymentPolicy
      */
     public function forceDelete(User $user, Payment $payment): bool
     {
-        return (bool) $user->is_admin;
+        return (bool) $user->id === 1;
     }
 }

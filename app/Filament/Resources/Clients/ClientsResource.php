@@ -171,6 +171,7 @@ class ClientsResource extends Resource
                 TrashedFilter::make(), */])
             ->recordActions([
                 Action::make('toggleBan')
+                    ->visible(fn() => Auth::user()?->is_admin)
                     ->label(fn (Clients $record): string => $record->can_buy ? 'Banear' : 'Habilitar')
                     ->icon(fn (Clients $record): Heroicon => $record->can_buy ? Heroicon::NoSymbol : Heroicon::CheckCircle)
                     ->color(fn (Clients $record): string => $record->can_buy ? 'danger' : 'success')

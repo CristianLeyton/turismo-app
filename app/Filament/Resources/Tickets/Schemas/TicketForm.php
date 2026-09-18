@@ -5,6 +5,7 @@ namespace App\Filament\Resources\Tickets\Schemas;
 use App\Filament\Resources\Tickets\TicketResource;
 use App\Filament\Tables\ClientsPickerTable;
 use App\Models\Bus;
+use App\Models\PaymentMethod;
 use App\Models\Clients;
 use App\Models\Route;
 use App\Models\RouteStop;
@@ -26,7 +27,6 @@ use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\ViewField;
 use Filament\Forms\Components\Button;
 use Filament\Forms\Components\Checkbox;
-use Filament\Forms\Components\Radio;
 use Filament\Forms\Components\TableSelect;
 use Filament\Notifications\Notification;
 use Filament\Support\Icons\Heroicon;
@@ -1941,14 +1941,46 @@ class TicketForm
                                                 'min' => 'El precio no puede ser negativo.',
                                                 'max' => 'El precio no puede ser mayor a 999999.',
                                             ]),
-                                        Radio::make('payment_method')
+                                        Select::make('payment_method')
                                             ->label('Método de pago')
                                             ->required()
-                                            ->options([
-                                                'cash' => 'Efectivo',
-                                                'transfer' => 'Transferencia',
+                                            ->native(false)
+                                            ->searchable()
+                                            ->options(fn () => PaymentMethod::options())
+                                            ->placeholder('Seleccione un método de pago')
+                                            ->createOptionModalHeading('Nuevo método de pago')
+                                            ->createOptionAction(fn ($action) => $action
+                                                ->visible(fn (): bool => (bool) auth()->user()?->is_admin))
+                                            ->createOptionForm([
+                                                TextInput::make('label')
+                                                    ->label('Nombre')
+                                                    ->required()
+                                                    ->maxLength(100)
+                                                    ->columnSpanFull()
+                                                    ->validationMessages([
+                                                        'required' => 'El nombre del método es obligatorio.',
+                                                        'max' => 'El nombre no debe exceder :max caracteres.',
+                                                    ]),
                                             ])
-                                            ->inline()
+                                            ->createOptionUsing(function (array $data) {
+                                                // Server-side: solo admins pueden crear métodos,
+                                                // incluso si ocultaran el botón por JS.
+                                                abort_unless((bool) auth()->user()?->is_admin, 403);
+
+                                                $method = PaymentMethod::create([
+                                                    'label' => $data['label'],
+                                                    'is_active' => true,
+                                                ]);
+
+                                                Notification::make()
+                                                    ->title('Método de pago creado')
+                                                    ->body("\"{$method->label}\" ya está disponible y quedó seleccionado.")
+                                                    ->success()
+                                                    ->send();
+
+                                                // Al devolver el código, Filament lo deja seleccionado en el select.
+                                                return $method->code;
+                                            })
                                             ->validationMessages([
                                                 'required' => 'Debe seleccionar un método de pago.',
                                             ]),

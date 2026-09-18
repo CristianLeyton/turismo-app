@@ -2,6 +2,7 @@
 
 @source '../../../../app/Filament/**/*';
 @source '../../../../app/Livewire/**/*';
+@source '../../../../app/Models/**/*';
 @source '../../../../resources/views/filament/**/*';
 @source '../../../../resources/views/tickets/**/*.blade.php';
 @source '../../../../resources/views/livewire/**/*.blade.php';

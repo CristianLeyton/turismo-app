@@ -252,13 +252,7 @@
                                 <div class='box'>
                                     <strong>Precio:</strong> ${{ number_format($ticket->display_price, 2, ',', '.') }}<br>
                                     <strong>Método de pago:</strong>
-                                    @if ($ticket->payment_method === 'cash')
-                                        Efectivo
-                                    @elseif ($ticket->payment_method === 'transfer')
-                                        Transferencia
-                                    @else
-                                        No especificado
-                                    @endif
+                                    {{ $ticket->payment_method ? \App\Models\PaymentMethod::label($ticket->payment_method) : 'No especificado' }}
                                 </div>
 
 

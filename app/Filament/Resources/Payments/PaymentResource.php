@@ -5,6 +5,7 @@ namespace App\Filament\Resources\Payments;
 use App\Filament\Clusters\Sales\SalesCluster;
 use App\Filament\Resources\Payments\Pages\ManagePayments;
 use App\Models\Payment;
+use App\Models\PaymentMethod;
 use App\Models\User;
 use App\Services\PaymentsExcelService;
 use App\Services\PaymentsPdfService;
@@ -59,34 +60,11 @@ class PaymentResource extends Resource
     }
 
     /**
-     * Subquery reutilizable: suma de montos de pagos por método (o varios),
-     * en el rango de fechas vigente. Se usa para ordenar las columnas de
-     * montos y para los totales del footer.
-     */
-    protected static function paymentsSumSubquery(?string $paymentMethod, array $paymentMethods, ?string $from, ?string $to): QueryBuilder
-    {
-        $query = DB::table('payments')
-            ->selectRaw('COALESCE(SUM(payments.amount), 0)')
-            ->whereColumn('payments.user_id', 'users.id')
-            ->whereNull('payments.deleted_at')
-            ->when($from, fn ($q, $date) => $q->where('payments.payment_date', '>=', $date))
-            ->when($to, fn ($q, $date) => $q->where('payments.payment_date', '<=', $date));
-
-        if ($paymentMethod !== null) {
-            $query->where('payments.payment_method', $paymentMethod);
-        } else {
-            $query->whereIn('payments.payment_method', $paymentMethods);
-        }
-
-        return $query;
-    }
-
-    /**
      * Total para el footer: toma los IDs de pagos que la tabla ya está
      * mostrando (respeta todos los filtros) y suma/cuenta sobre ellos.
      *
      * @param  Builder|QueryBuilder  $query
-     * @return array{count: int, cash: float, transfer: float, total: float}
+     * @return array{count: int, total: float}
      */
     protected static function footerTotals($query): array
     {
@@ -98,9 +76,7 @@ class PaymentResource extends Resource
 
         return [
             'count' => (clone $base)->count(),
-            'cash' => (float) (clone $base)->where('payment_method', 'cash')->sum('amount'),
-            'transfer' => (float) (clone $base)->where('payment_method', 'transfer')->sum('amount'),
-            'total' => (float) (clone $base)->whereIn('payment_method', ['cash', 'transfer'])->sum('amount'),
+            'total' => (float) (clone $base)->sum('amount'),
         ];
     }
 
@@ -132,14 +108,15 @@ class PaymentResource extends Resource
                     ]),
                 Select::make('payment_method')
                     ->label('Método de pago')
-                    ->options([
-                        'cash' => 'Efectivo',
-                        'transfer' => 'Transferencia',
-                    ])
+                    ->options(fn () => PaymentMethod::options())
                     ->required()
-                    ->default('cash')
+                    ->default(fn () => array_key_first(PaymentMethod::options()))
+                    ->exists(PaymentMethod::class, 'code')
+                    ->in(array_keys(PaymentMethod::options()))
                     ->validationMessages([
                         'required' => 'El campo método de pago es obligatorio.',
+                        'exists' => 'El método de pago seleccionado no existe o está inactivo.',
+                        'in' => 'El método de pago seleccionado no existe o está inactivo.',
                     ]),
                 DatePicker::make('payment_date')
                     ->label('Fecha de recepción')
@@ -181,32 +158,18 @@ class PaymentResource extends Resource
                     ->sortable()
                     ->alignEnd()
                     ->summarize([
-                        /*Summarizer::make()
+                        Summarizer::make()
                             ->label('Cantidad')
-                             ->using(function (QueryBuilder $query): int {
-                                return static::footerTotals($query)['count'];
-                            }),
-                        Summarizer::make()
-                            ->label('Efectivo')
-                            ->using(function (QueryBuilder $query): string {
-                                return static::formatMoney(static::footerTotals($query)['cash']);
-                            }),
-                        Summarizer::make()
-                            ->label('Transferencia')
-                            ->using(function (QueryBuilder $query): string {
-                                return static::formatMoney(static::footerTotals($query)['transfer']);
-                            }), */
+                            ->using(fn (QueryBuilder $query): int => static::footerTotals($query)['count']),
                         Summarizer::make()
                             ->label('Total cobrado')
-                            ->using(function (QueryBuilder $query): string {
-                                return static::formatMoney(static::footerTotals($query)['total']);
-                            }),
+                            ->using(fn (QueryBuilder $query): string => static::formatMoney(static::footerTotals($query)['total'])),
                     ]),
                 TextColumn::make('payment_method')
                     ->label('Método')
                     ->badge()
-                    ->color(fn(string $state): string => $state === 'cash' ? 'success' : 'info')
-                    ->formatStateUsing(fn(string $state): string => $state === 'cash' ? 'Efectivo' : 'Transferencia')
+                    ->color(fn (string $state): string => PaymentMethod::color($state))
+                    ->formatStateUsing(fn (string $state): string => PaymentMethod::label($state))
                     ->sortable()
                     ->alignCenter(),
                 TextColumn::make('created_at')
@@ -270,8 +233,10 @@ class PaymentResource extends Resource
                     ->query(function (Builder $query, array $data): Builder {
                         return $query
                             ->when($data['user_id'] ?? null, fn (Builder $q, $userId) => $q->where('user_id', $userId));
-                    }),
-                TrashedFilter::make(),
+                    })
+                    ->columnSpan(1),
+                TrashedFilter::make()
+                    ->columnSpan(1),
             ])
             ->filtersLayout(FiltersLayout::AboveContent)
             ->deferFilters(false)

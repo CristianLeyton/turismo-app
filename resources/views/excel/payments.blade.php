@@ -23,7 +23,7 @@
         <tr>
             <td>{{ $payment->payment_date?->format('d/m/Y') ?? '-' }}</td>
             <td>{{ $payment->user ? trim($payment->user->name . ' ' . ($payment->user->surname ?? '')) : '-' }}</td>
-            <td style="text-align: center;">{{ $payment->payment_method === 'cash' ? 'Efectivo' : 'Transferencia' }}</td>
+            <td style="text-align: center;">{{ \App\Models\PaymentMethod::label($payment->payment_method) }}</td>
             <td style="text-align: right;">${{ $fmt($payment->amount) }}</td>
         </tr>
     @empty
@@ -35,16 +35,6 @@
         <td colspan="2" style="font-weight: bold;">Totales</td>
         <td style="font-weight: bold;">Cantidad: {{ $totals['count'] }}</td>
         <td></td>
-    </tr>
-    <tr>
-        <td colspan="2"></td>
-        <td style="font-weight: bold;">Efectivo</td>
-        <td style="font-weight: bold; text-align: right;">${{ $fmt($totals['cash']) }}</td>
-    </tr>
-    <tr>
-        <td colspan="2"></td>
-        <td style="font-weight: bold;">Transferencia</td>
-        <td style="font-weight: bold; text-align: right;">${{ $fmt($totals['transfer']) }}</td>
     </tr>
     <tr>
         <td colspan="2"></td>

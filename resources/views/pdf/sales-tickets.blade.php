@@ -85,14 +85,29 @@
             font-weight: bold;
         }
 
-        .badge-cash {
-            background: #dcfce7;
-            color: #166534;
+        .badge-method {
+            background: #f3f4f6;
+            color: #374151;
         }
 
-        .badge-transfer {
-            background: #e0f2fe;
-            color: #075985;
+        .breakdown-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 8px;
+            font-size: 11px;
+        }
+
+        .breakdown-table th {
+            border-bottom: 1px solid #d1d5db;
+            padding: 4px 6px;
+            color: #6b7280;
+            font-size: 9px;
+            text-transform: uppercase;
+        }
+
+        .breakdown-table td {
+            border-bottom: 1px solid #f3f4f6;
+            padding: 4px 6px;
         }
 
         .badge-seat {
@@ -243,11 +258,9 @@
             'payments' => 'Solo pagos',
             default => 'Ventas y pagos',
         };
-        $paymentLabel = match ($filters['payment']) {
-            'cash' => 'Efectivo',
-            'transfer' => 'Transferencia',
-            default => 'Todos',
-        };
+        $paymentLabel = filled($filters['payment_label'] ?? null)
+            ? $filters['payment_label']
+            : 'Todos';
         $fmt = fn ($value) => '$' . number_format((float) $value, 0, ',', '.');
         $salesCount = $records->where('type', 'sale')->count();
         $groupedPaymentsCount = $records->where('type', 'payment')->count();
@@ -306,8 +319,6 @@
             <table class="rgrid">
                 <tr>
                     <td><div class="rbox rb-gray"><p class="rlabel">Boletos vendidos</p><p class="rvalue">{{ $totals['tickets_count'] }}</p></div></td>
-                    <td><div class="rbox rb-emerald"><p class="rlabel">Ventas efectivo</p><p class="rvalue">{{ $fmt($totals['cash']) }}</p></div></td>
-                    <td><div class="rbox rb-sky"><p class="rlabel">Ventas transferencia</p><p class="rvalue">{{ $fmt($totals['transfer']) }}</p></div></td>
                     <td><div class="rbox rb-fuchsia"><p class="rlabel">Total ventas</p><p class="rvalue">{{ $fmt($totals['ventas_total']) }}</p></div></td>
                 </tr>
             </table>
@@ -317,10 +328,39 @@
             <table class="rgrid">
                 <tr>
                     <td><div class="rbox rb-amber"><p class="rlabel">Pagos recibidos</p><p class="rvalue">{{ $totals['payments_count'] }}</p></div></td>
-                    <td><div class="rbox rb-emerald"><p class="rlabel">Pagos efectivo</p><p class="rvalue">{{ $fmt($totals['payments_cash']) }}</p></div></td>
-                    <td><div class="rbox rb-sky"><p class="rlabel">Pagos transferencia</p><p class="rvalue">{{ $fmt($totals['payments_transfer']) }}</p></div></td>
                     <td><div class="rbox rb-amber"><p class="rlabel">Total pagos</p><p class="rvalue">{{ $fmt($totals['payments_total']) }}</p></div></td>
                 </tr>
+            </table>
+        @endif
+
+        {{-- Desglose por método de pago (dinámico) --}}
+        @php($breakdown = $totals['method_breakdown'] ?? [])
+        @if (count($breakdown) > 0)
+            <table class="breakdown-table">
+                <thead>
+                    <tr>
+                        <th style="text-align: left;">Método</th>
+                        @if ($filters['type'] !== 'payments')
+                            <th style="text-align: right;">Ventas</th>
+                        @endif
+                        @if ($filters['type'] !== 'tickets')
+                            <th style="text-align: right;">Pagos</th>
+                        @endif
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach ($breakdown as $row)
+                        <tr>
+                            <td>{{ $row['label'] }}</td>
+                            @if ($filters['type'] !== 'payments')
+                                <td style="text-align: right;">{{ $fmt($row['ventas']) }}</td>
+                            @endif
+                            @if ($filters['type'] !== 'tickets')
+                                <td style="text-align: right;">{{ $fmt($row['pagos']) }}</td>
+                            @endif
+                        </tr>
+                    @endforeach
+                </tbody>
             </table>
         @endif
 
@@ -356,11 +396,9 @@
                             <td>{{ $record['model']->payment_date?->format('d/m/Y') ?? '—' }}</td>
                             <td style="text-align: center;">—</td>
                             <td style="text-align: center;">
-                                @php
-                                    $method = $record['payment_methods'][0] ?? null;
-                                @endphp
-                                <span class="badge {{ $method === 'cash' ? 'badge-cash' : 'badge-transfer' }}">
-                                    {{ $method === 'cash' ? 'Efectivo' : ($method === 'transfer' ? 'Transferencia' : '—') }}
+                                @php($method = $record['payment_methods'][0] ?? null)
+                                <span class="badge badge-method">
+                                    {{ \App\Models\PaymentMethod::label($method) }}
                                 </span>
                             </td>
                             <td class="price" style="text-align: right;">{{ $fmt($record['amount']) }}</td>
@@ -373,9 +411,7 @@
                             <td style="text-align: center;">{{ $record['tickets_count'] }} {{ $record['tickets_count'] === 1 ? 'boleto' : 'boletos' }}</td>
                             <td style="text-align: center;">
                                 @foreach ($record['payment_methods'] as $method)
-                                    <span class="badge {{ $method === 'cash' ? 'badge-cash' : 'badge-transfer' }}" style="margin-right: 3px;">
-                                        {{ $method === 'cash' ? 'Efectivo' : ($method === 'transfer' ? 'Transferencia' : '—') }}
-                                    </span>
+                                    <span class="badge badge-method" style="margin-right: 3px;">{{ \App\Models\PaymentMethod::label($method) }}</span>
                                 @endforeach
                             </td>
                             <td class="price" style="text-align: right;">{{ $fmt($record['amount']) }}</td>

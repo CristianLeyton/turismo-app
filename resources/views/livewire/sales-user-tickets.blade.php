@@ -19,16 +19,6 @@
                     <p class="mt-0.5 text-lg font-bold text-gray-900 dark:text-white">
                         {{ $this->totals['tickets_count'] }}</p>
                 </div>
-                <div class="rounded-lg bg-emerald-500/10 p-3">
-                    <p class="text-xs text-emerald-700 dark:text-emerald-400">Ventas efectivo</p>
-                    <p class="mt-0.5 text-lg font-bold text-emerald-700 dark:text-emerald-400">
-                        {{ $this->money($this->totals['cash']) }}</p>
-                </div>
-                <div class="rounded-lg bg-sky-500/10 p-3">
-                    <p class="text-xs text-sky-700 dark:text-sky-400">Ventas transferencia</p>
-                    <p class="mt-0.5 text-lg font-bold text-sky-700 dark:text-sky-400">
-                        {{ $this->money($this->totals['transfer']) }}</p>
-                </div>
                 <div class="rounded-lg bg-fuchsia-500/10 p-3">
                     <p class="text-xs text-fuchsia-700 dark:text-fuchsia-400">Total ventas</p>
                     <p class="mt-0.5 text-lg font-bold text-fuchsia-700 dark:text-fuchsia-400">
@@ -42,16 +32,6 @@
                     <p class="mt-0.5 text-lg font-bold text-amber-700 dark:text-amber-400">
                         {{ $this->totals['payments_count'] }}</p>
                 </div>
-                <div class="rounded-lg bg-emerald-500/10 p-3">
-                    <p class="text-xs text-emerald-700 dark:text-emerald-400">Pagos efectivo</p>
-                    <p class="mt-0.5 text-lg font-bold text-emerald-700 dark:text-emerald-400">
-                        {{ $this->money($this->totals['payments_cash']) }}</p>
-                </div>
-                <div class="rounded-lg bg-sky-500/10 p-3">
-                    <p class="text-xs text-sky-700 dark:text-sky-400">Pagos transferencia</p>
-                    <p class="mt-0.5 text-lg font-bold text-sky-700 dark:text-sky-400">
-                        {{ $this->money($this->totals['payments_transfer']) }}</p>
-                </div>
                 <div class="rounded-lg bg-amber-500/10 p-3">
                     <p class="text-xs text-amber-700 dark:text-amber-400">Total pagos</p>
                     <p class="mt-0.5 text-lg font-bold text-amber-700 dark:text-amber-400">
@@ -59,6 +39,48 @@
                 </div>
             @endif
         </div>
+
+        {{-- Desglose por método de pago (plegable, anti-caos) --}}
+        @php($breakdown = $this->methodBreakdown)
+        @if (count($breakdown) > 0)
+            <details class="mt-3 rounded-lg border border-gray-200 dark:border-white/10">
+                <summary class="cursor-pointer select-none px-4 py-2.5 text-xs font-medium uppercase tracking-wide text-gray-500 transition hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+                    Desglose por método de pago ({{ count($breakdown) }})
+                </summary>
+                <div class="overflow-x-auto px-4 pb-3">
+                    <table class="w-full text-sm">
+                        <thead>
+                            <tr class="text-left text-xs text-gray-400 dark:text-gray-500">
+                                <th class="py-1.5 font-medium">Método</th>
+                                @if ($this->type !== 'payments')
+                                    <th class="py-1.5 text-right font-medium">Ventas</th>
+                                @endif
+                                @if ($this->type !== 'tickets')
+                                    <th class="py-1.5 text-right font-medium">Pagos</th>
+                                @endif
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach ($breakdown as $row)
+                                <tr class="border-t border-gray-100 dark:border-white/5">
+                                    <td class="py-1.5">
+                                        <span class="rounded-full px-2 py-0.5 text-[11px] font-semibold {{ \App\Models\PaymentMethod::badgeClasses($row['code']) }}">
+                                            {{ $row['label'] }}
+                                        </span>
+                                    </td>
+                                    @if ($this->type !== 'payments')
+                                        <td class="py-1.5 text-right font-medium">{{ $this->money($row['ventas']) }}</td>
+                                    @endif
+                                    @if ($this->type !== 'tickets')
+                                        <td class="py-1.5 text-right font-medium">{{ $this->money($row['pagos']) }}</td>
+                                    @endif
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+            </details>
+        @endif
 
         @if ($this->type === 'all')
             <div
@@ -139,18 +161,16 @@
                     </div>
                 </div>
 
-                {{-- Método de pago --}}
-                <div class="flex flex-wrap items-center gap-2">
-                    <span class="text-xs font-medium text-gray-500 dark:text-gray-400">Metodo de pago</span>
-                    <div class="inline-flex max-w-full overflow-x-auto rounded-lg bg-gray-200/80 p-1 dark:bg-white/10">
-                        @foreach (['all' => 'Todos', 'cash' => 'Efectivo', 'transfer' => 'Transferencia'] as $value => $label)
-                            <button type="button" wire:click="$set('payment', '{{ $value }}')"
-                                class="whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition
-                                    {{ $this->payment === $value
-                                        ? 'bg-white text-gray-900 shadow-sm dark:bg-gray-700 dark:text-white'
-                                        : 'text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white' }}">{{ $label }}</button>
+                {{-- Método de pago (select nativo: no desborda en mobile y escala con métodos ilimitados) --}}
+                <div class="w-full sm:w-auto">
+                    <label for="tickets-payment"
+                        class="mb-1 text-xs font-medium text-gray-500 dark:text-gray-400">Metodo de pago</label>
+                    <select id="tickets-payment" wire:model.live="payment"
+                        class="w-full rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 focus:border-fuchsia-500 focus:ring-1 focus:ring-fuchsia-500 dark:border-white/10 dark:bg-gray-900 dark:text-gray-200 sm:w-auto">
+                        @foreach (array_merge(['all' => 'Todos'], \App\Models\PaymentMethod::options()) as $value => $label)
+                            <option value="{{ $value }}">{{ $label }}</option>
                         @endforeach
-                    </div>
+                    </select>
                 </div>
 
                 <button type="button" wire:click="resetFilters"

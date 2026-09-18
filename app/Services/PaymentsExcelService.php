@@ -19,7 +19,7 @@ class PaymentsExcelExport implements FromView, WithStyles, WithTitle
     /**
      * @param  Collection<int, Payment>  $payments
      * @param  array{from: ?string, to: ?string}  $filters
-     * @param  array{count: int, cash: float, transfer: float, total: float}  $totals
+     * @param  array{count: int, total: float}  $totals
      */
     public function __construct(Collection $payments, array $filters, array $totals)
     {
@@ -64,7 +64,7 @@ class PaymentsExcelService
      *
      * @param  Collection<int, Payment>  $payments
      * @param  array{from: ?string, to: ?string}  $filters
-     * @param  array{count: int, cash: float, transfer: float, total: float}  $totals
+     * @param  array{count: int, total: float}  $totals
      */
     public function generate(Collection $payments, array $filters, array $totals)
     {
@@ -76,7 +76,7 @@ class PaymentsExcelService
      *
      * @param  Collection<int, Payment>  $payments
      * @param  array{from: ?string, to: ?string}  $filters
-     * @param  array{count: int, cash: float, transfer: float, total: float}  $totals
+     * @param  array{count: int, total: float}  $totals
      */
     public function download(Collection $payments, array $filters, array $totals, string $filename)
     {

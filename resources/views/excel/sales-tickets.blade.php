@@ -4,11 +4,9 @@
         'payments' => 'Solo pagos',
         default => 'Ventas y pagos',
     };
-    $paymentLabel = match ($filters['payment']) {
-        'cash' => 'Efectivo',
-        'transfer' => 'Transferencia',
-        default => 'Todos',
-    };
+    $paymentLabel = filled($filters['payment_label'] ?? null)
+        ? $filters['payment_label']
+        : 'Todos';
     $fmt = fn ($value) => number_format((float) $value, 0, ',', '.');
     $salesCount = $records->where('type', 'sale')->count();
     $groupedPaymentsCount = $records->where('type', 'payment')->count();
@@ -54,7 +52,7 @@
                 <td>Pago #{{ $record['id'] }}</td>
                 <td>{{ $record['model']->payment_date?->format('d/m/Y') ?? '-' }}</td>
                 <td>-</td>
-                <td>{{ ($record['payment_methods'][0] ?? null) === 'cash' ? 'Efectivo' : (($record['payment_methods'][0] ?? null) === 'transfer' ? 'Transferencia' : '-') }}</td>
+                <td>{{ \App\Models\PaymentMethod::label($record['payment_methods'][0] ?? null) }}</td>
                 <td>${{ $fmt($record['amount']) }}</td>
                 <td>Pago recibido</td>
             </tr>
@@ -64,7 +62,7 @@
                 <td>{{ $record['date']?->format('d/m/Y H:i') ?? '-' }}</td>
                 <td>{{ $record['tickets_count'] }}</td>
                 <td>
-                    @php($methods = collect($record['payment_methods'])->map(fn ($m) => $m === 'cash' ? 'Efectivo' : ($m === 'transfer' ? 'Transferencia' : '-'))->implode(' / '))
+                    @php($methods = collect($record['payment_methods'])->map(fn ($m) => \App\Models\PaymentMethod::label($m))->implode(' / '))
                     {{ $methods !== '' ? $methods : '-' }}
                 </td>
                 <td>${{ $fmt($record['amount']) }}</td>
@@ -78,19 +76,7 @@
     @endforelse
     @if ($filters['type'] !== 'payments')
         <tr>
-            <td colspan="3" style="font-weight: bold;">Total boletos: {{ $totals['tickets_count'] }}</td>
-            <td style="font-weight: bold;">Efectivo</td>
-            <td style="font-weight: bold;">${{ $fmt($totals['cash']) }}</td>
-            <td></td>
-        </tr>
-        <tr>
-            <td colspan="3"></td>
-            <td style="font-weight: bold;">Transferencia</td>
-            <td style="font-weight: bold;">${{ $fmt($totals['transfer']) }}</td>
-            <td></td>
-        </tr>
-        <tr>
-            <td colspan="3" style="font-weight: bold;">Ventas: {{ $salesCount }}</td>
+            <td colspan="3" style="font-weight: bold;">Total boletos: {{ $totals['tickets_count'] }} · Ventas: {{ $salesCount }}</td>
             <td style="font-weight: bold;">Total ventas</td>
             <td style="font-weight: bold;">${{ $fmt($totals['ventas_total']) }}</td>
             <td></td>
@@ -99,23 +85,33 @@
     @if ($filters['type'] !== 'tickets')
         <tr>
             <td colspan="3" style="font-weight: bold;">Pagos recibidos: {{ $groupedPaymentsCount }}</td>
-            <td style="font-weight: bold;">Pagos efectivo</td>
-            <td style="font-weight: bold;">${{ $fmt($totals['payments_cash']) }}</td>
-            <td></td>
-        </tr>
-        <tr>
-            <td colspan="3"></td>
-            <td style="font-weight: bold;">Pagos transferencia</td>
-            <td style="font-weight: bold;">${{ $fmt($totals['payments_transfer']) }}</td>
-            <td></td>
-        </tr>
-        <tr>
-            <td colspan="3" style="font-weight: bold;">Total pagos</td>
             <td style="font-weight: bold;">Total pagos</td>
             <td style="font-weight: bold;">${{ $fmt($totals['payments_total']) }}</td>
             <td></td>
         </tr>
     @endif
+    {{-- Desglose por método de pago (dinámico) --}}
+    @foreach (($totals['method_breakdown'] ?? []) as $row)
+        <tr>
+            <td colspan="3" style="font-weight: bold;">Método: {{ $row['label'] }}</td>
+            @if ($filters['type'] !== 'payments')
+                <td style="font-weight: bold;">Ventas</td>
+                <td style="font-weight: bold;">${{ $fmt($row['ventas']) }}</td>
+            @else
+                <td style="font-weight: bold;">Pagos</td>
+                <td style="font-weight: bold;">${{ $fmt($row['pagos']) }}</td>
+            @endif
+            <td></td>
+        </tr>
+        @if ($filters['type'] === 'all')
+            <tr>
+                <td colspan="3"></td>
+                <td style="font-weight: bold;">Pagos</td>
+                <td style="font-weight: bold;">${{ $fmt($row['pagos']) }}</td>
+                <td></td>
+            </tr>
+        @endif
+    @endforeach
     @if ($filters['type'] === 'all')
         <tr>
             <td colspan="3" style="font-weight: bold;">Saldo (ventas − pagos)</td>

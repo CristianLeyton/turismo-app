@@ -49,16 +49,8 @@ class TicketInfolist
                         TextEntry::make('payment_method')
                             ->label('Método de pago')
                             ->badge()
-                            ->formatStateUsing(fn($state) => match ($state) {
-                                'cash' => 'Efectivo',
-                                'transfer' => 'Transferencia',
-                                default => 'N/A',
-                            })
-                            ->color(fn($state) => match ($state) {
-                                'cash' => 'success',
-                                'transfer' => 'info',
-                                default => 'gray',
-                            }),
+                            ->formatStateUsing(fn($state) => \App\Models\PaymentMethod::label($state))
+                            ->color(fn($state) => \App\Models\PaymentMethod::color($state)),
                         TextEntry::make('sale.user.name')
                             ->label('Vendedor')
                             ->badge()

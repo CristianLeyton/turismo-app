@@ -72,14 +72,9 @@
             font-weight: bold;
         }
 
-        .badge-cash {
-            background: #dcfce7;
-            color: #166534;
-        }
-
-        .badge-transfer {
-            background: #e0f2fe;
-            color: #075985;
+        .badge-method {
+            background: #f3f4f6;
+            color: #374151;
         }
 
         .amount {
@@ -159,18 +154,6 @@
                     </div>
                 </td>
                 <td>
-                    <div class="rbox rb-emerald">
-                        <p class="rlabel">Efectivo</p>
-                        <p class="rvalue">{{ $fmt($totals['cash']) }}</p>
-                    </div>
-                </td>
-                <td>
-                    <div class="rbox rb-sky">
-                        <p class="rlabel">Transferencia</p>
-                        <p class="rvalue">{{ $fmt($totals['transfer']) }}</p>
-                    </div>
-                </td>
-                <td>
                     <div class="rbox rb-amber">
                         <p class="rlabel">Total cobrado</p>
                         <p class="rvalue">{{ $fmt($totals['total']) }}</p>
@@ -204,8 +187,8 @@
                             {{ $payment->user ? trim($payment->user->name . ' ' . ($payment->user->surname ?? '')) : '—' }}
                         </td>
                         <td style="text-align: center;">
-                            <span class="badge {{ $payment->payment_method === 'cash' ? 'badge-cash' : 'badge-transfer' }}">
-                                {{ $payment->payment_method === 'cash' ? 'Efectivo' : 'Transferencia' }}
+                            <span class="badge badge-method">
+                                {{ \App\Models\PaymentMethod::label($payment->payment_method) }}
                             </span>
                         </td>
                         <td class="amount">{{ $fmt($payment->amount) }}</td>

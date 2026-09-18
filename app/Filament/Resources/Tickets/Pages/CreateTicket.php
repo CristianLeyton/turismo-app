@@ -4,6 +4,7 @@ namespace App\Filament\Resources\Tickets\Pages;
 
 use App\Filament\Resources\Tickets\TicketResource;
 use App\Models\Passenger;
+use App\Models\PaymentMethod;
 use App\Models\Ticket;
 use App\Models\Trip;
 use App\Models\Route;
@@ -272,6 +273,34 @@ class CreateTicket extends CreateRecord
                     ->title('No se puede completar la venta')
                     ->icon('heroicon-m-shield-exclamation')
                     ->body('Hay pasajeros con prohibición de compra: ' . $details)
+                    ->danger()
+                    ->persistent()
+                    ->send();
+
+                $this->halt();
+
+                return $data;
+            }
+        }
+
+        // 0.b Validar que los métodos de pago enviados existan y estén activos.
+        // La columna ya no es ENUM (es VARCHAR + FK), así que la DB no rechaza
+        // códigos raros por sí sola; validamos contra los métodos activos.
+        $sentMethods = collect($data['passengers'] ?? [])
+            ->pluck('payment_method')
+            ->filter(fn ($method) => filled($method))
+            ->unique()
+            ->values();
+
+        if ($sentMethods->isNotEmpty()) {
+            $validMethods = array_keys(PaymentMethod::options());
+            $invalidMethods = $sentMethods->reject(fn ($method) => in_array($method, $validMethods, true));
+
+            if ($invalidMethods->isNotEmpty()) {
+                Notification::make()
+                    ->title('No se puede completar la venta')
+                    ->icon('heroicon-m-banknotes')
+                    ->body('Hay un método de pago inválido o inactivo en la venta. Recargá el formulario e intentá de nuevo.')
                     ->danger()
                     ->persistent()
                     ->send();

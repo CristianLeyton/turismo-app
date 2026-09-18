@@ -13,7 +13,7 @@ class PaymentsPdfService
      *
      * @param  Collection<int, Payment>  $payments
      * @param  array{from: ?string, to: ?string}  $filters
-     * @param  array{count: int, cash: float, transfer: float, total: float}  $totals
+     * @param  array{count: int, total: float}  $totals
      */
     public function generate(Collection $payments, array $filters, array $totals)
     {
@@ -45,7 +45,7 @@ class PaymentsPdfService
      *
      * @param  Collection<int, Payment>  $payments
      * @param  array{from: ?string, to: ?string}  $filters
-     * @param  array{count: int, cash: float, transfer: float, total: float}  $totals
+     * @param  array{count: int, total: float}  $totals
      */
     public function download(Collection $payments, array $filters, array $totals, string $filename)
     {

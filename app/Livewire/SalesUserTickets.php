@@ -3,6 +3,7 @@
 namespace App\Livewire;
 
 use App\Models\Payment;
+use App\Models\PaymentMethod;
 use App\Models\Sale;
 use App\Models\Ticket;
 use App\Models\User;
@@ -24,7 +25,7 @@ class SalesUserTickets extends Component
 
     public ?string $to = null;
 
-    /** Método de pago: all | cash | transfer */
+    /** Método de pago: 'all' o el código del método (resuelto dinámicamente) */
     public string $payment = 'all';
 
     /** Tipo de registro: all (boletos + pagos) | tickets | payments */
@@ -260,54 +261,76 @@ class SalesUserTickets extends Component
      *     count: int,
      *     tickets_count: int,
      *     payments_count: int,
-     *     cash: float,
-     *     transfer: float,
      *     ventas_total: float,
-     *     payments_cash: float,
-     *     payments_transfer: float,
      *     payments_total: float,
      *     saldo: float,
+     *     method_breakdown: array,
      * }
      */
     public function getTotalsProperty(): array
     {
         $records = $this->allRecords;
 
-        $cash = $records->where('type', 'ticket')->where('payment_method', 'cash')->sum('amount');
-        $transfer = $records->where('type', 'ticket')->where('payment_method', 'transfer')->sum('amount');
-        $paymentsCash = $records->where('type', 'payment')->where('payment_method', 'cash')->sum('amount');
-        $paymentsTransfer = $records->where('type', 'payment')->where('payment_method', 'transfer')->sum('amount');
+        // Independiente del método: suma sobre todos los códigos existentes.
+        $ventas = $records->where('type', 'ticket')->sum('amount');
+        $pagos = $records->where('type', 'payment')->sum('amount');
 
         return [
             'count' => $records->count(),
             'tickets_count' => $records->where('type', 'ticket')->count(),
             'payments_count' => $records->where('type', 'payment')->count(),
-            'cash' => $cash,
-            'transfer' => $transfer,
-            'ventas_total' => $cash + $transfer,
-            'payments_cash' => $paymentsCash,
-            'payments_transfer' => $paymentsTransfer,
-            'payments_total' => $paymentsCash + $paymentsTransfer,
-            'saldo' => ($cash + $transfer) - ($paymentsCash + $paymentsTransfer),
+            'ventas_total' => $ventas,
+            'payments_total' => $pagos,
+            'saldo' => $ventas - $pagos,
+            // Desglose por método: lo consumen el modal y los exports.
+            'method_breakdown' => $this->methodBreakdown,
         ];
     }
 
     public function paymentLabel(?string $method): string
     {
-        return match ($method) {
-            'cash' => 'Efectivo',
-            'transfer' => 'Transferencia',
-            default => '—',
-        };
+        return PaymentMethod::label($method);
     }
 
     public function paymentBadgeClasses(?string $method): string
     {
-        return match ($method) {
-            'cash' => 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400',
-            'transfer' => 'bg-sky-500/10 text-sky-700 dark:text-sky-400',
-            default => 'bg-gray-500/10 text-gray-600 dark:text-gray-300',
-        };
+        return PaymentMethod::badgeClasses($method);
+    }
+
+    /**
+     * Desglose de ventas y pagos por método de pago, en el orden definido
+     * en la tabla payment_methods. Solo incluye métodos con monto > 0.
+     *
+     * @return array<int, array{code: string, label: string, color: string, ventas: float, pagos: float}>
+     */
+    public function getMethodBreakdownProperty(): array
+    {
+        $breakdown = [];
+
+        foreach (PaymentMethod::allWithState() as $code => $meta) {
+            $ventas = $this->allRecords
+                ->where('type', 'ticket')
+                ->where('payment_method', $code)
+                ->sum('amount');
+            $pagos = $this->allRecords
+                ->where('type', 'payment')
+                ->where('payment_method', $code)
+                ->sum('amount');
+
+            if ($ventas == 0.0 && $pagos == 0.0) {
+                continue;
+            }
+
+            $breakdown[] = [
+                'code' => $code,
+                'label' => $meta['label'],
+                'color' => $meta['color'],
+                'ventas' => (float) $ventas,
+                'pagos' => (float) $pagos,
+            ];
+        }
+
+        return $breakdown;
     }
 
     public function money(float|int $amount): string
@@ -352,7 +375,7 @@ class SalesUserTickets extends Component
     /**
      * Contexto de filtros usado por las exportaciones.
      *
-     * @return array{from: ?string, to: ?string, payment: string, type: string}
+     * @return array{from: ?string, to: ?string, payment: string, payment_label: ?string, type: string}
      */
     protected function getExportContext(): array
     {
@@ -360,6 +383,7 @@ class SalesUserTickets extends Component
             'from' => $this->from,
             'to' => $this->to,
             'payment' => $this->payment,
+            'payment_label' => $this->payment !== 'all' ? PaymentMethod::label($this->payment) : null,
             'type' => $this->type,
         ];
     }

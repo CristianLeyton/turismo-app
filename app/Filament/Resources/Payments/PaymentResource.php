@@ -26,7 +26,6 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
-use Filament\Tables\Columns\Summarizers\Summarizer;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Filters\Filter;
@@ -80,6 +79,14 @@ class PaymentResource extends Resource
         ];
     }
 
+    /**
+     * Formato de moneda público para la vista del resumen.
+     */
+    public static function formatMoneyPublic(float|int $amount): string
+    {
+        return static::formatMoney((float) $amount);
+    }
+
     public static function form(Schema $schema): Schema
     {
         return $schema
@@ -128,6 +135,33 @@ class PaymentResource extends Resource
             ]);
     }
 
+    /**
+     * Totales de la tabla con los filtros vigentes (fechas, vendedor,
+     * eliminados, búsqueda). Es la MISMA fuente de verdad que usan los
+     * exports; lo consume la tarjeta de resumen inyectada vía render hook
+     * (resources/views/filament/resources/payments/summary-card.blade.php).
+     *
+     * @return array{count: int, total: float, from: ?string, to: ?string}
+     */
+    public static function mobileSummaryTotals(): array
+    {
+        $livewire = \Livewire\Livewire::current();
+
+        if (! $livewire instanceof \App\Filament\Resources\Payments\Pages\ManagePayments) {
+            return ['count' => 0, 'total' => 0.0, 'from' => null, 'to' => null];
+        }
+
+        $state = $livewire->getTableFiltersForm()?->getState() ?? [];
+        $totals = static::footerTotals($livewire->getFilteredTableQuery()->toBase());
+
+        return [
+            'count' => $totals['count'],
+            'total' => $totals['total'],
+            'from' => $state['date_range']['from'] ?? null,
+            'to' => $state['date_range']['to'] ?? null,
+        ];
+    }
+
     public static function table(Table $table): Table
     {
         return $table
@@ -156,15 +190,7 @@ class PaymentResource extends Resource
                     ->formatStateUsing(fn(Model $record): string => static::formatMoney((float) $record->amount))
                     ->weight('bold')
                     ->sortable()
-                    ->alignEnd()
-                    ->summarize([
-                        Summarizer::make()
-                            ->label('Cantidad')
-                            ->using(fn (QueryBuilder $query): int => static::footerTotals($query)['count']),
-                        Summarizer::make()
-                            ->label('Total cobrado')
-                            ->using(fn (QueryBuilder $query): string => static::formatMoney(static::footerTotals($query)['total'])),
-                    ]),
+                    ->alignEnd(),
                 TextColumn::make('payment_method')
                     ->label('Método')
                     ->badge()
@@ -240,6 +266,7 @@ class PaymentResource extends Resource
             ])
             ->filtersLayout(FiltersLayout::AboveContent)
             ->deferFilters(false)
+            ->paginated(false) // Consistente con Ventas: todos los pagos del período, sin paginación.
             ->filtersFormColumns(3)
             ->persistFiltersInSession()
             ->hiddenFilterIndicators()

@@ -24,7 +24,6 @@ use Filament\Resources\Resource;
 use Filament\Support\Enums\Width;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
-use Filament\Tables\Columns\Summarizers\Summarizer;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\TrashedFilter;
 use Filament\Tables\Table;
@@ -191,6 +190,68 @@ class SalesResource extends Resource
         ];
     }
 
+    /**
+     * Totales agregados de la tabla con los filtros vigentes (fechas, método
+     * de pago, búsqueda). Es la MISMA fuente de verdad que la fila "Resumen"
+     * del footer de escritorio; lo consume la tarjeta mobile-only inyectada
+     * vía render hook (resources/views/filament/resources/sales/summary-card).
+     *
+     * @return array{boletos: int, ventas: float, pagos_count: int, pagos: float, saldo: float, from: ?string, to: ?string}
+     */
+    public static function mobileSummaryTotals(): array
+    {
+        $livewire = \Livewire\Livewire::current();
+
+        if (! $livewire instanceof \App\Filament\Resources\Sales\Pages\ManageSales) {
+            return ['boletos' => 0, 'ventas' => 0.0, 'pagos_count' => 0, 'pagos' => 0.0, 'saldo' => 0.0, 'from' => null, 'to' => null];
+        }
+
+        $state = $livewire->getTableFiltersForm()?->getState() ?? [];
+        $from = $state['date_range']['from'] ?? null;
+        $to = $state['date_range']['to'] ?? null;
+
+        // Mismo criterio que el filtro: "Hasta" incluye el día completo.
+        if ($to) {
+            $to = Carbon::parse($to)->endOfDay();
+        }
+
+        $methods = array_values($state['payment_method']['methods'] ?? []);
+        // Los helpers del footer esperan el Query\Builder base (igual que
+        // Filament les pasa a los Summarizer::using()).
+        $query = $livewire->getFilteredTableQuery()->toBase();
+
+        $ventas = static::sumTicketsForFooter($query, null, $methods, $from, $to);
+        $pagos = static::paymentsForFooter($query, $from, $to);
+
+        $boletos = DB::table('tickets')
+            ->join('sales', 'sales.id', '=', 'tickets.sale_id')
+            ->whereNull('sales.deleted_at')
+            ->whereNull('tickets.deleted_at')
+            ->whereIn('sales.user_id', (clone $query)->pluck('users.id'))
+            ->when($from, fn ($q, $date) => $q->where('sales.sale_date', '>=', $date))
+            ->when($to, fn ($q, $date) => $q->where('sales.sale_date', '<=', $date))
+            ->when($methods !== [], fn ($q) => $q->whereIn('tickets.payment_method', $methods))
+            ->count();
+
+        return [
+            'boletos' => $boletos,
+            'ventas' => $ventas,
+            'pagos_count' => $pagos['count'],
+            'pagos' => $pagos['sum'],
+            'saldo' => $ventas - $pagos['sum'],
+            'from' => $state['date_range']['from'] ?? null,
+            'to' => $state['date_range']['to'] ?? null,
+        ];
+    }
+
+    /**
+     * Formato de moneda público para la vista del resumen mobile.
+     */
+    public static function formatMoneyPublic(float|int $amount): string
+    {
+        return static::formatMoney((float) $amount);
+    }
+
     public static function table(Table $table): Table
     {
         // Rango de fechas actualmente seleccionado. Se completa dentro del
@@ -245,24 +306,7 @@ class SalesResource extends Resource
                             static::ticketsCountSubquery($dateFilter['from'], $dateFilter['to'], $methodFilter),
                             $direction
                         );
-                    })
-                    ->summarize(
-                        Summarizer::make()
-                            ->label('Total')
-                            ->extraAttributes(['class' => 'hidden md:flex md:flex-col'])
-                            ->using(function (QueryBuilder $query) use (&$dateFilter): int {
-                                $userIds = (clone $query)->pluck('users.id');
-
-                                return DB::table('tickets')
-                                    ->join('sales', 'sales.id', '=', 'tickets.sale_id')
-                                    ->whereIn('sales.user_id', $userIds)
-                                    ->whereNull('sales.deleted_at')
-                                    ->whereNull('tickets.deleted_at')
-                                    ->when($dateFilter['from'], fn($q, $date) => $q->where('sales.sale_date', '>=', $date))
-                                    ->when($dateFilter['to'], fn($q, $date) => $q->where('sales.sale_date', '<=', $date))
-                                    ->count();
-                            })
-                    ),
+                    }),
                 // Una sola columna de dinero: el desglose por método de pago
                 // vive en el filtro del modal de detalle y en su desglose plegable.
                 TextColumn::make('total_amount')
@@ -285,17 +329,7 @@ class SalesResource extends Resource
                             static::ticketsSumSubquery(null, [], $dateFilter['from'], $dateFilter['to']),
                             $direction
                         );
-                    })
-                    ->summarize(
-                        Summarizer::make()
-                            ->label('Total')
-                            ->extraAttributes(['class' => 'hidden md:flex md:flex-col'])
-                            ->using(function (QueryBuilder $query) use (&$dateFilter): string {
-                                return static::formatMoney(
-                                    static::sumTicketsForFooter($query, null, [], $dateFilter['from'], $dateFilter['to'])
-                                );
-                            })
-                    ),
+                    }),
                 TextColumn::make('payments_count')
                     ->label('Pagos')
                     ->badge()
@@ -313,15 +347,7 @@ class SalesResource extends Resource
                             static::paymentsCountSubquery($dateFilter['from'], $dateFilter['to']),
                             $direction
                         );
-                    })
-                    ->summarize(
-                        Summarizer::make()
-                            ->label('Total')
-                            ->extraAttributes(['class' => 'hidden md:flex md:flex-col'])
-                            ->using(function (QueryBuilder $query) use (&$dateFilter): int {
-                                return static::paymentsForFooter($query, $dateFilter['from'], $dateFilter['to'])['count'];
-                            })
-                    ),
+                    }),
                 TextColumn::make('payments_total')
                     ->label('Total pagos')
                     ->badge()
@@ -342,17 +368,7 @@ class SalesResource extends Resource
                             static::paymentsSumSubquery($dateFilter['from'], $dateFilter['to']),
                             $direction
                         );
-                    })
-                    ->summarize(
-                        Summarizer::make()
-                            ->label('Total')
-                            ->extraAttributes(['class' => 'hidden md:flex md:flex-col'])
-                            ->using(function (QueryBuilder $query) use (&$dateFilter): string {
-                                return static::formatMoney(
-                                    static::paymentsForFooter($query, $dateFilter['from'], $dateFilter['to'])['sum']
-                                );
-                            })
-                    ),
+                    }),
                 TextColumn::make('saldo')
                     ->label('Saldo')
                     ->toggleable()
@@ -385,24 +401,7 @@ class SalesResource extends Resource
                             '(' . $ventas->toSql() . ') - (' . $pagos->toSql() . ') ' . ($direction === 'asc' ? 'asc' : 'desc'),
                             [...$ventas->getBindings(), ...$pagos->getBindings()]
                         );
-                    })
-                    ->summarize(
-                        Summarizer::make()
-                            ->label('Total')
-                            ->extraAttributes(['class' => 'hidden md:flex md:flex-col'])
-                            ->using(function (QueryBuilder $query) use (&$dateFilter): string {
-                                $ventas = static::sumTicketsForFooter(
-                                    $query,
-                                    null,
-                                    [],
-                                    $dateFilter['from'],
-                                    $dateFilter['to']
-                                );
-                                $pagos = static::paymentsForFooter($query, $dateFilter['from'], $dateFilter['to'])['sum'];
-
-                                return static::formatMoney($ventas - $pagos);
-                            })
-                    ),
+                    }),
             ])
             ->recordUrl(null)
             ->recordAction(null)
@@ -431,7 +430,7 @@ class SalesResource extends Resource
                         }
 
                         // Guardamos el rango vigente: lo leen los sortable(query:)
-                        // y los Summarizer::using() de las columnas de arriba.
+                        // de las columnas y la tarjeta de resumen (TOOLBAR_AFTER).
                         $dateFilter['from'] = $from;
                         $dateFilter['to'] = $to;
 
@@ -521,7 +520,7 @@ class SalesResource extends Resource
             ])
             ->filtersLayout(FiltersLayout::AboveContent)
             ->deferFilters(false)
-            ->defaultPaginationPageOption(25)
+            ->paginated(false) // Las filas son vendedores (acotado); el resumen siempre ve todo el período.
             ->filtersFormColumns(1)
             ->persistFiltersInSession()
             ->hiddenFilterIndicators()

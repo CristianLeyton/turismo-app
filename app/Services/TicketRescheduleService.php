@@ -5,12 +5,14 @@ namespace App\Services;
 use App\Models\Seat;
 use App\Models\SeatReservation;
 use App\Models\Schedule;
+use App\Models\Setting;
 use App\Models\Ticket;
 use App\Models\TicketDateChange;
 use App\Models\Trip;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -33,6 +35,25 @@ class TicketRescheduleService
     public const SCOPES = ['outbound', 'both'];
 
     /**
+     * Si el parámetro de configuración lo exige, verifica la contraseña del
+     * admin logueado antes de permitir la reprogramación.
+     *
+     * @throws ValidationException
+     */
+    protected function assertPasswordConfirmed(?string $password): void
+    {
+        if (! Setting::getBool(Setting::REQUIRE_PASSWORD_TICKET_RESCHEDULE)) {
+            return;
+        }
+
+        if (! Hash::check((string) $password, Auth::user()?->password ?? '')) {
+            throw ValidationException::withMessages([
+                'confirm_password' => 'La contraseña no es correcta.',
+            ]);
+        }
+    }
+
+    /**
      * Reprogramar un boleto.
      *
      * @param  Ticket  $ticket  Boleto a mover (ida, o el tramo de vuelta del pasajero)
@@ -44,6 +65,10 @@ class TicketRescheduleService
     public function reschedule(Ticket $ticket, array $data): array
     {
         $this->validateAdmin();
+
+        // Confirmación de contraseña (si el parámetro está activo) antes de
+        // cualquier mutación o reserva: defensa server-side además del form.
+        $this->assertPasswordConfirmed($data['confirm_password'] ?? null);
 
         $this->assertTicketIsReschedulable($ticket);
 

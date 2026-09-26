@@ -125,6 +125,8 @@ class RescheduleTicket extends ResourcePage
                 ->label('Confirmar reprogramación')
                 ->color('success')
                 ->icon('heroicon-m-check-circle')
+                ->requiresConfirmation()
+                ->disabled(fn () => ! $this->form->getState()['date'] || ! $this->form->getState()['schedule_id'] || ! $this->form->getState()['seat_ids'][0])
                 ->action(fn () => $this->confirmReschedule()),
 
             Action::make('cancel_reschedule')
@@ -175,6 +177,11 @@ class RescheduleTicket extends ResourcePage
             $payload['return_schedule_id'] = $data['return_schedule_id'] ?? null;
             $payload['return_seat_id'] = $data['return_seat_ids'][0] ?? null;
         }
+
+        // Confirmación de contraseña (opt-in vía Configuración). El servicio
+        // la valida antes de cualquier mutación y lanza ValidationException
+        // con la clave 'confirm_password'.
+        $payload['confirm_password'] = $data['confirm_password'] ?? null;
 
         try {
             app(TicketRescheduleService::class)->reschedule($ticket, $payload);

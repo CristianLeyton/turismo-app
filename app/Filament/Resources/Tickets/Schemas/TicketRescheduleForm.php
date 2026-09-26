@@ -5,6 +5,7 @@ namespace App\Filament\Resources\Tickets\Schemas;
 use App\Models\Schedule;
 use App\Models\Seat;
 use App\Models\SeatReservation;
+use App\Models\Setting;
 use App\Models\Ticket;
 use App\Models\Trip;
 use Carbon\Carbon;
@@ -12,6 +13,7 @@ use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Radio;
 use Filament\Forms\Components\Select;
+use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\ViewField;
 use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
@@ -150,6 +152,7 @@ class TicketRescheduleForm
 
                         ViewField::make('seat_selector')
                             ->label('Nuevo asiento de ida')
+                            ->columnSpanFull()
                             ->view('tickets.seat-selector')
                             ->visible(fn (Get $get) => filled($get('trip_id')) && Trip::find($get('trip_id')) !== null)
                             ->viewData(function (Get $get, LivewireComponent $livewire) {
@@ -270,6 +273,7 @@ class TicketRescheduleForm
 
                         ViewField::make('return_seat_selector')
                             ->label('Nuevo asiento de vuelta')
+                            ->columnSpanFull()
                             ->view('tickets.seat-selector')
                             ->visible(fn (Get $get) => filled($get('return_trip_id')) && Trip::find($get('return_trip_id')) !== null)
                             ->viewData(function (Get $get, LivewireComponent $livewire) {
@@ -296,6 +300,18 @@ class TicketRescheduleForm
                     ->columns(2)
                     ->visible(fn (LivewireComponent $livewire, Get $get) => $get('scope') === 'both'
                         && self::isOutboundOfRoundTrip(self::ticket($livewire))),
+
+                // Confirmación de contraseña (opt-in vía Configuración).
+                // No es dato del boleto: dehydrated(false) y se lee directo
+                // del estado en RescheduleTicket::confirmReschedule().
+                TextInput::make('confirm_password')
+                    ->label('Tu contraseña')
+                    ->password()
+                    ->revealable()
+                    ->dehydrated(false)
+                    ->required(fn (): bool => Setting::getBool(Setting::REQUIRE_PASSWORD_TICKET_RESCHEDULE))
+                    ->visible(fn (): bool => Setting::getBool(Setting::REQUIRE_PASSWORD_TICKET_RESCHEDULE))
+                    ->helperText('Confirmá tu clave de administrador para ejecutar la reprogramación.'),
             ]);
     }
 

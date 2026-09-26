@@ -6,6 +6,10 @@
     $returnBusName = $returnBusName ?? null;
     $returnOriginName = $returnOriginName ?? null;
     $returnDestinationName = $returnDestinationName ?? null;
+    $departureTime = $departureTime ?? null;
+    $arrivalTime = $arrivalTime ?? null;
+    $returnDepartureTime = $returnDepartureTime ?? null;
+    $returnArrivalTime = $returnArrivalTime ?? null;
     $showReturn = $isRoundTrip && $returnBusName !== null && $returnOriginName !== null && $returnDestinationName !== null;
 @endphp
 @if($busName !== '—' || $originName !== '—' || $destinationName !== '—' || $showReturn)
@@ -16,10 +20,10 @@
         <span class="text-gray-900 dark:text-gray-100">{{ $busName }}</span>
         <span class="text-gray-400 dark:text-gray-500">|</span>
         <span class="font-semibold text-gray-700 dark:text-gray-300">Origen:</span>
-        <span class="text-gray-900 dark:text-gray-100">{{ $originName }}</span>
+        <span class="text-gray-900 dark:text-gray-100">{{ $originName }}@if($departureTime) ({{ \Carbon\Carbon::parse($departureTime)->format('H:i') }}hs)@endif</span>
         <span class="text-gray-400 dark:text-gray-500">|</span>
         <span class="font-semibold text-gray-700 dark:text-gray-300">Destino:</span>
-        <span class="text-gray-900 dark:text-gray-100">{{ $destinationName }}</span>
+        <span class="text-gray-900 dark:text-gray-100">{{ $destinationName }}@if($arrivalTime) ({{ \Carbon\Carbon::parse($arrivalTime)->format('H:i') }}hs)@endif</span>
     </div>
     @if($showReturn)
     <div class="flex flex-wrap items-center gap-x-1.5 gap-y-1 pt-1 border-t border-gray-200 dark:border-gray-600">
@@ -28,10 +32,10 @@
         <span class="text-gray-900 dark:text-gray-100">{{ $returnBusName }}</span>
         <span class="text-gray-400 dark:text-gray-500">|</span>
         <span class="font-semibold text-gray-700 dark:text-gray-300">Origen:</span>
-        <span class="text-gray-900 dark:text-gray-100">{{ $returnOriginName }}</span>
+        <span class="text-gray-900 dark:text-gray-100">{{ $returnOriginName }}@if($returnDepartureTime) ({{ \Carbon\Carbon::parse($returnDepartureTime)->format('H:i') }}hs)@endif</span>
         <span class="text-gray-400 dark:text-gray-500">|</span>
         <span class="font-semibold text-gray-700 dark:text-gray-300">Destino:</span>
-        <span class="text-gray-900 dark:text-gray-100">{{ $returnDestinationName }}</span>
+        <span class="text-gray-900 dark:text-gray-100">{{ $returnDestinationName }}@if($returnArrivalTime) ({{ \Carbon\Carbon::parse($returnArrivalTime)->format('H:i') }}hs)@endif</span>
     </div>
     @endif
 </div>

@@ -11,6 +11,7 @@ use App\Models\Route;
 use App\Models\RouteStop;
 use App\Models\Schedule;
 use App\Models\SeatReservation;
+use App\Services\TripTimesService;
 use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
@@ -1228,15 +1229,35 @@ class TicketForm
                         ViewField::make('wizard_header_ida')
                             ->view('tickets.wizard-step-header')
                             ->viewData(function (Get $get) {
+                                $trip = $get('trip_id') ? Trip::find($get('trip_id')) : null;
                                 $returnTrip = $get('return_trip_id') ? Trip::find($get('return_trip_id')) : null;
+
+                                $times = app(TripTimesService::class);
+                                $idaTimes = $times->getLegTimes(
+                                    $trip,
+                                    $get('schedule_id') ? Schedule::find($get('schedule_id')) : null,
+                                    $get('origin_location_id'),
+                                    $get('destination_location_id'),
+                                );
+                                $vueltaTimes = $times->getLegTimes(
+                                    $returnTrip,
+                                    $get('return_schedule_id') ? Schedule::find($get('return_schedule_id')) : null,
+                                    $get('destination_location_id'),
+                                    $get('origin_location_id'),
+                                );
+
                                 return [
                                     'busName' => $get('bus_id') ? Bus::find($get('bus_id'))?->name : '—',
                                     'originName' => $get('origin_location_id') ? \App\Models\Location::find($get('origin_location_id'))?->name : '—',
                                     'destinationName' => $get('destination_location_id') ? \App\Models\Location::find($get('destination_location_id'))?->name : '—',
+                                    'departureTime' => $idaTimes['departure'],
+                                    'arrivalTime' => $idaTimes['arrival'],
                                     'isRoundTrip' => (bool) $get('is_round_trip') && $get('return_trip_id'),
                                     'returnBusName' => $returnTrip?->bus?->name,
                                     'returnOriginName' => $get('destination_location_id') ? \App\Models\Location::find($get('destination_location_id'))?->name : null,
                                     'returnDestinationName' => $get('origin_location_id') ? \App\Models\Location::find($get('origin_location_id'))?->name : null,
+                                    'returnDepartureTime' => $vueltaTimes['departure'],
+                                    'returnArrivalTime' => $vueltaTimes['arrival'],
                                 ];
                             }),
                         ViewField::make('trip_required_info')
@@ -1503,15 +1524,35 @@ class TicketForm
                         ViewField::make('wizard_header_vuelta')
                             ->view('tickets.wizard-step-header')
                             ->viewData(function (Get $get) {
+                                $trip = $get('trip_id') ? Trip::find($get('trip_id')) : null;
                                 $returnTrip = $get('return_trip_id') ? Trip::find($get('return_trip_id')) : null;
+
+                                $times = app(TripTimesService::class);
+                                $idaTimes = $times->getLegTimes(
+                                    $trip,
+                                    $get('schedule_id') ? Schedule::find($get('schedule_id')) : null,
+                                    $get('origin_location_id'),
+                                    $get('destination_location_id'),
+                                );
+                                $vueltaTimes = $times->getLegTimes(
+                                    $returnTrip,
+                                    $get('return_schedule_id') ? Schedule::find($get('return_schedule_id')) : null,
+                                    $get('destination_location_id'),
+                                    $get('origin_location_id'),
+                                );
+
                                 return [
                                     'busName' => $get('bus_id') ? Bus::find($get('bus_id'))?->name : '—',
                                     'originName' => $get('origin_location_id') ? \App\Models\Location::find($get('origin_location_id'))?->name : '—',
                                     'destinationName' => $get('destination_location_id') ? \App\Models\Location::find($get('destination_location_id'))?->name : '—',
+                                    'departureTime' => $idaTimes['departure'],
+                                    'arrivalTime' => $idaTimes['arrival'],
                                     'isRoundTrip' => (bool) $get('is_round_trip') && $get('return_trip_id'),
                                     'returnBusName' => $returnTrip?->bus?->name,
                                     'returnOriginName' => $get('destination_location_id') ? \App\Models\Location::find($get('destination_location_id'))?->name : null,
                                     'returnDestinationName' => $get('origin_location_id') ? \App\Models\Location::find($get('origin_location_id'))?->name : null,
+                                    'returnDepartureTime' => $vueltaTimes['departure'],
+                                    'returnArrivalTime' => $vueltaTimes['arrival'],
                                 ];
                             }),
                         ViewField::make('return_trip_required_info')
@@ -1695,15 +1736,35 @@ class TicketForm
                         ViewField::make('wizard_header_pasajeros')
                             ->view('tickets.wizard-step-header')
                             ->viewData(function (Get $get) {
+                                $trip = $get('trip_id') ? Trip::find($get('trip_id')) : null;
                                 $returnTrip = $get('return_trip_id') ? Trip::find($get('return_trip_id')) : null;
+
+                                $times = app(TripTimesService::class);
+                                $idaTimes = $times->getLegTimes(
+                                    $trip,
+                                    $get('schedule_id') ? Schedule::find($get('schedule_id')) : null,
+                                    $get('origin_location_id'),
+                                    $get('destination_location_id'),
+                                );
+                                $vueltaTimes = $times->getLegTimes(
+                                    $returnTrip,
+                                    $get('return_schedule_id') ? Schedule::find($get('return_schedule_id')) : null,
+                                    $get('destination_location_id'),
+                                    $get('origin_location_id'),
+                                );
+
                                 return [
                                     'busName' => $get('bus_id') ? Bus::find($get('bus_id'))?->name : '—',
                                     'originName' => $get('origin_location_id') ? \App\Models\Location::find($get('origin_location_id'))?->name : '—',
                                     'destinationName' => $get('destination_location_id') ? \App\Models\Location::find($get('destination_location_id'))?->name : '—',
+                                    'departureTime' => $idaTimes['departure'],
+                                    'arrivalTime' => $idaTimes['arrival'],
                                     'isRoundTrip' => (bool) $get('is_round_trip') && $get('return_trip_id'),
                                     'returnBusName' => $returnTrip?->bus?->name,
                                     'returnOriginName' => $get('destination_location_id') ? \App\Models\Location::find($get('destination_location_id'))?->name : null,
                                     'returnDestinationName' => $get('origin_location_id') ? \App\Models\Location::find($get('origin_location_id'))?->name : null,
+                                    'returnDepartureTime' => $vueltaTimes['departure'],
+                                    'returnArrivalTime' => $vueltaTimes['arrival'],
                                 ];
                             }),
                         /*                         Text::make('Pasajeros seleccionados')

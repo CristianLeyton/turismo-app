@@ -66,7 +66,9 @@ class Route extends Model
      */
     public function lastStop(): ?RouteStop
     {
-        return $this->stops()->latest('stop_order')->first();
+        // reorder() reemplaza el orderBy('stop_order') de la relación stops();
+        // latest() lo agregaba y terminaba devolviendo la PRIMERA parada.
+        return $this->stops()->reorder('stop_order', 'desc')->first();
     }
 
     /**

@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\Tickets\Pages;
 
 use App\Filament\Resources\Tickets\TicketResource;
+use App\Models\Setting;
 use App\Models\Ticket;
 use App\Services\TicketPdfService;
 use Filament\Actions\Action;
@@ -11,7 +12,9 @@ use Filament\Resources\Pages\ViewRecord;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\ForceDeleteAction;
 use Filament\Actions\RestoreAction;
+use Filament\Forms\Components\TextInput;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Hash;
 
 class ViewTicket extends ViewRecord
 {
@@ -33,8 +36,8 @@ class ViewTicket extends ViewRecord
                     return TicketResource::getUrl('reschedule', ['record' => $record])
                         . '?ticket=' . $ticketId;
                 }),
-            DeleteAction::make()->icon('heroicon-m-trash'),
-            ForceDeleteAction::make(),
+            self::configurePasswordConfirmation(DeleteAction::make()->icon('heroicon-m-trash')),
+            self::configurePasswordConfirmation(ForceDeleteAction::make()),
             RestoreAction::make(),
             Action::make('download_pdf')
                 ->label('Descargar')
@@ -70,5 +73,34 @@ class ViewTicket extends ViewRecord
                     );
                 })
         ];
+    }
+
+    /**
+     * Si el parámetro de configuración está activo, exige la contraseña del
+     * admin logueado en el modal de la acción antes de ejecutarla.
+     *
+     * La validación vive como regla del campo password: si no coincide, el
+     * formulario del modal falla y la acción estándar de borrado (con sus
+     * notificaciones y halt) nunca se ejecuta. Sin override del closure de
+     * la acción.
+     */
+    public static function configurePasswordConfirmation(\Filament\Actions\Action $action): \Filament\Actions\Action
+    {
+        return $action
+            ->form(fn (): array => Setting::getBool(Setting::REQUIRE_PASSWORD_TICKET_DELETE)
+                ? [
+                    TextInput::make('password')
+                        ->label('Tu contraseña')
+                        ->password()
+                        ->revealable()
+                        ->required()
+                        ->rule(fn (): \Closure => function (string $attribute, $value, \Closure $fail): void {
+                            if (! Hash::check((string) $value, Auth::user()?->password ?? '')) {
+                                $fail('La contraseña no es correcta.');
+                            }
+                        })
+                        ->helperText('Confirmá tu clave de administrador para ejecutar esta acción.'),
+                ]
+                : []);
     }
 }

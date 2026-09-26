@@ -16,25 +16,15 @@
     $route = $trip?->route ?? $schedule?->route;
     $returnRoute = $returnTrip?->route ?? $returnSchedule?->route;
 
-    $idaBoardingDeparture =
-        $route && $schedule && $get('origin_location_id')
-            ? $route->getDepartureTimeForStop($get('origin_location_id'), $schedule)
-            : $schedule?->departure_time;
+    // Cálculo centralizado (compartido con el header de pasos intermedios del wizard)
+    $timesService = app(\App\Services\TripTimesService::class);
+    $idaTimes = $timesService->getLegTimes($trip, $schedule, $get('origin_location_id'), $get('destination_location_id'));
+    $vueltaTimes = $timesService->getLegTimes($returnTrip, $returnSchedule, $get('destination_location_id'), $get('origin_location_id'));
 
-    $idaBoardingArrival =
-        $route && $schedule && $get('destination_location_id')
-            ? $route->getArrivalTimeForStop($get('destination_location_id'), $schedule)
-            : $schedule?->arrival_time;
-
-    $vueltaBoardingDeparture =
-        $returnRoute && $returnSchedule && $get('destination_location_id')
-            ? $returnRoute->getDepartureTimeForStop($get('destination_location_id'), $returnSchedule)
-            : $returnSchedule?->departure_time;
-
-    $vueltaBoardingArrival =
-        $returnRoute && $returnSchedule && $get('origin_location_id')
-            ? $returnRoute->getArrivalTimeForStop($get('origin_location_id'), $returnSchedule)
-            : $returnSchedule?->arrival_time;
+    $idaBoardingDeparture = $idaTimes['departure'];
+    $idaBoardingArrival = $idaTimes['arrival'];
+    $vueltaBoardingDeparture = $vueltaTimes['departure'];
+    $vueltaBoardingArrival = $vueltaTimes['arrival'];
 
     $passengers = $get('passengers') ?? [];
     $seatIds = $get('seat_ids') ?? [];

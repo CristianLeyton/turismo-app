@@ -28,7 +28,7 @@
     timerKey: 0, // Key para forzar actualización del DOM
     csrfToken: document.querySelector('meta[name=\'csrf-token\']')?.getAttribute('content'),
     componentKey: '{{ time() }}_{{ $fieldId }}_{{ rand() }}',
-    seats: {{ $layoutData['seats'] ? json_encode($layoutData['seats']) : '{}' }},
+    seats: {{ (($layoutData['seats'] ?? null) ? json_encode($layoutData['seats']) : '{}') }},
 
     init() {
 

@@ -41,6 +41,15 @@ class TicketPolicy
     }
 
     /**
+     * Reprogramar un boleto (mover a otra fecha/horario del mismo origen→destino).
+     * NO habilita la edición genérica del boleto.
+     */
+    public function reschedule(User $user): bool
+    {
+        return (bool) $user->is_admin;
+    }
+
+    /**
      * Determine whether the user can delete the model.
      */
     public function delete(User $user, Ticket $ticket): bool

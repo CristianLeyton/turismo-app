@@ -97,6 +97,19 @@
             font-size: 10px;
         }
 
+        .reschedule-mark {
+            background: #fcecff;
+            border: 2px solid #f3e8ff;
+            color: #d946ef;
+            font-size: 11px;
+            font-weight: bold;
+            padding: 2mm;
+            margin-bottom: 2mm;
+            border-radius: 4px;
+            text-align: center;
+            letter-spacing: 0.5px;
+        }
+
         .seat {
             font-size: 18px;
             font-weight: bold;
@@ -216,7 +229,17 @@
                                     $hasChild =
                                         $ticket->travels_with_child && $ticket->passenger->children->isNotEmpty();
                                     $hasPets = $ticket->travels_with_pets && !empty($ticket->pet_names);
+                                    $wasRescheduled = $ticket->wasRescheduled();
                                 @endphp
+
+                                @if ($wasRescheduled)
+                                    @php
+                                        $lastChange = $ticket->dateChanges()->latest('created_at')->first();
+                                    @endphp
+                                    <div class='reschedule-mark'>
+                                        FECHA MODIFICADA EL {{ optional($lastChange?->created_at)->format('d/m/Y H:i') ?? now()->format('d/m/Y H:i') }}
+                                    </div>
+                                @endif
 
                                 @if ($hasChild)
                                     @foreach ($ticket->passenger->children as $child)

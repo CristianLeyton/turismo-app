@@ -11,6 +11,7 @@ use Filament\Resources\Pages\ViewRecord;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\ForceDeleteAction;
 use Filament\Actions\RestoreAction;
+use Illuminate\Support\Facades\Auth;
 
 class ViewTicket extends ViewRecord
 {
@@ -20,6 +21,18 @@ class ViewTicket extends ViewRecord
     {
         return [
             //EditAction::make(),
+            Action::make('reschedule')
+                ->label('Reprogramar boleto')
+                ->icon('heroicon-m-arrow-path')
+                ->color('warning')
+                ->visible(fn (Ticket $record) => (bool) Auth::user()?->is_admin)
+                ->authorize('reschedule')
+                ->url(function (Ticket $record) {
+                    $ticketId = $record->id;
+
+                    return TicketResource::getUrl('reschedule', ['record' => $record])
+                        . '?ticket=' . $ticketId;
+                }),
             DeleteAction::make()->icon('heroicon-m-trash'),
             ForceDeleteAction::make(),
             RestoreAction::make(),

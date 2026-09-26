@@ -12,6 +12,13 @@ return new class extends Migration
      */
     public function up(): void
     {
+        // SQLite no soporta "ALTER TABLE ... MODIFY" (sintaxis MySQL). En SQLite el
+        // enum ya crea un VARCHAR con CHECK, suficiente para el entorno de tests;
+        // la conversión real solo aplica a MySQL (producción).
+        if (DB::connection()->getDriverName() === 'sqlite') {
+            return;
+        }
+
         // --- tickets.payment_method: enum -> VARCHAR(50) + FK ---
         Schema::table('tickets', function (Blueprint $table) {
             // Cambiar el tipo de columna requiere doctrine/dbal en Laravel <11;
@@ -42,6 +49,11 @@ return new class extends Migration
      */
     public function down(): void
     {
+        // SQLite no hizo la conversión (ver up); nada que revertir.
+        if (DB::connection()->getDriverName() === 'sqlite') {
+            return;
+        }
+
         // Soltar las FKs antes de restaurar los enums.
         Schema::table('tickets', function (Blueprint $table) {
             $table->dropForeign(['payment_method']);

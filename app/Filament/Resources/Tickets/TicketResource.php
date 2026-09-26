@@ -5,8 +5,10 @@ namespace App\Filament\Resources\Tickets;
 use App\Filament\Resources\Tickets\Pages\CreateTicket;
 use App\Filament\Resources\Tickets\Pages\EditTicket;
 use App\Filament\Resources\Tickets\Pages\ListTickets;
+use App\Filament\Resources\Tickets\Pages\RescheduleTicket;
 use App\Filament\Resources\Tickets\Pages\ViewTicket;
 use App\Filament\Resources\Tickets\Schemas\TicketForm;
+use App\Filament\Clusters\Tickets\TicketsCluster;
 use App\Filament\Resources\Tickets\Schemas\TicketInfolist;
 use App\Filament\Resources\Tickets\Tables\TicketsTable;
 use App\Models\Ticket;
@@ -25,10 +27,7 @@ class TicketResource extends Resource
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::Ticket;
 
-    public static function shouldRegisterNavigation(): bool
-    {
-        return false;
-    }
+    protected static ?string $cluster = TicketsCluster::class;
 
     protected static ?string $modelLabel = 'boleto';
     protected static ?string $pluralModelLabel = 'Boletos';
@@ -72,6 +71,7 @@ class TicketResource extends Resource
             'index' => ListTickets::route('/'),
             'create' => CreateTicket::route('/create'),
             'view' => ViewTicket::route('/{record}'),
+            'reschedule' => RescheduleTicket::route('/{record}/reschedule'),
             //'edit' => EditTicket::route('/{record}/edit'),
         ];
     }

@@ -49,14 +49,7 @@ class AdminPanelProvider extends PanelProvider
                     ->url(fn() => TicketResource::getUrl('create'))
                     ->label('Vender')
                     ->icon('heroicon-m-banknotes')
-                    ->isActiveWhen(fn() => request()->routeIs('filament.admin.resources.tickets.create'))
-                    ->sort(0),
-
-                NavigationItem::make('Boletos')
-                    ->url(fn() => TicketResource::getUrl())
-                    ->label('Boletos')
-                    ->icon('heroicon-m-ticket')
-                    ->isActiveWhen(fn() => request()->routeIs('filament.admin.resources.tickets.index') || request()->routeIs('filament.admin.resources.tickets.view'))
+                    ->isActiveWhen(fn() => request()->routeIs('filament.admin.tickets.resources.tickets.create'))
                     ->sort(0),
             ])
             ->unsavedChangesAlerts()

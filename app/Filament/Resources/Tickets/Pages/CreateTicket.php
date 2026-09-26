@@ -707,6 +707,22 @@ class CreateTicket extends CreateRecord
             $html .= '<style>' . $matches[1] . '</style>';
         }
 
+        // Marca de reprogramación (mismo estilo que la vista PDF)
+        $html .= '<style>
+        .reschedule-mark {
+            background: #ffedd5;
+            border: 2px solid #ea580c;
+            color: #9a3412;
+            font-size: 11px;
+            font-weight: bold;
+            padding: 2mm;
+            margin-bottom: 2mm;
+            border-radius: 4px;
+            text-align: center;
+            letter-spacing: 0.5px;
+        }
+        </style>';
+
         $html .= '
     <style>
         .ticket-container {
@@ -758,8 +774,22 @@ class CreateTicket extends CreateRecord
     private function generateTicketHTML($sale, $tickets, $passenger, $hasChild): string
     {
         // Determinar si el ticket tiene vuelta
-        $hasReturn = $tickets->first()->is_round_trip && $tickets->first()->returnTrip;
+        $firstTicket = $tickets->first();
+        $hasReturn = $firstTicket->is_round_trip && $firstTicket->returnTrip;
         $cssClass = $hasReturn ? 'with-return' : 'no-return';
+
+        // Marca de reprogramación (el PDF se genera on-demand: el boleto ya movido sale marcado)
+        $rescheduleMark = '';
+        if ($tickets->contains(fn ($t) => $t->wasRescheduled())) {
+            $lastChangeAt = $tickets
+                ->flatMap(fn ($t) => $t->dateChanges)
+                ->sortByDesc('created_at')
+                ->first()?->created_at;
+
+            $rescheduleMark = "<div class='reschedule-mark'>FECHA MODIFICADA EL "
+                . optional($lastChangeAt)->format('d/m/Y H:i')
+                . '</div>';
+        }
 
         // Extraer el HTML de la vista passenger-tickets para un solo pasajero
         $data = [
@@ -774,10 +804,10 @@ class CreateTicket extends CreateRecord
 
         // Extraer solo el contenido dentro del body
         if (preg_match('/<body[^>]*>(.*?)<\/body>/s', $fullHtml, $matches)) {
-            return '<div class="ticket-container ' . $cssClass . '">' . $matches[1] . '</div>';
+            return '<div class="ticket-container ' . $cssClass . '">' . $rescheduleMark . $matches[1] . '</div>';
         }
 
-        return '<div class="ticket-container ' . $cssClass . '">' . $fullHtml . '</div>';
+        return '<div class="ticket-container ' . $cssClass . '">' . $rescheduleMark . $fullHtml . '</div>';
     }
 
     /**

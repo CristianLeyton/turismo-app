@@ -5,6 +5,7 @@ namespace App\Models;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Facades\Auth;
@@ -111,6 +112,37 @@ class Ticket extends Model
     public function deletedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'deleted_by');
+    }
+
+    /**
+     * Historial de reprogramaciones de este boleto (una fila por tramo movido).
+     */
+    public function dateChanges(): HasMany
+    {
+        return $this->hasMany(TicketDateChange::class);
+    }
+
+    /**
+     * ¿El boleto fue reprogramado alguna vez?
+     */
+    public function wasRescheduled(): bool
+    {
+        return $this->dateChanges()->exists();
+    }
+
+    /**
+     * ¿El tramo de vuelta de este boleto fue reprogramado alguna vez?
+     * Las filas leg=return viven bajo el ticket de vuelta (registro hermano de la
+     * misma venta y pasajero), así que se buscan allí.
+     */
+    public function wasReturnLegRescheduled(): bool
+    {
+        return TicketDateChange::query()
+            ->where('leg', TicketDateChange::LEG_RETURN)
+            ->whereHas('ticket', fn ($q) => $q
+                ->where('sale_id', $this->sale_id)
+                ->where('passenger_id', $this->passenger_id))
+            ->exists();
     }
 
     /**

@@ -20,6 +20,7 @@ use Filament\Schemas\Schema;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Auth;
 
+
 class RescheduleTicket extends ResourcePage
 {
     use InteractsWithRecord;
@@ -126,7 +127,14 @@ class RescheduleTicket extends ResourcePage
                 ->color('success')
                 ->icon('heroicon-m-check-circle')
                 ->requiresConfirmation()
-                ->disabled(fn () => ! $this->form->getState()['date'] || ! $this->form->getState()['schedule_id'] || ! $this->form->getState()['seat_ids'][0])
+                ->disabled(function () {
+                    // getRawState() lee el estado sin validar: getState() lanzaría
+                    // ValidationException al renderizar con el formulario aún vacío.
+                    $state = $this->form->getRawState();
+
+                    return blank($state['date'] ?? null)
+                        || blank($state['schedule_id'] ?? null);
+                })
                 ->action(fn () => $this->confirmReschedule()),
 
             Action::make('cancel_reschedule')

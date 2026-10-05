@@ -33,6 +33,25 @@ Formato: `{modulo}.{accion}`, ejemplos: `tickets.create`, `users.delete`, `payme
 
 Acciones estándar: `view_any`, `view`, `create`, `update`, `delete`, `restore`, `force_delete`. Acciones especiales: `tickets.reschedule`, `clients.ban`, `settings.manage`, `roles.assign`.
 
+### Mapeo recurso Filament → módulo
+
+Filament autoriza cada resource con la **policy de su modelo**. El mapeo vigente:
+
+| Recurso | Modelo | Módulo que lo autoriza |
+|---|---|---|
+| Boletos | `Ticket` | `tickets.*` |
+| Clientes | `Clients` | `clients.*` (policy registrada explícitamente: el modelo es plural y el autodescubrimiento no encuentra `ClientsPolicy`) |
+| **Ventas** | `User` | `sales.*` — el recurso lista vendedores, así que define `canViewAny()` propio; sin él la página exigía `users.view_any` |
+| Viajes | `Trip` | `trips.*` |
+| Pagos | `Payment` | `payments.*` |
+| Métodos de pago | `PaymentMethod` | `payment_methods.*` |
+| Usuarios | `User` | `users.*` |
+| Roles y permisos | `Role` | `roles.*` (checks propios en el resource) |
+| Historial | `Ticket` | `ticket_audit.*` (overrides propios) |
+| Flota/ubicaciones | `Bus`, `BusLayoutArea`, `Location`, `Route`, `RouteStop`, `Schedule`, `Seat` | sus módulos `*` vía `AuthorizesModule` |
+
+Ojo al agregar acciones custom dentro de un recurso: usá el módulo correspondiente, no el del modelo del recurso (ej. "Registrar pago" en Ventas exige `payments.create` porque crea un `Payment`).
+
 ## Cómo se usa
 
 ### Crear un rol nuevo (sin tocar código)
@@ -92,3 +111,5 @@ php artisan permission:cache-reset              # Limpia la caché de permisos
 - Idempotencia del catálogo y el comando `permissions:sync`.
 - Roles custom con permisos parciales.
 - Protecciones del recurso de roles (roles del sistema no borrables).
+- Mapeo modelo → policy de cada resource (regresiones de Ventas y Clientes).
+- Botón "Registrar pago" en Ventas visible sólo con `payments.create`.

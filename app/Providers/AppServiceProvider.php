@@ -2,8 +2,10 @@
 
 namespace App\Providers;
 
+use App\Models\Clients;
 use App\Models\User;
 use App\Observers\UserObserver;
+use App\Policies\ClientPolicy;
 use App\Support\Permissions;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
@@ -29,6 +31,13 @@ class AppServiceProvider extends ServiceProvider
         Gate::before(function (User $user, string $ability) {
             return $user->hasRole(Permissions::ROLE_SUPER) ? true : null;
         });
+
+        // El modelo se llama Clients (plural): el autodescubrimiento de
+        // policies busca App\Policies\ClientsPolicy y no lo encuentra, así
+        // que la página de Clientes quedaba sin gate (Filament permite todo
+        // cuando no hay policy). Se registra explícitamente para que se
+        // autorice con los permisos clients.* del catálogo.
+        Gate::policy(Clients::class, ClientPolicy::class);
 
         // Compatibilidad is_admin <=> roles (ver UserObserver).
         User::observe(UserObserver::class);

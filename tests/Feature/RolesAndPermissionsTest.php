@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Support\Permissions;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Gate;
 use Livewire\Livewire;
 use Spatie\Permission\Models\Role;
 use Tests\TestCase;
@@ -399,5 +400,126 @@ class RolesAndPermissionsTest extends TestCase
         $component->callMountedTableAction();
 
         $this->assertSame(['tickets.view_any'], $role->fresh()->permissions->pluck('name')->all());
+    }
+
+    // ====================== Mapeo resource -> módulo ======================
+
+    public function test_cada_modelo_resuelve_su_policy_de_modulo(): void
+    {
+        // Filament autoriza cada resource con la policy de su MODEL. Si el
+        // naming no matchea (ej. modelo Clients vs policy ClientPolicy) la
+        // policy se pierde y la página queda abierta o exige el módulo
+        // equivocado. Este test pilla cualquier desalineación futura.
+        $expected = [
+            \App\Models\Bus::class => \App\Policies\BusPolicy::class,
+            \App\Models\BusLayoutArea::class => \App\Policies\BusLayoutAreaPolicy::class,
+            \App\Models\Clients::class => \App\Policies\ClientPolicy::class,
+            \App\Models\Location::class => \App\Policies\LocationPolicy::class,
+            \App\Models\Payment::class => \App\Policies\PaymentPolicy::class,
+            \App\Models\PaymentMethod::class => \App\Policies\PaymentMethodPolicy::class,
+            \App\Models\Route::class => \App\Policies\RoutePolicy::class,
+            \App\Models\RouteStop::class => \App\Policies\RouteStopPolicy::class,
+            \App\Models\Sale::class => \App\Policies\SalePolicy::class,
+            \App\Models\Schedule::class => \App\Policies\SchedulePolicy::class,
+            \App\Models\Seat::class => \App\Policies\SeatPolicy::class,
+            \App\Models\Ticket::class => \App\Policies\TicketPolicy::class,
+            \App\Models\Trip::class => \App\Policies\TripPolicy::class,
+            \App\Models\User::class => \App\Policies\UserPolicy::class,
+        ];
+
+        foreach ($expected as $model => $policy) {
+            $resolved = Gate::getPolicyFor($model);
+            $resolved = is_object($resolved) ? $resolved::class : $resolved;
+
+            $this->assertSame($policy, $resolved, "El modelo {$model} debe resolver la policy {$policy}.");
+        }
+    }
+
+    public function test_la_pagina_de_ventas_se_autoriza_con_sales_y_no_con_users(): void
+    {
+        // Regresión: el resource de Ventas lista vendedores (model User), así
+        // que Filament resolvía UserPolicy y la página exigía users.view_any:
+        // un rol con permisos de ventas no podía entrar.
+        $salesRole = Role::create(['name' => 'Solo Ventas', 'guard_name' => 'web']);
+        $salesRole->syncPermissions(
+            collect(Permissions::catalog()['sales']['actions'])
+                ->keys()
+                ->map(fn (string $action) => Permissions::permissionName('sales', $action))
+                ->all()
+        );
+
+        $vendedorVentas = User::factory()->create();
+        $vendedorVentas->syncRoles($salesRole);
+
+        $this->actingAs($vendedorVentas);
+
+        $this->assertTrue(\App\Filament\Resources\Sales\SalesResource::canViewAny());
+
+        Livewire::test(\App\Filament\Resources\Sales\Pages\ManageSales::class)
+            ->assertOk();
+
+        // Inverso: tener users.* no habilita la página de Ventas.
+        $usersRole = Role::create(['name' => 'Solo Usuarios', 'guard_name' => 'web']);
+        $usersRole->syncPermissions(['users.view_any']);
+
+        $otro = User::factory()->create();
+        $otro->syncRoles($usersRole);
+
+        $this->actingAs($otro);
+
+        $this->assertFalse(\App\Filament\Resources\Sales\SalesResource::canViewAny());
+    }
+
+    public function test_registrar_pago_desde_ventas_exige_payments_create(): void
+    {
+        $record = User::factory()->create();
+
+        $salesRole = Role::create(['name' => 'Solo Ventas', 'guard_name' => 'web']);
+        $salesRole->syncPermissions(['sales.view_any', 'sales.view']);
+
+        $vendedorVentas = User::factory()->create();
+        $vendedorVentas->syncRoles($salesRole);
+
+        $this->actingAs($vendedorVentas);
+
+        // Sin payments.create el botón no aparece (antes cualquier usuario
+        // podía registrar pagos desde la página de Ventas).
+        Livewire::test(\App\Filament\Resources\Sales\Pages\ManageSales::class)
+            ->assertOk()
+            ->assertTableActionVisible('view_tickets', $record)
+            ->assertTableActionHidden('register_payment', $record);
+
+        $salesRole->givePermissionTo('payments.create');
+        $vendedorVentas->refresh();
+
+        Livewire::test(\App\Filament\Resources\Sales\Pages\ManageSales::class)
+            ->assertOk()
+            ->assertTableActionVisible('register_payment', $record);
+    }
+
+    public function test_la_pagina_de_clientes_se_autoriza_con_clients(): void
+    {
+        // Regresión: el modelo se llama Clients (plural) y la policy
+        // ClientPolicy nunca se autodescubría: la página quedaba abierta
+        // para cualquier usuario del panel, sin importar sus permisos.
+        $usersRole = Role::create(['name' => 'Solo Usuarios', 'guard_name' => 'web']);
+        $usersRole->syncPermissions(['users.view_any']);
+
+        $user = User::factory()->create();
+        $user->syncRoles($usersRole);
+
+        $this->actingAs($user);
+
+        $this->assertFalse(\App\Filament\Resources\Clients\ClientsResource::canViewAny());
+
+        $clientsRole = Role::create(['name' => 'Solo Clientes', 'guard_name' => 'web']);
+        $clientsRole->syncPermissions(['clients.view_any']);
+
+        $otro = User::factory()->create();
+        $otro->syncRoles($clientsRole);
+
+        $this->actingAs($otro);
+
+        $this->assertTrue(\App\Filament\Resources\Clients\ClientsResource::canViewAny());
     }
 }

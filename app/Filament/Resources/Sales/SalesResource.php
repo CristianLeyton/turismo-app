@@ -55,6 +55,15 @@ class SalesResource extends Resource
 
     protected static ?string $recordTitleAttribute = 'username';
 
+    public static function canViewAny(): bool
+    {
+        // Este resource lista vendedores (model User): sin este override,
+        // Filament resolvía UserPolicy y la página exigía users.view_any en
+        // lugar de los permisos sales.* del catálogo (rol con "Ventas" no
+        // entraba). La página se autoriza con el módulo sales.*.
+        return (bool) auth()->user()?->can('sales.view_any');
+    }
+
     public static function form(Schema $schema): Schema
     {
         return $schema
@@ -531,6 +540,7 @@ class SalesResource extends Resource
                     ->color('gray')
                     ->hiddenLabel()
                     ->icon('heroicon-m-eye')
+                    ->visible(fn (): bool => (bool) auth()->user()?->can('sales.view'))
                     ->extraAttributes([
                         'title' => 'Ver detalle',
                     ])
@@ -559,6 +569,9 @@ class SalesResource extends Resource
                     ->hiddenLabel()
                     ->color('success')
                     ->icon(Heroicon::Banknotes)
+                    // Registra un Payment: misma autorización que el botón
+                    // "Nuevo pago" de la página Pagos (PaymentPolicy::create).
+                    ->visible(fn (): bool => (bool) auth()->user()?->can('payments.create'))
                     ->extraAttributes([
                         'title' => 'Registrar pago',
                     ])
@@ -607,6 +620,7 @@ class SalesResource extends Resource
                         ->button()
                         ->color('gray')
                         ->icon('heroicon-m-eye')
+                        ->visible(fn (): bool => (bool) auth()->user()?->can('sales.view'))
                         ->extraAttributes([
                             'title' => 'Ver detalle',
                         ])
@@ -634,6 +648,7 @@ class SalesResource extends Resource
                         ->button()
                         ->color('success')
                         ->icon(Heroicon::Banknotes)
+                        ->visible(fn (): bool => (bool) auth()->user()?->can('payments.create'))
                         ->extraAttributes([
                             'title' => 'Registrar pago',
                         ])

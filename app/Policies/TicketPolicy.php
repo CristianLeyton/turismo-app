@@ -4,36 +4,28 @@ namespace App\Policies;
 
 use App\Models\Ticket;
 use App\Models\User;
-use Illuminate\Auth\Access\Response;
 
 class TicketPolicy
 {
-    /**
-     * Determine whether the user can view any models.
-     */
     public function viewAny(User $user): bool
     {
-        return true;
+        return $user->can('tickets.view_any');
     }
 
-    /**
-     * Determine whether the user can view the model.
-     */
     public function view(User $user, Ticket $ticket): bool
     {
-        return true;
+        return $user->can('tickets.view');
     }
 
-    /**
-     * Determine whether the user can create models.
-     */
     public function create(User $user): bool
     {
-        return true;
+        return $user->can('tickets.create');
     }
 
     /**
-     * Determine whether the user can update the model.
+     * NO habilita la edición genérica del boleto: los boletos son inmutables
+     * por diseño (sólo se reprograman vía RescheduleTicket). No existe el
+     * permiso `tickets.update` en el catálogo.
      */
     public function update(User $user, Ticket $ticket): bool
     {
@@ -42,34 +34,24 @@ class TicketPolicy
 
     /**
      * Reprogramar un boleto (mover a otra fecha/horario del mismo origen→destino).
-     * NO habilita la edición genérica del boleto.
      */
     public function reschedule(User $user): bool
     {
-        return (bool) $user->is_admin;
+        return $user->can('tickets.reschedule');
     }
 
-    /**
-     * Determine whether the user can delete the model.
-     */
     public function delete(User $user, Ticket $ticket): bool
     {
-         return (bool) $user->is_admin;
+        return $user->can('tickets.delete');
     }
 
-    /**
-     * Determine whether the user can restore the model.
-     */
     public function restore(User $user, Ticket $ticket): bool
     {
-         return (bool) $user->is_admin;
+        return $user->can('tickets.restore');
     }
 
-    /**
-     * Determine whether the user can permanently delete the model.
-     */
     public function forceDelete(User $user, Ticket $ticket): bool
     {
-         return (bool) $user->is_admin;
+        return $user->can('tickets.force_delete');
     }
 }

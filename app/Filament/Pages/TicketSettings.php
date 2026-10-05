@@ -3,6 +3,7 @@
 namespace App\Filament\Pages;
 
 use App\Models\Setting;
+use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
@@ -12,10 +13,9 @@ use Filament\Schemas\Components\EmbeddedSchema;
 use Filament\Schemas\Components\Form;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
+use Filament\Support\Icons\Heroicon;
 use Illuminate\Support\Facades\Auth;
 use UnitEnum;
-use BackedEnum;
-use Filament\Support\Icons\Heroicon;
 
 /**
  * Página de configuración del sistema (solo administradores).
@@ -37,13 +37,13 @@ class TicketSettings extends Page
 
     protected ?string $heading = 'Configuración';
 
-    protected static string | UnitEnum | null $navigationGroup = 'Configuración';
+    protected static string|UnitEnum|null $navigationGroup = 'Configuración';
 
     protected static ?int $navigationSort = 100;
 
     public static function canAccess(): bool
     {
-        return Auth::check() && (bool) Auth::user()->is_admin;
+        return Auth::check() && (bool) Auth::user()?->can('settings.manage');
     }
 
     public static function shouldRegisterNavigation(): bool

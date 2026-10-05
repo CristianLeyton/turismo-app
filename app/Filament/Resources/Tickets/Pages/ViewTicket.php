@@ -7,12 +7,12 @@ use App\Models\Setting;
 use App\Models\Ticket;
 use App\Services\TicketPdfService;
 use Filament\Actions\Action;
-use Filament\Actions\EditAction;
-use Filament\Resources\Pages\ViewRecord;
 use Filament\Actions\DeleteAction;
+use Filament\Actions\EditAction;
 use Filament\Actions\ForceDeleteAction;
 use Filament\Actions\RestoreAction;
 use Filament\Forms\Components\TextInput;
+use Filament\Resources\Pages\ViewRecord;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 
@@ -23,18 +23,18 @@ class ViewTicket extends ViewRecord
     protected function getHeaderActions(): array
     {
         return [
-            //EditAction::make(),
+            // EditAction::make(),
             Action::make('reschedule')
                 ->label('Reprogramar boleto')
                 ->icon('heroicon-m-arrow-path')
                 ->color('warning')
-                ->visible(fn (Ticket $record) => (bool) Auth::user()?->is_admin)
+                ->visible(fn (Ticket $record) => (bool) Auth::user()?->can('tickets.reschedule'))
                 ->authorize('reschedule')
                 ->url(function (Ticket $record) {
                     $ticketId = $record->id;
 
                     return TicketResource::getUrl('reschedule', ['record' => $record])
-                        . '?ticket=' . $ticketId;
+                        .'?ticket='.$ticketId;
                 }),
             self::configurePasswordConfirmation(DeleteAction::make()->icon('heroicon-m-trash')),
             self::configurePasswordConfirmation(ForceDeleteAction::make()),
@@ -48,7 +48,7 @@ class ViewTicket extends ViewRecord
                 )
                 ->action(function (Ticket $record) {
 
-                    $pdfService = new TicketPdfService();
+                    $pdfService = new TicketPdfService;
                     $sale = $record->sale;
 
                     if ($record->is_round_trip) {
@@ -67,11 +67,11 @@ class ViewTicket extends ViewRecord
                     $filename = "Boleto_N°{$ticketId}_{$colectivo}.pdf";
 
                     return response()->streamDownload(
-                        fn() => print($pdfContent),
+                        fn () => print ($pdfContent),
                         $filename,
                         ['Content-Type' => 'application/pdf']
                     );
-                })
+                }),
         ];
     }
 

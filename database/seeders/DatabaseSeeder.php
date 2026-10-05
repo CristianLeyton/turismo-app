@@ -2,11 +2,10 @@
 
 namespace Database\Seeders;
 
-use App\Models\Route;
 use App\Models\User;
+use App\Support\Permissions;
 // use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
-
 
 class DatabaseSeeder extends Seeder
 {
@@ -15,6 +14,8 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
+        // Roles, permisos y usuario fundador (Super Administrador id 1).
+        $this->call(RolePermissionSeeder::class);
 
         User::create([
             'id' => 1,
@@ -35,7 +36,7 @@ class DatabaseSeeder extends Seeder
             'email_verified_at' => now(),
         ]);
 
-        User::create([
+        $vendedor = User::create([
             'id' => 3,
             'name' => 'Vendedor',
             'email' => 'user@mail.com',
@@ -44,15 +45,20 @@ class DatabaseSeeder extends Seeder
             'is_admin' => false,
             'email_verified_at' => now(),
         ]);
-    
-    $this->call([
-        BusSeeder::class,
-        SeatSeeder::class,
-        LocationSeeder::class,
-        RouteSeeder::class,
-        RouteStopSeeder::class,
-        ScheduleSeeder::class,
-        SeatLayoutSeeder::class,
-    ]);
+
+        // Roles explícitos (paridad con el sistema anterior).
+        User::find(1)->assignRole(Permissions::ROLE_SUPER);
+        User::find(2)->assignRole(Permissions::ROLE_ADMIN);
+        $vendedor->assignRole(Permissions::ROLE_SELLER);
+
+        $this->call([
+            BusSeeder::class,
+            SeatSeeder::class,
+            LocationSeeder::class,
+            RouteSeeder::class,
+            RouteStopSeeder::class,
+            ScheduleSeeder::class,
+            SeatLayoutSeeder::class,
+        ]);
     }
 }

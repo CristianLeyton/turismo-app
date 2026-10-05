@@ -2,22 +2,22 @@
 
 namespace App\Filament\Widgets;
 
-use App\Filament\Resources\Sales\SalesResource;
 use App\Filament\Resources\Clients\ClientsResource;
+use App\Filament\Resources\Sales\SalesResource;
 use App\Filament\Resources\Tickets\TicketResource;
 use App\Filament\Resources\Trips\TripResource;
 use App\Filament\Resources\Users\UserResource;
-use App\Models\Trip;
 use Filament\Widgets\StatsOverviewWidget;
 use Filament\Widgets\StatsOverviewWidget\Stat;
 use Illuminate\Support\Facades\Auth;
 
 class Panel extends StatsOverviewWidget
 {
-    protected int | string | array $columnSpan = '2';
+    protected int|string|array $columnSpan = '2';
+
     protected static bool $isLazy = false;
 
-    protected function getColumns(): int | array
+    protected function getColumns(): int|array
     {
         return [
             'default' => 1, // mobile
@@ -26,7 +26,6 @@ class Panel extends StatsOverviewWidget
             'lg' => 4,      // desktop
         ];
     }
-
 
     protected function getStats(): array
     {
@@ -62,7 +61,7 @@ class Panel extends StatsOverviewWidget
                 ->descriptionIcon('heroicon-m-arrow-up-right')
                 ->extraAttributes(['class' => 'group [&_.fi-wi-stats-overview-stat-value]:text-2xl [&_.fi-wi-stats-overview-stat-value]:group-hover:text-primary-600 [&_.fi-wi-stats-overview-stat-value]:transition
                 [&_.fi-icon:nth-child(2)]:group-hover:translate-x-0.5 [&_.fi-icon:nth-child(2)]:group-hover:-translate-y-0.5 [&_.fi-icon]:transition'])
-                ->visible(fn(): bool => Auth::user()->is_admin ?? false),
+                ->visible(fn (): bool => (bool) Auth::user()?->can('users.view_any')),
 
             Stat::make('Ver ventas', 'Ventas')
                 ->icon('heroicon-o-presentation-chart-bar')
@@ -71,15 +70,14 @@ class Panel extends StatsOverviewWidget
                 ->descriptionIcon('heroicon-m-arrow-up-right')
                 ->extraAttributes(['class' => 'group [&_.fi-wi-stats-overview-stat-value]:text-2xl [&_.fi-wi-stats-overview-stat-value]:group-hover:text-primary-600 [&_.fi-wi-stats-overview-stat-value]:transition
                 [&_.fi-icon:nth-child(2)]:group-hover:translate-x-0.5 [&_.fi-icon:nth-child(2)]:group-hover:-translate-y-0.5 [&_.fi-icon]:transition'])
-                ->visible(fn(): bool => Auth::user()->is_admin ?? false),
+                ->visible(fn (): bool => (bool) Auth::user()?->can('sales.view_any')),
             Stat::make('Ver clientes', 'Clientes')
                 ->icon('heroicon-o-user-circle')
                 ->url(ClientsResource::getUrl())
                 ->description('Ver clientes')
                 ->descriptionIcon('heroicon-m-arrow-up-right')
                 ->extraAttributes(['class' => 'group [&_.fi-wi-stats-overview-stat-value]:text-2xl [&_.fi-wi-stats-overview-stat-value]:group-hover:text-primary-600 [&_.fi-wi-stats-overview-stat-value]:transition
-                [&_.fi-icon:nth-child(2)]:group-hover:translate-x-0.5 [&_.fi-icon:nth-child(2)]:group-hover:-translate-y-0.5 [&_.fi-icon]:transition'])
-                ,
+                [&_.fi-icon:nth-child(2)]:group-hover:translate-x-0.5 [&_.fi-icon:nth-child(2)]:group-hover:-translate-y-0.5 [&_.fi-icon]:transition']),
         ];
     }
 }

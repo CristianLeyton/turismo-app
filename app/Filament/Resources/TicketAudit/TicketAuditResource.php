@@ -20,7 +20,7 @@ use Illuminate\Support\Facades\Auth;
  * EDITADOS/REPROGRAMADOS (con su historial de cambios de fecha).
  *
  * Es 100% de solo lectura: no permite crear, editar, eliminar ni restaurar.
- * Solo visible para administradores (is_admin).
+ * Solo visible para quienes tengan el permiso ticket_audit.view_any.
  */
 class TicketAuditResource extends Resource
 {
@@ -31,8 +31,11 @@ class TicketAuditResource extends Resource
     protected static string|\BackedEnum|null $navigationIcon = \Filament\Support\Icons\Heroicon::ListBullet;
 
     protected static ?string $modelLabel = 'boleto';
+
     protected static ?string $pluralModelLabel = 'Boletos';
+
     protected static bool $hasTitleCaseModelLabel = false;
+
     protected static ?int $navigationSort = 2;
 
     protected static ?string $recordTitleAttribute = 'id';
@@ -55,7 +58,7 @@ class TicketAuditResource extends Resource
 
     public static function canAccess(): bool
     {
-        return (bool) (Auth::user()?->is_admin ?? false);
+        return (bool) (Auth::user()?->can('ticket_audit.view_any') ?? false);
     }
 
     public static function canViewAny(): bool

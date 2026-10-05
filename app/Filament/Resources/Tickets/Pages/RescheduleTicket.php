@@ -17,9 +17,7 @@ use Filament\Schemas\Components\Actions;
 use Filament\Schemas\Components\EmbeddedSchema;
 use Filament\Schemas\Components\Form;
 use Filament\Schemas\Schema;
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Auth;
-
 
 class RescheduleTicket extends ResourcePage
 {
@@ -36,7 +34,7 @@ class RescheduleTicket extends ResourcePage
     /** @var array<string, mixed> */
     public ?array $data = [];
 
-    public function mount(int | string $record): void
+    public function mount(int|string $record): void
     {
         $this->record = $this->resolveRecord($record);
 
@@ -59,7 +57,7 @@ class RescheduleTicket extends ResourcePage
 
     public static function canAccess(array $parameters = []): bool
     {
-        return Auth::check() && Auth::user()->is_admin;
+        return Auth::check() && (bool) Auth::user()?->can('tickets.reschedule');
     }
 
     public function getTitle(): string
@@ -212,7 +210,7 @@ class RescheduleTicket extends ResourcePage
         $freshTicket = $ticket->fresh()->load(['sale', 'passenger', 'trip', 'returnTrip', 'seat']);
 
         $sale = $freshTicket->sale;
-        $pdfService = new TicketPdfService();
+        $pdfService = new TicketPdfService;
 
         $passengerTickets = $sale->tickets()
             ->where('passenger_id', $freshTicket->passenger_id)
@@ -261,7 +259,7 @@ class RescheduleTicket extends ResourcePage
 
         Notification::make()
             ->title('Conflicto de reservación')
-            ->body($message . '. Por favor, seleccione otros asientos.')
+            ->body($message.'. Por favor, seleccione otros asientos.')
             ->warning()
             ->send();
 

@@ -15,10 +15,11 @@ use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\TernaryFilter;
+use Filament\Tables\Filters\TrashedFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
-use Filament\Tables\Filters\TrashedFilter;
+use UnitEnum;
 
 class PaymentMethodResource extends Resource
 {
@@ -27,10 +28,14 @@ class PaymentMethodResource extends Resource
     protected static string|BackedEnum|null $navigationIcon = Heroicon::Banknotes;
 
     protected static ?string $modelLabel = 'método de pago';
+
     protected static ?string $pluralModelLabel = 'Métodos de pago';
+
     protected static bool $hasTitleCaseModelLabel = false;
 
-    protected static ?int $navigationSort = 8;
+    protected static string|UnitEnum|null $navigationGroup = 'Configuración';
+
+    protected static ?int $navigationSort = 2;
 
     public static function form(Schema $schema): Schema
     {
@@ -61,19 +66,19 @@ class PaymentMethodResource extends Resource
                 TextColumn::make('label')
                     ->label('Nombre')
                     ->sortable(),
-/*                 TextColumn::make('code')
+                /*                 TextColumn::make('code')
                     ->label('Código')
                     ->badge()
                     ->color('gray')
                     ->alignCenter(), */
-/*                 IconColumn::make('is_active')
+                /*                 IconColumn::make('is_active')
                     ->label('Estado')
                     ->boolean()
                     ->trueIcon('heroicon-o-check-circle')
                     ->falseIcon('heroicon-o-pause-circle')
                     ->trueColor('success')
                     ->falseColor('gray'), */
-/*                 TextColumn::make('deleted_at')
+                /*                 TextColumn::make('deleted_at')
                     ->label('Eliminado')
                     ->since()
                     ->placeholder('—')
@@ -86,7 +91,7 @@ class PaymentMethodResource extends Resource
                     ->placeholder('Todos')
                     ->trueLabel('Activos')
                     ->falseLabel('Inactivos') */
-                    TrashedFilter::make(),
+                TrashedFilter::make(),
             ])
             ->actions([
                 EditAction::make()->button()->hiddenLabel()->extraAttributes(['title' => 'Editar']),
@@ -115,5 +120,4 @@ class PaymentMethodResource extends Resource
         return parent::getEloquentQuery()
             ->withoutGlobalScopes([SoftDeletingScope::class]);
     }
-
 }

@@ -12,7 +12,7 @@ class ViewTicketAudit extends ViewRecord
 
     public static function canAccess(array $parameters = []): bool
     {
-        return (bool) (Auth::user()?->is_admin ?? false);
+        return (bool) (Auth::user()?->can('ticket_audit.view_any') ?? false);
     }
 
     protected function getHeaderActions(): array

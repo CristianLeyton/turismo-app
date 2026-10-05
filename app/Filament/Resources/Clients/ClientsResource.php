@@ -5,25 +5,23 @@ namespace App\Filament\Resources\Clients;
 use App\Filament\Resources\Clients\Pages\ManageClients;
 use App\Models\Clients;
 use BackedEnum;
+use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
-use Filament\Actions\Action;
 use Filament\Actions\ForceDeleteAction;
 use Filament\Actions\ForceDeleteBulkAction;
 use Filament\Actions\RestoreAction;
 use Filament\Actions\RestoreBulkAction;
-use Filament\Actions\ViewAction;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
-use Filament\Infolists\Components\IconEntry;
 use Filament\Infolists\Components\TextEntry;
+use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
-use Filament\Notifications\Notification;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\TrashedFilter;
 use Filament\Tables\Table;
@@ -38,8 +36,11 @@ class ClientsResource extends Resource
     protected static string|BackedEnum|null $navigationIcon = Heroicon::UserCircle;
 
     protected static ?string $modelLabel = 'cliente';
+
     protected static ?string $pluralModelLabel = 'Clientes';
+
     protected static bool $hasTitleCaseModelLabel = false;
+
     /*     protected static string | UnitEnum | null $navigationGroup = 'Sistema'; */
     protected static ?int $navigationSort = 7;
 
@@ -167,11 +168,11 @@ class ClientsResource extends Resource
             ])
             ->recordUrl(null)
             ->recordAction(null)
-            ->filters([/* 
+            ->filters([/*
                 TrashedFilter::make(), */])
             ->recordActions([
                 Action::make('toggleBan')
-                    ->visible(fn() => Auth::user()?->is_admin)
+                    ->visible(fn () => (bool) Auth::user()?->can('clients.ban'))
                     ->label(fn (Clients $record): string => $record->can_buy ? 'Banear' : 'Habilitar')
                     ->icon(fn (Clients $record): Heroicon => $record->can_buy ? Heroicon::NoSymbol : Heroicon::CheckCircle)
                     ->color(fn (Clients $record): string => $record->can_buy ? 'danger' : 'success')
@@ -186,7 +187,7 @@ class ClientsResource extends Resource
 
                         Notification::make()
                             ->title($record->can_buy ? 'Cliente habilitado' : 'Cliente baneado')
-                            ->body("{$record->nombre} {$record->apellido} " . ($record->can_buy ? 'puede volver a comprar boletos.' : 'no podrá comprar boletos.'))
+                            ->body("{$record->nombre} {$record->apellido} ".($record->can_buy ? 'puede volver a comprar boletos.' : 'no podrá comprar boletos.'))
                             ->success()
                             ->send();
                     })
@@ -198,7 +199,7 @@ class ClientsResource extends Resource
                 ]),
                 DeleteAction::make()->button()->hiddenLabel()->extraAttributes([
                     'title' => 'Eliminar',
-                ])->visible(fn() => Auth::user()?->is_admin),
+                ])->visible(fn () => (bool) Auth::user()?->can('clients.delete')),
                 ForceDeleteAction::make()->button()->hiddenLabel()->extraAttributes([
                     'title' => 'Eliminar permanentemente',
                 ]),
@@ -210,7 +211,7 @@ class ClientsResource extends Resource
                 /* BulkActionGroup::make([
                     DeleteBulkAction::make(),
                                          ForceDeleteBulkAction::make(),
-                    RestoreBulkAction::make(), 
+                    RestoreBulkAction::make(),
                 ]), */
             ]);
     }

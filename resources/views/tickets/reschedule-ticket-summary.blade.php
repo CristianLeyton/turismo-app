@@ -9,7 +9,8 @@
     $returnTrip = $record?->returnTrip;
     $seat = $record?->seat;
 
-    $isReturnLegTicket = $record && $record->is_round_trip && is_null($record->return_trip_id);
+    $isReturnLegTicket = $record?->isReturnLeg() ?? false;
+    $isPendingDate = $record?->isPendingDate() ?? false;
 
     $idaDeparture = $record && ! $isReturnLegTicket
         ? ($record->getBoardingDepartureTime() ?? $trip?->schedule?->departure_time)
@@ -51,7 +52,9 @@
                 {{ $isReturnLegTicket ? 'Vuelta actual' : 'Ida actual' }}
             </div>
             <div class="font-semibold text-gray-900 dark:text-gray-100">
-                @if ($isReturnLegTicket)
+                @if ($isPendingDate)
+                    <span class="text-amber-600 dark:text-amber-400">Sin fecha — a confirmar</span>
+                @elseif ($isReturnLegTicket)
                     {{ $trip?->trip_date?->format('d/m/Y') }} •
                     {{ $vueltaDeparture ? Carbon::parse($vueltaDeparture)->format('H:i') : '--:--' }}
                 @else
@@ -80,7 +83,7 @@
         <div class="text-right">
             <div class="text-xs uppercase text-gray-500 dark:text-gray-400">Asiento actual</div>
             <div class="text-2xl font-bold text-fuchsia-600 dark:text-fuchsia-400">
-                {{ $seat?->seat_number ?? '—' }}
+                {{ $seat?->seat_number ?? ($isPendingDate ? 'A asignar' : '—') }}
             </div>
         </div>
     </div>

@@ -385,8 +385,10 @@ class TicketRescheduleServiceTest extends TestCase
         ]);
     }
 
-    public function test_rechaza_usuario_no_admin(): void
+    public function test_rechaza_usuario_sin_permiso_de_reprogramar(): void
     {
+        // La reprogramación ya no se gatea por `is_admin` sino por el permiso
+        // `tickets.reschedule`: un usuario sin ese permiso es rechazado.
         $vendedor = \App\Models\User::create([
             'name' => 'Vendedor',
             'email' => 'vendedor@test.local',
@@ -395,19 +397,27 @@ class TicketRescheduleServiceTest extends TestCase
             'is_admin' => false,
         ]);
 
+        $this->assertFalse($vendedor->can('tickets.reschedule'));
+
         $this->actingAs($vendedor);
 
         $ticket = $this->createRoundTripSale('2026-10-01', '2026-10-08');
+        $originalTripId = $ticket->trip_id;
 
-        $this->expectException(ValidationException::class);
-        $this->expectExceptionMessage('administrador');
+        try {
+            $this->service->reschedule($ticket, [
+                'scope' => 'outbound',
+                'date' => '2026-10-05',
+                'schedule_id' => $this->scheduleIda->id,
+                'seat_id' => Seat::where('bus_id', $this->bus1->id)->where('seat_number', '3')->first()->id,
+            ]);
+            $this->fail('Un usuario sin tickets.reschedule no debió poder reprogramar.');
+        } catch (ValidationException $e) {
+            $this->assertArrayHasKey('user', $e->errors());
+        }
 
-        $this->service->reschedule($ticket, [
-            'scope' => 'outbound',
-            'date' => '2026-10-05',
-            'schedule_id' => $this->scheduleIda->id,
-            'seat_id' => Seat::where('bus_id', $this->bus1->id)->where('seat_number', '3')->first()->id,
-        ]);
+        // El boleto no se movió.
+        $this->assertSame($originalTripId, $ticket->refresh()->trip_id);
     }
 
     public function test_rechaza_horario_inactivo_sin_viaje_existente(): void

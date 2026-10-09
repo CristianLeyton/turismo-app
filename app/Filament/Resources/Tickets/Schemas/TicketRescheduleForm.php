@@ -52,23 +52,66 @@ class TicketRescheduleForm
                     ->default('outbound')
                     ->live()
                     ->visible(fn (LivewireComponent $livewire) => self::isOutboundOfRoundTrip(self::ticket($livewire)))
-                    ->dehydrated(),
+                    ->dehydrated()
+                    ->helperText('"Ida y vuelta" asigna fecha, horario y asiento a los dos tramos en un solo paso.'),
 
                 // ================= Ida =================
                 Grid::make()
                     ->schema([
                         DatePicker::make('date')
-                            ->label('Nueva fecha de ida')
+                            // Reprogramar el tramo de vuelta reusa este bloque:
+                            // el rótulo acompaña al tramo real del boleto.
+                            ->label(fn (LivewireComponent $livewire) => 'Nueva fecha de ' . self::legLabel(self::ticket($livewire)))
                             ->required()
-                            ->minDate(fn () => Carbon::today())
+                            // Cruzado: la ida no puede quedar después de la vuelta.
+                            // Si se está eligiendo una vuelta nueva (scope "both")
+                            // el tope se relaja hasta que esa fecha exista, para
+                            // poder mover los dos tramos. La validación
+                            // autoritativa sigue viviendo en el service.
+                            ->maxDate(function (Get $get, LivewireComponent $livewire) {
+                                $ticket = self::ticket($livewire);
+
+                                // Reprogramando el tramo de vuelta: se acota por abajo, no por arriba.
+                                if (! $ticket || $ticket->isReturnLeg()) {
+                                    return null;
+                                }
+
+                                $returnDate = $get('return_date');
+                                if (filled($returnDate)) {
+                                    return $returnDate instanceof Carbon ? $returnDate : Carbon::parse($returnDate);
+                                }
+
+                                if (($get('scope') ?? 'outbound') === 'both') {
+                                    return null;
+                                }
+
+                                return self::futureTripDate(self::counterpartTripDate($ticket));
+                            })
+                            // Reprogramando el tramo de vuelta: no puede salir antes que la ida.
+                            ->minDate(function (LivewireComponent $livewire) {
+                                $today = Carbon::today();
+                                $ticket = self::ticket($livewire);
+
+                                if ($ticket && $ticket->isReturnLeg()) {
+                                    $outboundDate = self::futureTripDate(self::counterpartTripDate($ticket));
+
+                                    if ($outboundDate && $outboundDate->gt($today)) {
+                                        return $outboundDate;
+                                    }
+                                }
+
+                                return $today;
+                            })
                             ->live()
                             ->afterStateUpdated(fn (Set $set) => self::resetOutboundSearch($set))
                             ->validationMessages([
-                                'required' => 'Seleccione una fecha de ida',
+                                'required' => 'Seleccione una fecha',
+                                'before_or_equal' => 'La fecha no puede ser posterior a la vuelta.',
+                                'after_or_equal' => 'La fecha no puede ser anterior a hoy ni a la otra fecha del pasaje.',
                             ]),
 
                         Select::make('schedule_id')
-                            ->label('Horario de ida')
+                            ->label(fn (LivewireComponent $livewire) => 'Horario de ' . self::legLabel(self::ticket($livewire)))
                             ->required()
                             ->live()
                             ->disabled(fn (Get $get) => blank($get('date')))
@@ -85,6 +128,7 @@ class TicketRescheduleForm
                                 return self::scheduleOptions(
                                     (int) $ticket->origin_location_id,
                                     (int) $ticket->destination_location_id,
+                                    $ticket,
                                 );
                             })
                             ->afterStateUpdated(function (Set $set, Get $get, LivewireComponent $livewire, $state) {
@@ -146,12 +190,12 @@ class TicketRescheduleForm
                             ->dehydrated()
                             ->rule(fn (Get $get) => function (string $attribute, $value, \Closure $fail) use ($get) {
                                 if (filled($get('trip_id')) && (is_array($value) ? count($value) : 0) !== 1) {
-                                    $fail('Seleccioná exactamente 1 asiento de ida antes de confirmar.');
+                                    $fail('Seleccioná exactamente 1 asiento antes de confirmar.');
                                 }
                             }),
 
                         ViewField::make('seat_selector')
-                            ->label('Nuevo asiento de ida')
+                            ->label(fn (LivewireComponent $livewire) => 'Nuevo asiento de ' . self::legLabel(self::ticket($livewire)))
                             ->columnSpanFull()
                             ->view('tickets.seat-selector')
                             ->visible(fn (Get $get) => filled($get('trip_id')) && Trip::find($get('trip_id')) !== null)
@@ -184,11 +228,22 @@ class TicketRescheduleForm
                         DatePicker::make('return_date')
                             ->label('Nueva fecha de vuelta')
                             ->required()
-                            ->minDate(fn () => Carbon::today())
+                            // Cruzado: la vuelta no puede salir antes que la ida
+                            // elegida (o que hoy, si todavía no se eligió la ida).
+                            ->minDate(function (Get $get) {
+                                $departureDate = $get('date');
+
+                                if (filled($departureDate)) {
+                                    return $departureDate instanceof Carbon ? $departureDate : Carbon::parse($departureDate);
+                                }
+
+                                return Carbon::today();
+                            })
                             ->live()
                             ->afterStateUpdated(fn (Set $set) => self::resetReturnSearch($set))
                             ->validationMessages([
                                 'required' => 'Seleccione una fecha de vuelta',
+                                'after_or_equal' => 'La fecha de vuelta no puede ser anterior a la fecha de ida.',
                             ]),
 
                         Select::make('return_schedule_id')
@@ -209,6 +264,7 @@ class TicketRescheduleForm
                                 return self::scheduleOptions(
                                     (int) $ticket->destination_location_id,
                                     (int) $ticket->origin_location_id,
+                                    $ticket,
                                 );
                             })
                             ->afterStateUpdated(function (Set $set, Get $get, LivewireComponent $livewire, $state) {
@@ -323,11 +379,94 @@ class TicketRescheduleForm
         return method_exists($livewire, 'targetTicket') ? $livewire->targetTicket() : null;
     }
 
-    private static function isOutboundOfRoundTrip(?Ticket $ticket): bool
+    /**
+     * ¿Este boleto es la IDA de un ida y vuelta reprogramable como pareja?
+     *
+     * No alcanza con `return_trip_id`: en una venta sin fecha el tramo de vuelta
+     * existe como boleto hermano pendiente (trip_id NULL) y la ida todavía no
+     * tiene el link. Alcanza con que exista ese hermano, tenga o no viaje, para
+     * ofrecer "Ida y vuelta" (mismo criterio que usa la página al confirmar).
+     */
+    public static function isOutboundOfRoundTrip(?Ticket $ticket): bool
     {
         return $ticket !== null
             && (bool) $ticket->is_round_trip
-            && ! is_null($ticket->return_trip_id);
+            && ! $ticket->isReturnLeg()
+            && self::returnLegTicket($ticket) !== null;
+    }
+
+    /**
+     * Nombre del tramo que se está reprogramando. El bloque de campos de la
+     * grilla "Ida" se reusa para el tramo de vuelta (sus origin/destination ya
+     * vienen invertidos), así que los rótulos deben acompañar al boleto real
+     * para que el operador no cargue la fecha en el tramo equivocado.
+     */
+    private static function legLabel(?Ticket $ticket): string
+    {
+        return ($ticket !== null && $ticket->isReturnLeg()) ? 'vuelta' : 'ida';
+    }
+
+    /**
+     * Fecha del viaje del tramo HERMANO (el que no se está reprogramando), para
+     * acotar el calendario: la vuelta nunca puede salir antes que la ida ni la
+     * ida quedar después de la vuelta. Si el hermano todavía no tiene viaje
+     * (p. ej. vuelta pendiente) devuelve null y no se acota nada.
+     */
+    private static function counterpartTripDate(Ticket $ticket): ?Carbon
+    {
+        $sibling = $ticket->isReturnLeg()
+            // Reprogramando la vuelta: la contraparte es la ida.
+            ? self::outboundTicket($ticket)
+            // Reprogramando la ida: la contraparte es el tramo de vuelta.
+            : self::returnLegTicket($ticket);
+
+        return $sibling?->trip?->trip_date;
+    }
+
+    /**
+     * Boleto hermano que representa el tramo de vuelta (misma venta y pasajero),
+     * tenga o no viaje asignado todavía.
+     */
+    private static function returnLegTicket(Ticket $ticket): ?Ticket
+    {
+        return Ticket::query()
+            ->where('sale_id', $ticket->sale_id)
+            ->where('passenger_id', $ticket->passenger_id)
+            ->where('is_return_leg', true)
+            ->whereNull('deleted_at')
+            ->first();
+    }
+
+    /**
+     * Boleto hermano que representa el tramo de ida (misma venta y pasajero).
+     */
+    private static function outboundTicket(Ticket $ticket): ?Ticket
+    {
+        return Ticket::query()
+            ->where('sale_id', $ticket->sale_id)
+            ->where('passenger_id', $ticket->passenger_id)
+            ->where('is_round_trip', true)
+            ->where('is_return_leg', false)
+            ->whereNull('deleted_at')
+            ->first();
+    }
+
+    /**
+     * Normaliza una fecha de viaje para usarla como límite del calendario:
+     * inicio del día y sólo si no es anterior a hoy. Un boleto con viajes ya
+     * pasados no debe acotar el rango (dejaría minDate > maxDate y el
+     * calendario sin fechas seleccionables); en ese caso no se acota y el
+     * service sigue siendo el que valida el orden real.
+     */
+    private static function futureTripDate(?Carbon $date): ?Carbon
+    {
+        if (! $date) {
+            return null;
+        }
+
+        $start = $date->copy()->startOfDay();
+
+        return $start->gte(Carbon::today()) ? $start : null;
     }
 
     private static function resetOutboundSearch(Set $set): void
@@ -360,14 +499,18 @@ class TicketRescheduleForm
     }
 
     /**
-     * Horarios bookable() que cubren el segmento, sin forzar el bus original.
+     * Horarios bookable() que cubren el segmento. Para boletos con bus_id
+     * guardado (venta con colectivo obligatorio) sólo se ofrecen horarios de
+     * rutas de ese colectivo; para boletos viejos se mantiene el comportamiento
+     * anterior (cualquier horario que cubra el segmento, sin forzar el bus).
      */
-    private static function scheduleOptions(int $originId, int $destinationId): array
+    private static function scheduleOptions(int $originId, int $destinationId, ?Ticket $ticket = null): array
     {
         return Schedule::query()
             ->bookable()
             ->whereHas('route.stops', fn ($q) => $q->where('location_id', $originId))
             ->whereHas('route.stops', fn ($q) => $q->where('location_id', $destinationId))
+            ->when(filled($ticket?->bus_id), fn ($q) => $q->whereHas('route', fn ($r) => $r->where('bus_id', $ticket->bus_id)))
             ->with('route.stops')
             ->get()
             ->filter(fn (Schedule $schedule) => $schedule->route->isValidSegment($originId, $destinationId))
@@ -405,8 +548,9 @@ class TicketRescheduleForm
         $returnTicket = Ticket::query()
             ->where('sale_id', $outboundTicket->sale_id)
             ->where('passenger_id', $outboundTicket->passenger_id)
-            ->where('is_round_trip', true)
-            ->whereNull('return_trip_id')
+            // Explicito desde la venta sin fecha: el hermano puede estar
+            // pendiente (trip_id NULL) con return_trip_id tambien NULL.
+            ->where('is_return_leg', true)
             ->first();
 
         if (! $returnTicket) {

@@ -176,6 +176,24 @@ class RolesAndPermissionsTest extends TestCase
         $this->assertSame(3, Role::whereIn('name', Permissions::systemRoles())->count());
     }
 
+    public function test_el_sync_no_revoca_permisos_habilitados_desde_la_matriz(): void
+    {
+        $admin = Role::findByName(Permissions::ROLE_ADMIN);
+
+        // Los permisos "por bandera" no vienen por defecto: se otorgan a mano.
+        $this->assertFalse($admin->hasPermissionTo('tickets.vender_pasado_limite'));
+
+        $admin->givePermissionTo('tickets.vender_pasado_limite');
+
+        Permissions::syncToDatabase();
+        \Illuminate\Support\Facades\Artisan::call('permissions:sync');
+
+        // Sigue vigente después de sincronizar el catálogo.
+        $this->assertTrue(
+            Role::findByName(Permissions::ROLE_ADMIN)->hasPermissionTo('tickets.vender_pasado_limite'),
+        );
+    }
+
     public function test_comando_permissions_sync_funciona(): void
     {
         // Borrar un permiso y verificar que el comando lo recrea.

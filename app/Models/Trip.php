@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -27,6 +28,29 @@ class Trip extends Model
     public function bus(): BelongsTo
     {
         return $this->belongsTo(Bus::class);
+    }
+
+    /**
+     * Fecha y hora en que el colectivo SALE de una parada determinada
+     * (la parada donde sube el pasajero del tramo que se está vendiendo).
+     *
+     * Cae a la hora de salida del horario si la parada no tiene hora propia.
+     * Devuelve null si falta la fecha del viaje, la ruta o el horario.
+     */
+    public function departureDateTimeForStop(int $locationId): ?Carbon
+    {
+        if (! $this->trip_date || ! $this->route || ! $this->schedule) {
+            return null;
+        }
+
+        $time = $this->route->getDepartureTimeForStop($locationId, $this->schedule)
+            ?? $this->schedule->departure_time;
+
+        if (! $time) {
+            return null;
+        }
+
+        return $this->trip_date->copy()->setTimeFromTimeString($time->format('H:i:s'));
     }
 
     public function route(): BelongsTo

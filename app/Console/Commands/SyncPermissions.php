@@ -18,7 +18,7 @@ class SyncPermissions extends Command
         $count = count(Permissions::all());
 
         $this->info("Catálogo sincronizado: {$count} permisos y 3 roles del sistema verificados.");
-        $this->line('Nota: los permisos por defecto de "Super Administrador", "Administrador" y "Vendedor" fueron re-aplicados desde el catálogo (nunca revoca permisos de roles custom).');
+        $this->line('Nota: los permisos por defecto de "Super Administrador", "Administrador" y "Vendedor" fueron re-aplicados desde el catálogo. El sync sólo agrega: no revoca permisos de roles custom ni los habilitados a mano desde la matriz.');
 
         if ($this->option('reconcile-users')) {
             Permissions::reconcileUsers();

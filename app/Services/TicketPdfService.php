@@ -51,7 +51,7 @@ class TicketPdfService
             
             // Crear nombre de archivo personalizado: Boleto_ID_NombreColectivo.pdf
             $ticketId = $tickets->first()->id;
-            $colectivo = str_replace(' ', '_', $trip->bus->name);
+            $colectivo = str_replace(' ', '_', $trip?->bus?->name ?? 'Sin fecha');
 
             $filename = "Boleto_N°{$ticketId}_{$colectivo}.pdf";
             $pdfContent = $this->generatePassengerTickets($sale, $tickets);

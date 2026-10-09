@@ -28,7 +28,7 @@
             border: 1px solid #e5e7eb;
             border-radius: 10px;
             padding: 3mm;
-            height: 123mm;
+            height: 125mm;
             /* media hoja A4 */
         }
 
@@ -110,6 +110,19 @@
             letter-spacing: 0.5px;
         }
 
+        .pending-date {
+            background: #fef3c7;
+            border: 2px solid #f59e0b;
+            color: #92400e;
+            font-size: 11px;
+            font-weight: bold;
+            padding: 2mm;
+            margin-bottom: 2mm;
+            border-radius: 4px;
+            text-align: center;
+            letter-spacing: 0.5px;
+        }
+
         .seat {
             font-size: 18px;
             font-weight: bold;
@@ -138,7 +151,7 @@
             text-align: center;
             border-radius: 4px;
             margin-top: 2mm;
-            width: 100%;
+            width: 98%;
             font-weight: bold;
         }
 
@@ -261,14 +274,26 @@
 
                                 <div class='section-title'>VIAJE</div>
                                 <div class='box'>
-                                    <strong>Colectivo:</strong> {{ $ticket->trip->bus->name ?? '—' }}<br>
-                                    <strong>Fecha del viaje:</strong>
-                                    {{ $ticket->trip->trip_date->format('d/m/Y') }}<br>
-                                    <strong>Hora de salida:</strong>
-                                    {{ ($ticket->getBoardingDepartureTime() ?? $ticket->trip->schedule->departure_time)?->format('H:i') ?? '--:--' }} hs<br>
-                                    <strong>Hora de llegada:</strong>
-                                    {{ ($ticket->getBoardingArrivalTime() ?? $ticket->trip->schedule->arrival_time)?->format('H:i') ?? '--:--' }} hs<br>
-                                    <strong>Ruta:</strong> {{ $ticket->trip->route->name ?? 'Regular' }}
+                                    @if ($ticket->trip)
+                                        <strong>Colectivo:</strong> {{ $ticket->trip->bus->name ?? '—' }}<br>
+                                        <strong>Fecha del viaje:</strong>
+                                        {{ $ticket->trip->trip_date?->format('d/m/Y') ?? '—' }}<br>
+                                        <strong>Hora de salida:</strong>
+                                        {{ ($ticket->getBoardingDepartureTime() ?? $ticket->trip->schedule?->departure_time)?->format('H:i') ?? '--:--' }} hs<br>
+                                        <strong>Hora de llegada:</strong>
+                                        {{ ($ticket->getBoardingArrivalTime() ?? $ticket->trip->schedule?->arrival_time)?->format('H:i') ?? '--:--' }} hs<br>
+                                        <strong>Ruta:</strong> {{ $ticket->trip->route->name ?? 'Regular' }}
+                                    @else
+                                        <div class='pending-date'>
+                                            FECHA Y HORARIO A CONFIRMAR
+                                        </div>
+                                        <strong>Colectivo:</strong> A asignar<br>
+                                        <strong>Fecha del viaje:</strong> A confirmar<br>
+                                        <strong>Hora de salida:</strong> A confirmar<br>
+                                        <strong>Hora de llegada:</strong> A confirmar<br>
+                                        <strong>Ruta:</strong>
+                                        {{ $ticket->origin?->name ?? '—' }} &gt; {{ $ticket->destination?->name ?? '—' }}
+                                    @endif
                                 </div>
 
                                 <div class='section-title'>PAGO</div>
@@ -291,7 +316,7 @@
                                         <td width='50%' valign='top'>
                                             {{-- <div class='section-title'>PISO</div> --}}
                                             <div class='seat' style="color:#111827">
-                                                {{ $ticket->seat?->floor == '1' ? 'Planta baja' : 'Planta alta' }}
+                                                {{ $ticket->seat ? ($ticket->seat->floor == '1' ? 'Planta baja' : 'Planta alta') : '—' }}
                                             </div>
                                         </td>
                                     </tr>

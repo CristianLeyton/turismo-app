@@ -3,6 +3,8 @@
 namespace App\Support;
 
 use App\Models\User;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
@@ -51,6 +53,8 @@ final class Permissions
                     'view_any' => 'Ver listado',
                     'view' => 'Ver detalle',
                     'create' => 'Vender / crear',
+                    'vender_sin_fecha' => 'Vender sin fecha/horario',
+                    'vender_pasado_limite' => 'Vender después del límite de salida',
                     'reschedule' => 'Reprogramar',
                     'delete' => 'Eliminar',
                     'restore' => 'Restaurar',
@@ -241,8 +245,12 @@ final class Permissions
      * los tres roles del sistema con sus permisos por defecto.
      *
      * Idempotente: seguro de correr las veces que haga falta.
-     * Nunca revoca permisos de roles custom; para los roles del sistema
-     * re-aplica los defaults del catálogo (que sólo crecen).
+     *
+     * Sólo AGREGA: nunca revoca permisos, ni de roles custom ni de los roles
+     * del sistema. Los permisos "habilitables por bandera" (p. ej.
+     * `tickets.vender_sin_fecha`, `tickets.vender_pasado_limite`) no vienen en
+     * los defaults, se otorgan a mano desde la matriz de la UI: con un sync
+     * destructivo desaparecían al correr `permissions:sync`.
      */
     public static function syncToDatabase(): void
     {
@@ -252,10 +260,16 @@ final class Permissions
 
         foreach ([self::ROLE_SUPER, self::ROLE_ADMIN, self::ROLE_SELLER] as $roleName) {
             $role = Role::findOrCreate($roleName, 'web');
-            $role->syncPermissions(self::defaultsFor($roleName));
+
+            // givePermissionTo (no syncPermissions): re-aplica los defaults del
+            // catálogo sin borrar lo que se haya habilitado desde la matriz.
+            $role->givePermissionTo(self::defaultsFor($roleName));
         }
 
         app(PermissionRegistrar::class)->forgetCachedPermissions();
+
+        // El sync cambia la matriz: invalidar el cache de "asignado a algún rol".
+        self::forgetFeatureFlagCache();
     }
 
     /**
@@ -277,6 +291,53 @@ final class Permissions
         }
 
         return $grouped;
+    }
+
+    /**
+     * ¿El permiso está asignado a algún rol existente?
+     *
+     * Para "funcionalidades por bandera al estilo del cliente": se pueden
+     * ocultar features de la UI mientras ningún rol tenga habilitado el
+     * permiso, y mostrarlas apenas se asigna a un rol desde la matriz.
+     * SUPER lo trae implícito por bypass, así que el check es por la matriz:
+     * mientras el permiso no esté asignado a un rol, se considerará apagado.
+     *
+     * Resultado cacheado 60s por permiso (los permisos ya usan cache en
+     * spatie; acá evitamos golpear la tabla en cada request).
+     */
+    public static function permissionGrantedToAnyRole(string $permissionName): bool
+    {
+        return Cache::remember(
+            "permissions.granted.{$permissionName}",
+            now()->addSeconds(60),
+            // JOIN plano sin subconsultas: MySQL no soporta LIMIT dentro de
+            // subconsultas IN/ALL/ANY (error 1235) como sí lo hace SQLite.
+            fn (): bool => DB::table('role_has_permissions')
+                ->join('permissions', 'permissions.id', '=', 'role_has_permissions.permission_id')
+                ->join('roles', 'roles.id', '=', 'role_has_permissions.role_id')
+                // El SUPER trae todo el catálogo por bypass: no es una
+                // asignación intencional, no cuenta para el flag.
+                ->where('permissions.name', $permissionName)
+                ->where('roles.name', '!=', self::ROLE_SUPER)
+                ->exists(),
+        );
+    }
+
+    /**
+     * Limpia el cache de permissionGrantedToAnyRole() para un permiso
+     * (o para todos si no se pasa umbral).
+     */
+    public static function forgetFeatureFlagCache(?string $permissionName = null): void
+    {
+        if ($permissionName !== null) {
+            Cache::forget("permissions.granted.{$permissionName}");
+
+            return;
+        }
+
+        foreach (self::all() as $name) {
+            Cache::forget("permissions.granted.{$name}");
+        }
     }
 
     /** Recalcula el flag is_admin de todos los usuarios a partir de sus roles. */

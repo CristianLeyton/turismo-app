@@ -80,7 +80,12 @@ class TicketsTable
 
                 TextColumn::make('trip.trip_date')
                     ->label('Salida')
+                    ->placeholder(fn(Ticket $record) => $record->isPendingDate() ? 'Sin fecha' : '—')
                     ->formatStateUsing(function ($record) {
+                        if ($record->isPendingDate()) {
+                            return 'Sin fecha';
+                        }
+
                         $date = $record->trip?->trip_date?->format('d/m/Y');
                         $time = $record->trip?->schedule?->departure_time?->format('H:i');
 
@@ -92,7 +97,7 @@ class TicketsTable
                     })
                     ->badge()
                     ->visibleFrom('md')
-                    ->color('info')
+                    ->color(fn(Ticket $record) => $record->isPendingDate() ? 'warning' : 'info')
                     ->url(fn(Ticket $record) => TicketResource::getUrl('view', ['record' => $record])),
 
                 TextColumn::make('origin_location_id')
@@ -113,6 +118,7 @@ class TicketsTable
                     ->badge()
                     ->color('primary')
                     ->visibleFrom('md')
+                    ->placeholder(fn(Ticket $record) => $record->isPendingDate() ? 'X' : '—')
                     ->alignCenter(),
 
                 IconColumn::make('is_round_trip')
@@ -299,6 +305,14 @@ class TicketsTable
                         return $indicators;
                     }),
 
+                    //Filtrar boletos que no tienen fecha de salida
+                    Filter::make('trip_id')
+                        ->label('Ver únicamente boletos sin fecha')
+                        ->toggle()
+                        ->columnSpan(2)
+                        ->query(function (Builder $query): Builder {
+                            return $query->whereNull('trip_id');
+                        }),
             ])
             ->filtersLayout(FiltersLayout::AboveContent)
             ->filtersFormColumns(6)
@@ -336,7 +350,7 @@ class TicketsTable
                             }
 
                             $ticketId = $record->id;
-                            $colectivo = str_replace(' ', '_', $record->trip->bus->name);
+                            $colectivo = str_replace(' ', '_', $record->trip?->bus?->name ?? 'Sin fecha');
                             $filename = "Boleto_N°{$ticketId}_{$colectivo}.pdf";
 
                             return response()->streamDownload(
@@ -378,7 +392,7 @@ class TicketsTable
                         }
 
                         $ticketId = $record->id;
-                        $colectivo = str_replace(' ', '_', $record->trip->bus->name);
+                        $colectivo = str_replace(' ', '_', $record->trip?->bus?->name ?? 'Sin fecha');
                         $filename = "Boleto_N°{$ticketId}_{$colectivo}.pdf";
 
                         return response()->streamDownload(

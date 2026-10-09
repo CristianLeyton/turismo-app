@@ -76,7 +76,11 @@
                 @else
                     <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">
                         <strong class="font-semibold"> Ida: </strong>
-                        No hay información del viaje
+                        @if ($record->isPendingDate())
+                            <span class="font-semibold text-amber-600 dark:text-amber-400">Fecha y horario a confirmar</span>
+                        @else
+                            No hay información del viaje
+                        @endif
                     </p>
                 @endif
             </div>
@@ -85,7 +89,7 @@
                     Asiento ida
                 </div>
                 <div class="text-3xl font-bold text-fuchsia-600 dark:text-fuchsia-400">
-                    {{ $record->seat?->seat_number ?? ($record->seat?->seat_number ?? '—') }}
+                    {{ $record->seat?->seat_number ?? ($record->isPendingDate() ? 'A asignar' : '—') }}
                 </div>
             </div>
         </div>
@@ -150,7 +154,14 @@
                     <div
                         class="bg-sky-100 border border-sky-400 text-sky-700 px-4 py-3 rounded dark:bg-sky-800 dark:border-sky-700 dark:text-sky-300">
                         <strong class="font-semibold">Viaje de vuelta</strong><br>
-                        <span class="text-sm">Este ticket es el viaje de vuelta de un pasaje diferido. </span>
+                        @if ($record->isReturnLeg())
+                            <span class="text-sm">Este ticket es el viaje de vuelta de un pasaje diferido. </span>
+                        @else
+                            <span class="text-sm">Este boleto forma parte de un pasaje diferido: su tramo de vuelta todavía no tiene viaje asignado. </span>
+                        @endif
+                        @if ($record->isPendingDate())
+                            <span class="font-semibold text-amber-600 dark:text-amber-400">Fecha y horario a confirmar.</span>
+                        @endif
                     </div>
                 </div>
             @endif

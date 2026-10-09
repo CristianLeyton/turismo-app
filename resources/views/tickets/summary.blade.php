@@ -66,17 +66,24 @@
 
                 <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">
                     <strong class="font-semibold"> Ida: </strong>
-                    {{ Carbon::parse($get('departure_date'))->format('d/m/Y') }}
-                    •
-                    {{ $idaBoardingDeparture ? Carbon::parse($idaBoardingDeparture)->format('H:i') : '--:--' }}
-                    →
-                    {{ $idaBoardingArrival ? Carbon::parse($idaBoardingArrival)->format('H:i') : '--:--' }}
+                    @if (filled($get('departure_date')))
+                        {{ Carbon::parse($get('departure_date'))->format('d/m/Y') }}
+                        •
+                        {{ $idaBoardingDeparture ? Carbon::parse($idaBoardingDeparture)->format('H:i') : '--:--' }}
+                        →
+                        {{ $idaBoardingArrival ? Carbon::parse($idaBoardingArrival)->format('H:i') : '--:--' }}
+                    @else
+                        <span class="font-semibold text-amber-600 dark:text-amber-400">Fecha y horario a confirmar</span>
+                    @endif
                 </p>
 
-                @if ($bus)
+                {{-- El colectivo se elige siempre (bus_id requerido); el nombre
+                     viene del bus elegido aunque el tramo aún no tenga viaje. --}}
+                @php $busName = $bus?->name ?? ($get('bus_id') ? \App\Models\Bus::find($get('bus_id'))?->name : null); @endphp
+                @if ($busName)
                     <p class="text-sm text-gray-600 dark:text-gray-400">
                         <strong class="font-semibold">Colectivo:</strong>
-                        <span class="text-fuchsia-600 dark:text-fuchsia-400">{{ $bus->name }}</span>
+                        <span class="text-fuchsia-600 dark:text-fuchsia-400">{{ $busName }}</span>
                     </p>
                 @endif
 
@@ -102,11 +109,15 @@
             <div
                 class="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700 text-sm text-gray-600 dark:text-gray-400">
                 <strong class="font-semibold"> Vuelta: </strong>
-                {{ Carbon::parse($get('return_date'))->format('d/m/Y') }}
-                •
-                {{ $vueltaBoardingDeparture ? Carbon::parse($vueltaBoardingDeparture)->format('H:i') : '--:--' }}
-                →
-                {{ $vueltaBoardingArrival ? Carbon::parse($vueltaBoardingArrival)->format('H:i') : '--:--' }}
+                @if (filled($get('return_date')))
+                    {{ Carbon::parse($get('return_date'))->format('d/m/Y') }}
+                    •
+                    {{ $vueltaBoardingDeparture ? Carbon::parse($vueltaBoardingDeparture)->format('H:i') : '--:--' }}
+                    →
+                    {{ $vueltaBoardingArrival ? Carbon::parse($vueltaBoardingArrival)->format('H:i') : '--:--' }}
+                @else
+                    <span class="font-semibold text-amber-600 dark:text-amber-400">Fecha y horario a confirmar</span>
+                @endif
 
                 @if ($returnTrip?->bus)
                     <br> <span class="font-semibold">Colectivo:</span>
@@ -269,7 +280,7 @@
                             Ida
                         </span>
                         <span class="text-lg font-bold text-gray-900 dark:text-gray-100">
-                            {{ $seatNumber ?? '—' }}
+                            {{ $get('sell_without_date_ida') ? 'A asignar' : ($seatNumber ?? '—') }}
                         </span>
                     </div>
 
@@ -282,7 +293,7 @@
                                 Vuelta
                             </span>
                             <span class="text-lg font-bold text-gray-900 dark:text-gray-100">
-                                {{ $returnSeatNumber ?? '—' }}
+                                {{ $get('sell_without_date_vuelta') ? 'A asignar' : ($returnSeatNumber ?? '—') }}
                             </span>
                         </div>
                     @endif

@@ -168,8 +168,10 @@ class RescheduleTicket extends ResourcePage
         $data = $this->form->getState();
 
         $scope = $data['scope'] ?? 'outbound';
-        $isRoundTrip = (bool) $ticket->is_round_trip;
-        $isOutboundTicket = $isRoundTrip && ! is_null($ticket->return_trip_id);
+        // Mismo criterio que el formulario (y que el service): la ida de un ida
+        // y vuelta puede reprogramar ambos tramos aunque la vuelta siga
+        // pendiente (venta sin fecha) y el link `return_trip_id` todavía no exista.
+        $isOutboundTicket = TicketRescheduleForm::isOutboundOfRoundTrip($ticket);
 
         $payload = [
             'scope' => $isOutboundTicket ? $scope : 'outbound',
@@ -223,7 +225,7 @@ class RescheduleTicket extends ResourcePage
             $pdfContent = $pdfService->generatePassengerTickets($sale, collect([$freshTicket]));
         }
 
-        $colectivo = str_replace(' ', '_', $freshTicket->trip->bus->name);
+        $colectivo = str_replace(' ', '_', $freshTicket->trip?->bus?->name ?? 'Sin fecha');
         $filename = "Boleto_N°{$freshTicket->id}_{$colectivo}.pdf";
 
         session([

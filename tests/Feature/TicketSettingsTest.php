@@ -114,6 +114,49 @@ class TicketSettingsTest extends TestCase
         $this->assertFalse(Setting::getBool(Setting::REQUIRE_PASSWORD_TICKET_DELETE));
     }
 
+    // ====================== Venta fuera de término (horas) ======================
+
+    public function test_la_pagina_muestra_las_horas_de_venta_y_el_default_es_cinco(): void
+    {
+        $this->actingAs($this->admin);
+
+        Setting::flushCache();
+
+        Livewire::test(TicketSettings::class)
+            ->assertOk()
+            ->assertSee('Venta fuera de término')
+            ->assertSee('Horas de venta después de la salida')
+            ->assertSet('data.venta_limite_horas', Setting::VENTA_LIMITE_HORAS_DEFAULT);
+    }
+
+    public function test_guardar_persiste_las_horas_de_venta(): void
+    {
+        $this->actingAs($this->admin);
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.venta_limite_horas', 8)
+            ->call('save')
+            ->assertOk();
+
+        $this->assertDatabaseHas('settings', [
+            'key' => Setting::VENTA_LIMITE_HORAS,
+            'value' => '8',
+        ]);
+
+        $this->assertSame(8, Setting::ventaLimiteHoras());
+
+        // 0 es válido: desactiva el límite.
+        Livewire::test(TicketSettings::class)
+            ->set('data.venta_limite_horas', 0)
+            ->call('save');
+
+        $this->assertSame(0, Setting::ventaLimiteHoras());
+
+        // Un valor negativo se normaliza a 0 (nunca habilita "al revés").
+        Setting::set(Setting::VENTA_LIMITE_HORAS, '-3');
+        $this->assertSame(0, Setting::ventaLimiteHoras());
+    }
+
     // ====================== Setting API ======================
 
     public function test_setting_get_bool_defaults_y_set(): void

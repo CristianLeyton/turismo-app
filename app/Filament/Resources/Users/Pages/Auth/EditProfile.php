@@ -15,7 +15,7 @@ class EditProfile extends BaseEditProfile
             ->components([
                 TextInput::make('name')
                     ->label('Nombre')
-                    ->disabled(fn () => ! Auth::user()?->can('users.update'))
+                    ->disabled(fn() => ! Auth::user()?->can('users.update'))
                     ->maxLength(255)
                     ->required()
                     ->validationMessages([
@@ -24,7 +24,7 @@ class EditProfile extends BaseEditProfile
                     ]),
                 TextInput::make('surname')
                     ->label('Apellido')
-                    ->disabled(fn () => ! Auth::user()?->can('users.update'))
+                    ->disabled(fn() => ! Auth::user()?->can('users.update'))
                     ->maxLength(255)
                     ->required()
                     ->validationMessages([
@@ -33,7 +33,7 @@ class EditProfile extends BaseEditProfile
                     ]),
                 TextInput::make('email')
                     ->label('Correo electrónico')
-                    ->disabled(fn () => ! Auth::user()?->can('users.update'))
+                    ->disabled(fn() => ! Auth::user()?->can('users.update'))
                     ->maxLength(255)
                     ->email()
                     ->required()
@@ -44,7 +44,7 @@ class EditProfile extends BaseEditProfile
                     ]),
                 TextInput::make('phone')
                     ->label('Teléfono')
-                    ->disabled(fn () => ! Auth::user()?->can('users.update'))
+                    ->disabled(fn() => ! Auth::user()?->can('users.update'))
                     ->maxLength(255)
                     ->tel()
                     ->validationMessages([
@@ -52,13 +52,20 @@ class EditProfile extends BaseEditProfile
                     ]),
                 TextInput::make('username')
                     ->label('Nombre de usuario')
-                    ->disabled(fn () => ! Auth::user()?->can('users.update'))
+                    ->disabled(fn() => ! Auth::user()?->can('users.update'))
                     ->maxLength(255)
                     ->required()
                     ->validationMessages([
                         'required' => 'El nombre de usuario es obligatorio.',
                         'max' => 'El nombre de usuario no debe exceder los :max caracteres.',
                     ]),
+                    TextInput::make('roles')
+                    ->label('Roles')
+                    ->readOnly()
+                    ->disabled()
+                    ->formatStateUsing(function () {
+                        return Auth::user()->roles->pluck('name')->implode(', ');
+                    }),
             ]);
     }
 }

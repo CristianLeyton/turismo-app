@@ -21,7 +21,9 @@ class Ticket extends Model
         'return_trip_id',
         'passenger_id',
         'seat_id',
+        'bus_id',
         'is_round_trip',
+        'is_return_leg',
         'travels_with_child',
         'travels_with_pets',
         'pet_names',
@@ -35,6 +37,7 @@ class Ticket extends Model
 
     protected $casts = [
         'is_round_trip' => 'boolean',
+        'is_return_leg' => 'boolean',
         'travels_with_child' => 'boolean',
         'travels_with_pets' => 'boolean',
     ];
@@ -57,6 +60,25 @@ class Ticket extends Model
             if (Auth::check()) {
                 $ticket->deleted_by = Auth::id();
                 $ticket->save();
+            }
+        });
+    }
+
+    protected static function booted(): void
+    {
+        // Normaliza la marca del tramo de vuelta para ventas nuevas usando la
+        // convención histórica (diferido + sin viaje de vuelta + precio 0).
+        // A partir de la venta sin fecha, la identificación explícita
+        // (`is_return_leg`) es la fuente de verdad; acá se autocompleta para
+        // que toda la lógica existente pueda confiar en la columna.
+        static::creating(function (Ticket $ticket): void {
+            if (
+                ! $ticket->is_return_leg
+                && (bool) $ticket->is_round_trip
+                && is_null($ticket->return_trip_id)
+                && (float) ($ticket->price ?? 0) === 0.0
+            ) {
+                $ticket->is_return_leg = true;
             }
         });
     }
@@ -89,6 +111,41 @@ class Ticket extends Model
     public function returnSeat(): BelongsTo
     {
         return $this->belongsTo(Seat::class, 'return_seat_id');
+    }
+
+    /**
+     * ¿El boleto fue vendido sin fecha/horario (viaje pendiente)?
+     * El permiso `tickets.vender_sin_fecha` permite crearlos; la fecha y el
+     * asiento se asignan después vía reprogramación (tickets.reschedule).
+     */
+    public function isPendingDate(): bool
+    {
+        return $this->trip_id === null;
+    }
+
+    /**
+     * ¿Este boleto representa el tramo de vuelta de un diferido?
+     * Desde la migración de `is_return_leg` la marca es explícita; la
+     * convención anterior (is_round_trip + return_trip_id NULL + price 0)
+     * queda como fallback para datos anteriores al backfill.
+     */
+    public function isReturnLeg(): bool
+    {
+        return $this->is_return_leg || ((bool) $this->is_round_trip && is_null($this->return_trip_id) && (float) $this->price === 0.0);
+    }
+
+    /**
+     * ¿Este boleto pertenece a una venta diferida (ida y vuelta)?
+     * Usa la marca explícita cuando existe (cubre también la venta mixta con
+     * vuelta pendiente); si no, la convención original del diferido.
+     */
+    public function isPartOfRoundTrip(): bool
+    {
+        if ((bool) $this->is_return_leg) {
+            return true;
+        }
+
+        return (bool) $this->is_round_trip && (filled($this->return_trip_id) || (float) $this->price === 0.0);
     }
 
     /**
@@ -153,7 +210,7 @@ class Ticket extends Model
     public function getDisplayPriceAttribute(): float
     {
         // Si no es ticket de vuelta, devolver precio propio
-        if (!($this->is_round_trip && is_null($this->return_trip_id))) {
+        if (!($this->isPartOfRoundTrip() && is_null($this->return_trip_id))) {
             return (float) $this->price;
         }
 
@@ -161,7 +218,7 @@ class Ticket extends Model
         $outbound = self::where('sale_id', $this->sale_id)
             ->where('passenger_id', $this->passenger_id)
             ->where('is_round_trip', true)
-            ->whereNotNull('return_trip_id')
+            ->where('is_return_leg', false)
             ->first();
 
         return $outbound ? (float) $outbound->price : 0;

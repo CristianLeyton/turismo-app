@@ -63,7 +63,7 @@ class ViewTicket extends ViewRecord
                     }
 
                     $ticketId = $record->id;
-                    $colectivo = str_replace(' ', '_', $record->trip->bus->name);
+                    $colectivo = str_replace(' ', '_', $record->trip?->bus?->name ?? 'Sin fecha');
                     $filename = "Boleto_N°{$ticketId}_{$colectivo}.pdf";
 
                     return response()->streamDownload(

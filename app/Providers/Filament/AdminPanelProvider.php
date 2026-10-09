@@ -25,8 +25,8 @@ use App\Filament\Pages\Auth\EditProfile;
 use App\Filament\Resources\Tickets\TicketResource;
 use Filament\Enums\ThemeMode;
 use Filament\Navigation\NavigationItem;
-
-
+use App\Filament\Widgets\Panel as PanelWidget;
+use App\Filament\Widgets\UserAccount;
 
 class AdminPanelProvider extends PanelProvider
 {
@@ -70,7 +70,8 @@ class AdminPanelProvider extends PanelProvider
             ])
             ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\Filament\Widgets')
             ->widgets([
-                //AccountWidget::class,
+                PanelWidget::class,
+                UserAccount::class,
             ])
             ->middleware([
                 EncryptCookies::class,

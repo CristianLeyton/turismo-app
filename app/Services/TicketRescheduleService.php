@@ -27,8 +27,13 @@ use Illuminate\Validation\ValidationException;
  *
  * Estructura de un ida y vuelta: DOS tickets del mismo sale+passenger.
  *  - Boleto de ida: is_round_trip=true, return_trip_id=viaje de vuelta, price>0.
- *  - Boleto de vuelta: is_round_trip=true, return_trip_id=NULL, price=0,
- *    con origin/destination ya en dirección regreso.
+ *    Si la vuelta todavía no tiene viaje, el `return_trip_id` queda NULL.
+ *  - Boleto de vuelta: is_return_leg=true, is_round_trip=true,
+ *    return_trip_id=NULL, price=0, con origin/destination ya en dirección regreso.
+ *
+ * El tramo de vuelta se identifica por `is_return_leg` (y la convención
+ * histórica como fallback), no por `return_trip_id` NULL: en una venta mixta
+ * con la ida pendiente la ida tampoco lo tiene hasta que se liga.
  */
 class TicketRescheduleService
 {
@@ -64,7 +69,7 @@ class TicketRescheduleService
      */
     public function reschedule(Ticket $ticket, array $data): array
     {
-        $this->validateAdmin();
+        $this->validatePermissions();
 
         // Confirmación de contraseña (si el parámetro está activo) antes de
         // cualquier mutación o reserva: defensa server-side además del form.
@@ -78,14 +83,18 @@ class TicketRescheduleService
         }
 
         $isRoundTrip = (bool) $ticket->is_round_trip;
+        // Boleto vendido sin fecha: aún no tiene viaje. Su primera
+        // asignación exige asiento (no hay asiento previo que conservar).
+        $isPending = $ticket->isPendingDate();
 
         if ($scope === 'both' && ! $isRoundTrip) {
             throw ValidationException::withMessages(['scope' => 'Este boleto no es de ida y vuelta.']);
         }
 
-        // Boleto de vuelta (is_round_trip=true, return_trip_id=null, price=0):
-        // solo se puede mover el propio tramo, no "ambos".
-        $isReturnLegTicket = $isRoundTrip && is_null($ticket->return_trip_id);
+        // Boleto de vuelta (marca explícita is_return_leg, o convención
+        // is_round_trip=true + return_trip_id=null + price=0): sólo se puede
+        // mover el propio tramo, no "ambos".
+        $isReturnLegTicket = $ticket->isReturnLeg();
         if ($isReturnLegTicket) {
             $scope = 'outbound'; // mueve únicamente este registro
         }
@@ -101,6 +110,7 @@ class TicketRescheduleService
                 (int) $ticket->destination_location_id,
                 'schedule_id',
                 $data['date'] ?? null,
+                $ticket,
             );
 
             $newOutboundTrip = Trip::findOrCreateForBooking(
@@ -115,7 +125,11 @@ class TicketRescheduleService
             }
 
             // El boleto ocupa asiento: el nuevo tramo también debe tenerlo.
-            if ($ticket->occupiesSeat() && blank($data['seat_id'] ?? null)) {
+            // En un boleto sin fecha el asiento es nuevo: es obligatorio.
+            if (
+                ($ticket->occupiesSeat() || $isPending)
+                && blank($data['seat_id'] ?? null)
+            ) {
                 throw ValidationException::withMessages(['seat_id' => 'Elegí el nuevo asiento de ida antes de confirmar.']);
             }
 
@@ -148,21 +162,15 @@ class TicketRescheduleService
             // El tramo de vuelta ocupa asiento: exigir asiento nuevo.
             $returnLeg = $isReturnLegTicket
                 ? $ticket
-                : Ticket::query()
-                    ->where('sale_id', $ticket->sale_id)
-                    ->where('passenger_id', $ticket->passenger_id)
-                    ->where('is_round_trip', true)
-                    ->whereNull('return_trip_id')
-                    ->whereNull('deleted_at')
-                    ->first();
+                : $this->findReturnLegTicket($ticket);
 
-            if ($returnLeg?->occupiesSeat() && blank($returnSeatId)) {
+            if (($returnLeg?->occupiesSeat() || $isPending) && blank($returnSeatId)) {
                 throw ValidationException::withMessages([
                     $isReturnLegTicket ? 'seat_id' : 'return_seat_id' => 'Elegí el nuevo asiento de vuelta antes de confirmar.',
                 ]);
             }
 
-            $this->validateScheduleForSegment($returnScheduleId, $returnOriginId, $returnDestinationId, 'return_schedule_id', $returnDate);
+            $this->validateScheduleForSegment($returnScheduleId, $returnOriginId, $returnDestinationId, 'return_schedule_id', $returnDate, $ticket);
 
             $newReturnTrip = Trip::findOrCreateForBooking(
                 (int) $returnScheduleId,
@@ -190,7 +198,12 @@ class TicketRescheduleService
             ? $this->findOutboundTicket($ticket)?->trip
             : $newOutboundTrip;
 
-        $returnTripForOrder = $hasReturnMove ? $newReturnTrip : $ticket->returnTrip;
+        // Si sólo se mueve la ida, la vuelta de referencia es la del boleto
+        // hermano (fuente de verdad): el `return_trip_id` de la ida puede
+        // estar vacío en ventas mixtas emitidas con la ida pendiente.
+        $returnTripForOrder = $hasReturnMove
+            ? $newReturnTrip
+            : ($this->findReturnLegTicket($ticket)?->trip ?? $ticket->returnTrip);
 
         $outboundArrival = $outboundTripForOrder
             ? $this->getStopDatetime($outboundTripForOrder, $transferLocationId, useArrival: true)
@@ -223,7 +236,9 @@ class TicketRescheduleService
                     // y se sincroniza el return_trip_id del boleto de ida.
                     $outboundTicketForSync = $this->findOutboundTicket($mainTicket);
 
-                    $originalTripId = (int) $mainTicket->trip_id;
+                    // Boleto sin fecha: no hay viaje de origen (NULL, no 0, para
+                    // respetar la FK de ticket_date_changes).
+                    $originalTripId = $mainTicket->trip_id !== null ? (int) $mainTicket->trip_id : null;
                     $originalSeatId = $mainTicket->seat_id;
                     $originalScheduleId = $mainTicket->trip?->schedule_id;
 
@@ -251,7 +266,7 @@ class TicketRescheduleService
                         ];
                     }
                 } else {
-                    $originalOutboundTripId = (int) $mainTicket->trip_id;
+                    $originalOutboundTripId = $mainTicket->trip_id !== null ? (int) $mainTicket->trip_id : null;
                     $originalOutboundSeatId = $mainTicket->seat_id;
                     $originalOutboundScheduleId = $mainTicket->trip?->schedule_id;
 
@@ -275,25 +290,37 @@ class TicketRescheduleService
                             'to_seat_id' => $newOutboundSeat?->id,
                         ];
                     }
+
+                    // Re-sincronizar el vínculo con el tramo de vuelta. Repara
+                    // los boletos emitidos con la ida pendiente y la vuelta ya
+                    // asignada (donde `return_trip_id` quedaba en NULL) y deja
+                    // el link coherente cuando la vuelta se movió por separado.
+                    if ((bool) $mainTicket->is_round_trip) {
+                        $returnLegForSync = $this->findReturnLegTicket($mainTicket);
+
+                        if ($returnLegForSync) {
+                            $expectedReturnTripId = $returnLegForSync->trip_id !== null
+                                ? (int) $returnLegForSync->trip_id
+                                : null;
+
+                            if ((int) ($mainTicket->return_trip_id ?? 0) !== (int) ($expectedReturnTripId ?? 0)) {
+                                $mainTicket->forceFill(['return_trip_id' => $expectedReturnTripId])->save();
+                            }
+                        }
+                    }
                 }
 
                 // 2) Vuelta (scope "both" desde el boleto de ida: el tramo de vuelta
                 // vive en OTRO registro del mismo sale+passenger).
                 if ($hasReturnMove && ! $isReturnLegTicket) {
-                    $returnTicket = Ticket::query()
-                        ->where('sale_id', $mainTicket->sale_id)
-                        ->where('passenger_id', $mainTicket->passenger_id)
-                        ->where('is_round_trip', true)
-                        ->whereNull('return_trip_id')
-                        ->whereNull('deleted_at')
-                        ->lockForUpdate()
-                        ->first();
+                    $returnTicket = $this->findReturnLegTicket($mainTicket, lockForUpdate: true);
 
                     if (! $returnTicket) {
                         throw ValidationException::withMessages(['return_schedule_id' => 'No se encontró el boleto de vuelta del pasajero.']);
                     }
 
-                    $originalReturnTripId = (int) $returnTicket->trip_id;
+                    // El hermano de vuelta puede estar pendiente (trip_id NULL).
+                    $originalReturnTripId = $returnTicket->trip_id !== null ? (int) $returnTicket->trip_id : null;
                     $originalReturnSeatId = $returnTicket->seat_id;
                     $originalReturnScheduleId = $returnTicket->trip?->schedule_id;
 
@@ -353,7 +380,9 @@ class TicketRescheduleService
      */
     private function moveLeg(Ticket $ticket, Trip $toTrip, ?Seat $toSeat, ?int $excludeTicketId): bool
     {
-        $fromTripId = (int) $ticket->trip_id;
+        // Un boleto vendido sin fecha (trip_id NULL) parte "desde ningún viaje":
+        // el UPDATE no puede condicionarse por el viaje de origen.
+        $fromTripId = $ticket->trip_id !== null ? (int) $ticket->trip_id : null;
         $toTripId = (int) $toTrip->id;
 
         $tripChanged = $fromTripId !== $toTripId;
@@ -384,10 +413,11 @@ class TicketRescheduleService
         $this->assertSeatAvailableOnTrip($lockedTrip, $toSeat?->id, $excludeTicketId);
 
         // UPDATE condicionado: el ticket debe seguir en su viaje de origen al momento del UPDATE.
+        // (Si no tiene viaje de origen —boleto sin fecha— no hay condición previa.)
         $updated = Ticket::query()
             ->where('id', $ticket->id)
             ->whereNull('deleted_at')
-            ->when($tripChanged, fn ($q) => $q->where('trip_id', $fromTripId))
+            ->when($tripChanged && $fromTripId !== null, fn ($q) => $q->where('trip_id', $fromTripId))
             ->update([
                 'trip_id' => $toTripId,
                 'seat_id' => $toSeat?->id,
@@ -440,8 +470,10 @@ class TicketRescheduleService
      * Validar que el horario exista y cubra el segmento origen→destino.
      * La restricción de horario/ruta inactivos la aplica findOrCreateForBooking
      * (bloquea CREAR viajes nuevos con horario inactivo, pero permite usar uno existente).
+     * Si se pasa el boleto, además valida que la ruta del horario pertenezca
+     * al colectivo del boleto (respetando el bus_id guardado en la venta).
      */
-    private function validateScheduleForSegment(mixed $scheduleId, int $originId, int $destinationId, string $field, ?string $tripDate = null): void
+    private function validateScheduleForSegment(mixed $scheduleId, int $originId, int $destinationId, string $field, ?string $tripDate = null, ?Ticket $ticket = null): void
     {
         if (blank($scheduleId)) {
             throw ValidationException::withMessages([$field => 'Elegí un horario.']);
@@ -461,6 +493,16 @@ class TicketRescheduleService
 
         if (! $route || ! $route->isValidSegment($originId, $destinationId)) {
             throw ValidationException::withMessages([$field => 'El segmento origen→destino no es válido para este horario.']);
+        }
+
+        // Los boletos vendidos con colectivo obligatorio llevan bus_id desde
+        // la venta: el horario elegido debe ser de una ruta del mismo
+        // colectivo. Los boletos viejos (sólo trip_id) no se restringen:
+        // la reprogramación histórica permite cambiar de colectivo.
+        if (filled($ticket?->bus_id) && (int) $route->bus_id !== (int) $ticket->bus_id) {
+            throw ValidationException::withMessages([
+                $field => 'El horario elegido no corresponde al colectivo del boleto.',
+            ]);
         }
     }
 
@@ -507,6 +549,25 @@ class TicketRescheduleService
     }
 
     /**
+     * Buscar el boleto hermano que representa el tramo de vuelta del mismo
+     * pasajero en la misma venta.
+     *
+     * Es la fuente de verdad del viaje de vuelta: en una venta mixta con la ida
+     * pendiente, el viaje de vuelta ya existe en este registro aunque el
+     * `return_trip_id` de la ida nunca se haya escrito.
+     */
+    private function findReturnLegTicket(Ticket $ticket, bool $lockForUpdate = false): ?Ticket
+    {
+        return Ticket::query()
+            ->where('sale_id', $ticket->sale_id)
+            ->where('passenger_id', $ticket->passenger_id)
+            ->where('is_return_leg', true)
+            ->whereNull('deleted_at')
+            ->when($lockForUpdate, fn ($query) => $query->lockForUpdate())
+            ->first();
+    }
+
+    /**
      * Buscar el boleto de ida del mismo pasajero en la misma venta.
      */
     private function findOutboundTicket(Ticket $returnLegTicket): ?Ticket
@@ -515,7 +576,7 @@ class TicketRescheduleService
             ->where('sale_id', $returnLegTicket->sale_id)
             ->where('passenger_id', $returnLegTicket->passenger_id)
             ->where('is_round_trip', true)
-            ->whereNotNull('return_trip_id')
+            ->where('is_return_leg', false)
             ->whereNull('deleted_at')
             ->first();
     }
@@ -526,17 +587,18 @@ class TicketRescheduleService
             throw ValidationException::withMessages(['ticket' => 'No se puede reprogramar un boleto eliminado.']);
         }
 
-        if (! $ticket->trip) {
-            throw ValidationException::withMessages(['ticket' => 'El boleto no tiene viaje asignado.']);
-        }
+        // Los boletos vendidos sin fecha (trip_id NULL, permiso
+        // `tickets.vender_sin_fecha`) también son reprogramables: esta
+        // operación les asigna su primera fecha/horario y asiento.
     }
 
-    private function validateAdmin(): void
+    private function validatePermissions(): void
     {
-        if (! Auth::check() || ! Auth::user()->is_admin) {
-            throw ValidationException::withMessages(['user' => 'Solo un administrador puede reprogramar boletos.']);
+        //En realidad quiero validar si tiene permiso de reprogramar boletos    
+        if (! Auth::check() || ! Auth::user()->can('tickets.reschedule')) {
+            throw ValidationException::withMessages(['user' => 'No tienes permisos para reprogramar boletos.']);
         }
-    }
+    } 
 
     private function isUniqueSeatViolation(QueryException $e): bool
     {

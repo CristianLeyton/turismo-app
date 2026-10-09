@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\Tickets\Schemas;
 
+use App\Filament\Resources\Tickets\Pages\CreateTicket;
 use App\Filament\Tables\ClientsPickerTable;
 use App\Models\Bus;
 use App\Models\Clients;
@@ -13,6 +14,8 @@ use App\Models\Seat;
 use App\Models\SeatReservation;
 use App\Models\Trip;
 use App\Services\TripTimesService;
+use App\Support\Permissions;
+use App\Support\SaleCutoff;
 use Carbon\Carbon;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Checkbox;
@@ -37,6 +40,8 @@ use Filament\Support\Exceptions\Halt;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\HtmlString;
+use Illuminate\Support\Facades\Auth;
+use Livewire\Component as LivewireComponent;
 
 class TicketForm
 {
@@ -45,10 +50,15 @@ class TicketForm
         return $schema->schema([
             Wizard::make([
                 Step::make('Buscar viaje')
-                    ->afterValidation(function (Get $get, Set $set) {
+                    ->afterValidation(function (Get $get, Set $set, LivewireComponent $livewire) {
                         // Solo limpiar reservas si realmente cambian los parámetros de búsqueda
                         // No limpiar solo por navegación hacia atrás
                         static $lastSearchHash = null;
+
+                        // Venta sin fecha (permiso `tickets.vender_sin_fecha`):
+                        // los tramos marcados no resuelven viaje ni asiento acá.
+                        $sellWithoutDateIda = (bool) $get('sell_without_date_ida');
+                        $sellWithoutDateVuelta = (bool) $get('sell_without_date_vuelta');
 
                         $currentSearch = [
                             'bus_id' => $get('bus_id'),
@@ -78,7 +88,7 @@ class TicketForm
                         $tripId = $get('trip_id');
                         $tripSearchStatus = $get('trip_search_status');
 
-                        if (blank($tripId) || $tripSearchStatus !== 'available') {
+                        if (! $sellWithoutDateIda && (blank($tripId) || $tripSearchStatus !== 'available')) {
                             // Intentar verificar el viaje de ida automáticamente
                             $originId = $get('origin_location_id');
                             $destinationId = $get('destination_location_id');
@@ -163,7 +173,8 @@ class TicketForm
                         }
 
                         // Validar que se haya seleccionado un viaje de ida
-                        if (blank($tripId)) {
+                        // (no aplica al tramo vendido sin fecha)
+                        if (blank($tripId) && ! $sellWithoutDateIda) {
                             Notification::make()
                                 ->title('Viaje de ida requerido')
                                 ->body('Debe buscar un viaje de ida antes de continuar.')
@@ -173,7 +184,7 @@ class TicketForm
                         }
 
                         // Validar que el viaje tenga estado 'available'
-                        if ($tripSearchStatus !== 'available') {
+                        if (! $sellWithoutDateIda && $tripSearchStatus !== 'available') {
                             Notification::make()
                                 ->icon('heroicon-m-exclamation-triangle')
                                 ->title('Viaje de ida no disponible')
@@ -181,6 +192,31 @@ class TicketForm
                                 ->warning()
                                 ->send();
                             throw new Halt;
+                        }
+
+                        // Venta fuera de término (SaleCutoff): sin el permiso
+                        // `tickets.vender_pasado_limite` no se venden días
+                        // anteriores ni salidas fuera de la ventana de horas.
+                        // Se corta ya en el paso 1 (y no sólo al crear) para no
+                        // llegar al resumen para que falle. La edición de un
+                        // boleto existente no está limitada.
+                        if ($livewire instanceof CreateTicket) {
+                            $violation = SaleCutoff::blockReasonForTrip(
+                                blank($tripId) ? null : Trip::find($tripId),
+                                $get('origin_location_id'),
+                                'ida',
+                            );
+
+                            if ($violation !== null) {
+                                Notification::make()
+                                    ->title('Venta fuera de término')
+                                    ->icon('heroicon-m-clock')
+                                    ->danger()
+                                    ->persistent()
+                                    ->body($violation)
+                                    ->send();
+                                throw new Halt;
+                            }
                         }
 
                         // Si está marcado como viaje de ida y vuelta, verificar automáticamente el viaje de vuelta
@@ -275,7 +311,8 @@ class TicketForm
                             }
 
                             // Validar que se haya seleccionado un viaje de vuelta
-                            if (blank($returnTripId)) {
+                            // (no aplica al tramo de vuelta vendido sin fecha)
+                            if (blank($returnTripId) && ! $sellWithoutDateVuelta) {
                                 Notification::make()
                                     ->title('Viaje de vuelta requerido')
                                     ->body('Debe buscar un viaje de vuelta antes de continuar.')
@@ -285,13 +322,34 @@ class TicketForm
                             }
 
                             // Validar que el viaje de vuelta tenga estado 'available'
-                            if ($returnTripSearchStatus !== 'available') {
+                            if (! $sellWithoutDateVuelta && $returnTripSearchStatus !== 'available') {
                                 Notification::make()
                                     ->title('Viaje de vuelta no disponible')
                                     ->body('Debe buscar un viaje de vuelta disponible antes de continuar.')
                                     ->warning()
                                     ->send();
                                 throw new Halt;
+                            }
+
+                            // Venta fuera de término del tramo de vuelta
+                            // (misma regla que la ida; sube en el destino de ida).
+                            if ($livewire instanceof CreateTicket) {
+                                $violation = SaleCutoff::blockReasonForTrip(
+                                    blank($returnTripId) ? null : Trip::find($returnTripId),
+                                    $get('destination_location_id'),
+                                    'vuelta',
+                                );
+
+                                if ($violation !== null) {
+                                    Notification::make()
+                                        ->title('Venta fuera de término')
+                                        ->icon('heroicon-m-clock')
+                                        ->danger()
+                                        ->persistent()
+                                        ->body($violation)
+                                        ->send();
+                                    throw new Halt;
+                                }
                             }
                         }
                     })
@@ -460,12 +518,45 @@ class TicketForm
                                     ->validationMessages([
                                         'required' => 'Seleccione un destino',
                                     ]),
+
+                                // Venta sin fecha (permiso `tickets.vender_sin_fecha`): el
+                                // tramo marcado se emite sin viaje/asiento y la fecha/horario
+                                // se le asignan después via `tickets.reschedule`. Por defecto
+                                // el boleto se vende CON fecha: al activar el switch
+                                // desaparecen los campos de fecha y horario. Feature flag de
+                                // rollout: además del permiso, oculto mientras NINGÚN rol
+                                // tenga el permiso asignado en la matriz (el superadmin lo
+                                // trae implícito por bypass, no cuenta como encendido).
+                                Toggle::make('sell_without_date_ida')
+                                    ->label('Viaje de ida sin fecha')
+                                    ->helperText('El boleto se vende sin fecha ni horario y se asignan después desde la opción "reprogramar boleto".')
+                                    ->default(false)
+                                    ->columnSpan(2)
+                                    ->visible(fn (): bool => (bool) Auth::user()?->can('tickets.vender_sin_fecha')
+                                        && Permissions::permissionGrantedToAnyRole('tickets.vender_sin_fecha'))
+                                    ->live()
+                                    ->afterStateUpdated(function ($state, Set $set) {
+                                        if (! $state) {
+                                            return;
+                                        }
+
+                                        // Sin fecha de ida: fuera viaje y asientos. El colectivo
+                                        // se conserva: es obligatorio en toda venta.
+                                        $set('departure_date', null);
+                                        $set('schedule_id', null);
+                                        $set('trip_id', null);
+                                        $set('trip_search_status', null);
+                                        $set('trip_available_seats', null);
+                                        $set('seat_ids', []);
+                                    }),
+
                                 DatePicker::make('departure_date')
                                     ->label('Fecha de ida')
-                                    ->required()
+                                    ->visible(fn (Get $get) => ! (bool) $get('sell_without_date_ida'))
+                                    ->required(fn (Get $get) => ! (bool) $get('sell_without_date_ida'))
                                     ->native(false)
                                     ->displayFormat('d/m/Y')
-                                    ->minDate(fn () => now()->subYear()->startOfDay())
+                                    ->minDate(fn () => SaleCutoff::minSelectableDate())
                                     ->closeOnDateSelection()
                                     ->disabledDates(fn (): array => self::getDisabledTravelDates())
                                     /* ->helperText('Solo se permiten días laborables (lunes a viernes)') */
@@ -482,10 +573,12 @@ class TicketForm
                                     ])
                                     ->validationMessages([
                                         'required' => 'Seleccione una fecha de ida',
+                                        'after_or_equal' => 'No se venden pasajes para fechas anteriores a hoy.',
                                     ]),
                                 Select::make('schedule_id')
                                     ->label('Horario de ida')
-                                    ->required()
+                                    ->visible(fn (Get $get) => ! (bool) $get('sell_without_date_ida'))
+                                    ->required(fn (Get $get) => ! (bool) $get('sell_without_date_ida'))
                                     ->disabled(fn (Get $get) => blank($get('bus_id')) || blank($get('origin_location_id')) || blank($get('destination_location_id')) || blank($get('departure_date')))
                                     ->placeholder(function (Get $get) {
                                         if (blank($get('bus_id'))) {
@@ -518,7 +611,13 @@ class TicketForm
                                                 }
 
                                                 return true;
-                                            });
+                                            })
+                                            // Venta fuera de término (misma condición que en options)
+                                            ->filter(fn ($schedule) => SaleCutoff::blockReasonForSchedule(
+                                                $get('departure_date'),
+                                                $schedule,
+                                                $get('origin_location_id'),
+                                            ) === null);
 
                                         if ($schedules->isEmpty()) {
                                             return 'No hay horarios disponibles para esta ruta';
@@ -550,6 +649,13 @@ class TicketForm
 
                                                 return true;
                                             })
+                                            // Venta fuera de término: sin el permiso no se
+                                            // listan fechas anteriores ni salidas ya vencidas.
+                                            ->filter(fn ($schedule) => SaleCutoff::blockReasonForSchedule(
+                                                $get('departure_date'),
+                                                $schedule,
+                                                $get('origin_location_id'),
+                                            ) === null)
                                             ->sortBy(fn ($schedule) => $schedule->display_name, SORT_NATURAL | SORT_FLAG_CASE);
 
                                         if ($schedules->isEmpty()) {
@@ -660,6 +766,8 @@ class TicketForm
                                     $set('return_trip_id', null);
                                     $set('return_trip_search_status', null);
                                     $set('return_trip_available_seats', null);
+                                    // La vuelta sin fecha sólo existe con ida y vuelta.
+                                    $set('sell_without_date_vuelta', false);
 
                                     return;
                                 }
@@ -669,7 +777,8 @@ class TicketForm
                                 $tripSearchStatus = $get('trip_search_status');
 
                                 // Si no hay viaje de ida disponible, buscarlo automáticamente
-                                if (blank($tripId) || $tripSearchStatus !== 'available') {
+                                // (con ida sin fecha no hay viaje que buscar).
+                                if (! (bool) $get('sell_without_date_ida') && (blank($tripId) || $tripSearchStatus !== 'available')) {
                                     $originId = $get('origin_location_id');
                                     $destinationId = $get('destination_location_id');
                                     $scheduleId = $get('schedule_id');
@@ -841,8 +950,34 @@ class TicketForm
                                 }
                             }),
 
+                        // Vuelta sin fecha (permiso `tickets.vender_sin_fecha`): el
+                        // switch vive justo arriba de la fecha de vuelta; al activarlo
+                        // desaparecen los campos de fecha y horario de vuelta.
                         Grid::make(2)
                             ->schema([
+                                Toggle::make('sell_without_date_vuelta')
+                                    ->label('Viaje de vuelta sin fecha')
+                                    ->helperText('El boleto se vende sin fecha ni horario y se asignan después desde la opción "reprogramar boleto".')
+                                    ->default(false)
+                                    ->columnSpan(2)
+                                    ->visible(fn (Get $get): bool => (bool) $get('is_round_trip')
+                                        && (bool) Auth::user()?->can('tickets.vender_sin_fecha')
+                                        && Permissions::permissionGrantedToAnyRole('tickets.vender_sin_fecha'))
+                                    ->live()
+                                    ->afterStateUpdated(function ($state, Set $set) {
+                                        if (! $state) {
+                                            return;
+                                        }
+
+                                        // Sin fecha de vuelta: fuera viaje y asientos de vuelta.
+                                        $set('return_date', null);
+                                        $set('return_schedule_id', null);
+                                        $set('return_trip_id', null);
+                                        $set('return_trip_search_status', null);
+                                        $set('return_trip_available_seats', null);
+                                        $set('return_seat_ids', []);
+                                    }),
+
                                 DatePicker::make('return_date')
                                     ->label('Fecha de vuelta')
                                     ->required()
@@ -876,7 +1011,7 @@ class TicketForm
                                         'required' => 'Seleccione una fecha de vuelta',
                                     ])
                                     ->rule('after_or_equal:departure_date')
-                                    ->visible(fn (Get $get) => $get('is_round_trip'))
+                                    ->visible(fn (Get $get) => $get('is_round_trip') && ! (bool) $get('sell_without_date_vuelta'))
                                     ->live()
                                     ->afterStateUpdated(fn ($set) => [
                                         $set('return_schedule_id', null),
@@ -887,8 +1022,8 @@ class TicketForm
 
                                 Select::make('return_schedule_id')
                                     ->label('Horario de vuelta')
-                                    ->required()
-                                    ->visible(fn (Get $get) => $get('is_round_trip'))
+                                    ->required(fn (Get $get) => ! (bool) $get('sell_without_date_vuelta'))
+                                    ->visible(fn (Get $get) => $get('is_round_trip') && ! (bool) $get('sell_without_date_vuelta'))
                                     ->disabled(fn (Get $get) => blank($get('return_date')))
                                     ->placeholder(function (Get $get) {
                                         if (blank($get('return_date'))) {
@@ -946,6 +1081,13 @@ class TicketForm
                                                 return $scheduleTime > $departureTimeStr;
                                             });
                                         }
+
+                                        // Venta fuera de término (misma condición que en options)
+                                        $schedules = $schedules->filter(fn ($schedule) => SaleCutoff::blockReasonForSchedule(
+                                            $get('return_date'),
+                                            $schedule,
+                                            $get('destination_location_id'),
+                                        ) === null);
 
                                         if ($schedules->isEmpty()) {
                                             if ($isSameDay && $departureTime) {
@@ -1010,6 +1152,14 @@ class TicketForm
                                                 return $scheduleTime > $departureTimeStr;
                                             });
                                         }
+
+                                        // Venta fuera de término: sin el permiso no se
+                                        // listan fechas anteriores ni salidas ya vencidas.
+                                        $schedules = $schedules->filter(fn ($schedule) => SaleCutoff::blockReasonForSchedule(
+                                            $get('return_date'),
+                                            $schedule,
+                                            $get('destination_location_id'),
+                                        ) === null);
 
                                         return $schedules->mapWithKeys(fn ($schedule) => [
                                             $schedule->id => $schedule->display_name,
@@ -1126,6 +1276,8 @@ class TicketForm
                     ]),
 
                 Step::make('Asientos (Ida)')
+                    // Con ida sin fecha no hay asientos que elegir.
+                    ->visible(fn (Get $get) => ! (bool) $get('sell_without_date_ida'))
                     ->beforeValidation(function (Get $get, Set $set) {
                         // No limpiar reservas expiradas aquí para evitar eliminar reservas recién creadas
                         // SeatReservation::cleanupExpired();
@@ -1423,7 +1575,7 @@ class TicketForm
                             ),
                     ]),
                 Step::make('Asientos (Vuelta)')
-                    ->visible(fn (Get $get) => $get('is_round_trip'))
+                    ->visible(fn (Get $get) => $get('is_round_trip') && ! (bool) $get('sell_without_date_vuelta'))
                     ->beforeValidation(function (Get $get, Set $set) {
                         // No limpiar reservas expiradas aquí para evitar eliminar reservas recién creadas
                         // SeatReservation::cleanupExpired();
@@ -1996,7 +2148,7 @@ class TicketForm
                                             ->placeholder('Seleccione un método de pago')
                                             ->createOptionModalHeading('Nuevo método de pago')
                                             ->createOptionAction(fn ($action) => $action
-                                                ->visible(fn (): bool => (bool) auth()->user()?->can('payment_methods.create')))
+                                                ->visible(fn (): bool => (bool) Auth::user()?->can('payment_methods.create')))
                                             ->createOptionForm([
                                                 TextInput::make('label')
                                                     ->label('Nombre')
@@ -2011,7 +2163,7 @@ class TicketForm
                                             ->createOptionUsing(function (array $data) {
                                                 // Server-side: solo admins pueden crear métodos,
                                                 // incluso si ocultaran el botón por JS.
-                                                abort_unless((bool) auth()->user()?->can('payment_methods.create'), 403);
+                                                abort_unless((bool) Auth::user()?->can('payment_methods.create'), 403);
 
                                                 $method = PaymentMethod::create([
                                                     'label' => $data['label'],

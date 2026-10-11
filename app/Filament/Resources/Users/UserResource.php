@@ -83,9 +83,15 @@ class UserResource extends Resource
                     ]),
                 Select::make('roles')
                     ->label('Roles')
-                    ->relationship('roles', 'name', modifyQueryUsing: fn($query) => $query
-                        ->where('guard_name', 'web')
-                        ->orderBy('id'))
+                    ->relationship('roles', 'name', modifyQueryUsing: function ($query) {
+                        $query->where('guard_name', 'web')
+                            ->orderBy('id');
+
+                        // Si el usuario actual NO es super administrador, ocultamos la opción
+                        if (! Auth::user()?->hasRole(Permissions::ROLE_SUPER)) {
+                            $query->where('name', '!=', Permissions::ROLE_SUPER);
+                        }
+                    })
                     ->multiple()
                     ->preload()
                     ->searchable()
@@ -118,8 +124,7 @@ class UserResource extends Resource
             ])
             ->filters([
                 // TrashedFilter::make(),
-                /* SelectFilter::make('rol') */
-            ])
+                /* SelectFilter::make('rol') */])
             ->recordActions([
                 EditAction::make()
                     ->disabled(fn(User $record): bool => $record->id === 2)

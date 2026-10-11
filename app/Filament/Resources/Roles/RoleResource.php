@@ -5,6 +5,7 @@ namespace App\Filament\Resources\Roles;
 use App\Filament\Clusters\Users\UsersCluster;
 use App\Filament\Resources\Roles\Pages\ManageRoles;
 use App\Support\Permissions;
+use App\Models\User;
 use BackedEnum;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\EditAction;
@@ -18,6 +19,7 @@ use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Spatie\Permission\Models\Role;
+use Illuminate\Support\Facades\Auth;
 
 /**
  * Autogestión de roles y permisos.
@@ -47,17 +49,17 @@ class RoleResource extends Resource
 
     public static function canViewAny(): bool
     {
-        return (bool) auth()->user()?->can('roles.view_any');
+        return (bool) Auth::user()?->can('roles.view_any');
     }
 
     public static function canCreate(): bool
     {
-        return (bool) auth()->user()?->can('roles.create');
+        return (bool) Auth::user()?->can('roles.create');
     }
 
     public static function canEdit($record): bool
     {
-        if (! (bool) auth()->user()?->can('roles.update')) {
+        if (! (bool) Auth::user()?->can('roles.update')) {
             return false;
         }
 
@@ -67,7 +69,7 @@ class RoleResource extends Resource
 
     public static function canDelete($record): bool
     {
-        if (! (bool) auth()->user()?->can('roles.delete')) {
+        if (! (bool) Auth::user()?->can('roles.delete')) {
             return false;
         }
 
@@ -133,8 +135,15 @@ class RoleResource extends Resource
     {
         return $table
             ->recordTitleAttribute('name')
-            ->modifyQueryUsing(fn ($query) => $query->where('guard_name', 'web')->withCount(['users', 'permissions']))
-            ->columns([
+            ->modifyQueryUsing(function ($query) {
+            $query->where('guard_name', 'web')
+                  ->withCount(['users', 'permissions']);
+
+            // Si el usuario actual NO es super administrador, ocultamos ese rol de la tabla
+            if (! Auth::user()?->hasRole(Permissions::ROLE_SUPER)) {
+                $query->where('name', '!=', Permissions::ROLE_SUPER);
+            }
+        })->columns([
                 TextColumn::make('name')
                     ->label('Rol')
                     ->searchable()

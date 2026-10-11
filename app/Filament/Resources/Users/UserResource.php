@@ -83,14 +83,20 @@ class UserResource extends Resource
                     ]),
                 Select::make('roles')
                     ->label('Roles')
-                    ->relationship('roles', 'name', modifyQueryUsing: fn($query) => $query
-                        ->where('guard_name', 'web')
-                        ->orderBy('id'))
+                    ->relationship('roles', 'name', modifyQueryUsing: function ($query) {
+                        $query->where('guard_name', 'web')
+                            ->orderBy('id');
+
+                        // Si el usuario actual NO es super administrador, ocultamos la opción
+                        if (! Auth::user()?->hasRole(Permissions::ROLE_SUPER)) {
+                            $query->where('name', '!=', Permissions::ROLE_SUPER);
+                        }
+                    })
                     ->multiple()
                     ->preload()
                     ->searchable()
                     ->visible(fn(): bool => (bool) Auth::user()?->can('roles.assign'))
-                    ->helperText('El rol del usuario indica que acciones puede realizar en el sistema.'),
+                    ->helperText('El rol del usuario indica que acciones puede realizar en el sistema.')
             ]);
     }
 

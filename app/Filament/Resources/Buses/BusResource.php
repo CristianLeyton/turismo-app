@@ -3,9 +3,11 @@
 namespace App\Filament\Resources\Buses;
 
 use App\Filament\Clusters\Buses\BusesCluster;
+use App\Filament\Resources\Buses\Pages\DesignBusLayout;
 use App\Filament\Resources\Buses\Pages\ManageBuses;
 use App\Models\Bus;
 use BackedEnum;
+use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
@@ -14,6 +16,7 @@ use Filament\Actions\ForceDeleteAction;
 use Filament\Actions\ForceDeleteBulkAction;
 use Filament\Actions\RestoreAction;
 use Filament\Actions\RestoreBulkAction;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
@@ -78,6 +81,30 @@ class BusResource extends Resource
                         'min' => 'El colectivo debe tener al menos :min asientos.',
                         'max' => 'El colectivo no debe tener más de :max asientos.',
                     ]),
+
+                // Sólo al crear: partir de una plantilla o copiar otro colectivo.
+                // La lógica de siembra vive en ManageBuses (CreateAction::using).
+                Select::make('layout_seed')
+                    ->label('Partir de un diseño existente')
+                    ->helperText('Opcional: copiá los asientos y zonas de una plantilla o de otro colectivo. Podés rediseñarlo después con "Diseñar layout".')
+                    ->options(function (): array {
+                        $options = [];
+
+                        foreach (app(\App\Services\BusLayoutService::class)->templatesForSelect() as $t) {
+                            $label = $t['name']
+                                ." — {$t['seats']} asientos, {$t['areas']} zonas"
+                                .($t['floors'] > 1 ? " · {$t['floors']} pisos" : '');
+                            $options["template:{$t['id']}"] = $label;
+                        }
+
+                        foreach (Bus::query()->orderBy('name')->get(['id', 'name']) as $bus) {
+                            $options["bus:{$bus->id}"] = "Duplicar: {$bus->name}";
+                        }
+
+                        return $options;
+                    })
+                    ->placeholder('Empezar de cero (diseño en blanco)')
+                    ->visibleOn(['create']),
             ]);
     }
 
@@ -116,6 +143,14 @@ class BusResource extends Resource
                 TrashedFilter::make(),
             ])
             ->recordActions([
+                Action::make('designLayout')
+                    ->label('Diseñar layout')
+                    ->icon(Heroicon::Squares2x2)
+                    ->color('info')
+                    ->button()
+                    ->hiddenLabel()
+                    ->extraAttributes(['title' => 'Diseñar layout'])
+                    ->url(fn (Bus $record): string => BusResource::getUrl('design', ['record' => $record])),
                 EditAction::make()->button()->hiddenLabel()->extraAttributes([
                     'title' => 'Editar',
                 ]),
@@ -142,6 +177,7 @@ class BusResource extends Resource
     {
         return [
             'index' => ManageBuses::route('/'),
+            'design' => DesignBusLayout::route('/{record}/design'),
         ];
     }
 

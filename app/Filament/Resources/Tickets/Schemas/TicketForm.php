@@ -1365,10 +1365,11 @@ class TicketForm
                             }
                         }
 
-                        logger()->info('Seat IDs', [
+                        // No loguear seat_ids para evitar leaks de información
+                        /* logger()->info('Seat IDs', [
                             'seat_ids' => $get('seat_ids'),
                             'count' => count($get('seat_ids') ?? []),
-                        ]);
+                        ]); */
                     })
                     ->schema([
                         ViewField::make('wizard_header_ida')

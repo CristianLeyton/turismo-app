@@ -23,7 +23,7 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
-use Filament\Tables\Filters\TrashedFilter;
+use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
@@ -165,11 +165,29 @@ class ClientsResource extends Resource
                     ->badge()
                     ->state(fn (Clients $record): string => $record->can_buy ? 'Habilitado' : 'Baneado')
                     ->color(fn (Clients $record): string => $record->can_buy ? 'success' : 'danger'),
+                TextColumn::make('boletos_historicos')
+                    ->label('Boletos históricos')
+                    ->state(fn (Clients $record): int => $record->tickets()->count())
+                    ->sortable(query: fn (Builder $query, string $direction): Builder => $query->orderBy('boletos_historicos', $direction))
+                    ->numeric()
+                    ->alignEnd(),
             ])
             ->recordUrl(null)
             ->recordAction(null)
-            ->filters([/*
-                TrashedFilter::make(), */])
+            ->filters([
+                // Filtro de estado (baneado / habilitado).
+                TernaryFilter::make('can_buy')
+                    ->label('Estado')
+                    ->attribute('can_buy')
+                    ->placeholder('Todos')
+                    ->trueLabel('Baneados')
+                    ->falseLabel('Habilitados')
+                    ->queries(
+                        true: fn (Builder $query): Builder => $query->where('can_buy', false),
+                        false: fn (Builder $query): Builder => $query->where('can_buy', true),
+                        blank: fn (Builder $query): Builder => $query,
+                    ),
+            ])
             ->recordActions([
                 Action::make('toggleBan')
                     ->visible(fn () => (bool) Auth::user()?->can('clients.ban'))

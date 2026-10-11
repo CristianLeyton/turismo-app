@@ -5,6 +5,7 @@ namespace App\Filament\Resources\Users\Pages\Auth;
 use Filament\Auth\Pages\EditProfile as BaseEditProfile;
 use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Schema;
+use Filament\Schemas\Components\Utilities\Get;
 use Illuminate\Support\Facades\Auth;
 
 class EditProfile extends BaseEditProfile
@@ -13,59 +14,90 @@ class EditProfile extends BaseEditProfile
     {
         return $schema
             ->components([
-                TextInput::make('name')
+                // Nombre
+                $this->getNameFormComponent()
                     ->label('Nombre')
-                    ->disabled(fn() => ! Auth::user()?->can('users.update'))
-                    ->maxLength(255)
-                    ->required()
+                    ->disabled()
                     ->validationMessages([
                         'required' => 'El nombre es obligatorio.',
                         'max' => 'El nombre no debe exceder los :max caracteres.',
                     ]),
+
+                // Apellido
                 TextInput::make('surname')
                     ->label('Apellido')
-                    ->disabled(fn() => ! Auth::user()?->can('users.update'))
                     ->maxLength(255)
                     ->required()
+                    ->disabled()
                     ->validationMessages([
                         'required' => 'El apellido es obligatorio.',
                         'max' => 'El apellido no debe exceder los :max caracteres.',
                     ]),
-                TextInput::make('email')
+
+/*                 // Correo electrónico
+                $this->getEmailFormComponent()
                     ->label('Correo electrónico')
-                    ->disabled(fn() => ! Auth::user()?->can('users.update'))
-                    ->maxLength(255)
-                    ->email()
-                    ->required()
                     ->validationMessages([
                         'required' => 'El correo electrónico es obligatorio.',
                         'email' => 'Ingrese un correo electrónico válido.',
                         'max' => 'El correo electrónico no debe exceder los :max caracteres.',
                     ]),
+
+                // Teléfono
                 TextInput::make('phone')
                     ->label('Teléfono')
-                    ->disabled(fn() => ! Auth::user()?->can('users.update'))
-                    ->maxLength(255)
                     ->tel()
+                    ->maxLength(255)
                     ->validationMessages([
                         'max' => 'El teléfono no debe exceder los :max caracteres.',
-                    ]),
+                    ]), */
+
+                // Nombre de usuario
                 TextInput::make('username')
                     ->label('Nombre de usuario')
-                    ->disabled(fn() => ! Auth::user()?->can('users.update'))
                     ->maxLength(255)
                     ->required()
                     ->validationMessages([
                         'required' => 'El nombre de usuario es obligatorio.',
                         'max' => 'El nombre de usuario no debe exceder los :max caracteres.',
                     ]),
-                    TextInput::make('roles')
+
+                // Cambiar contraseña
+                $this->getPasswordFormComponent()
+                    ->label('Nueva contraseña')
+                    ->validationMessages([
+                        'required' => 'La nueva contraseña es obligatoria.',
+                        'min' => 'La nueva contraseña debe tener al menos :min caracteres.',
+                        'same' => 'Las contraseñas no coinciden.',
+                    ]),
+
+                $this->getPasswordConfirmationFormComponent()
+                    ->label('Confirmar nueva contraseña')
+                    ->validationMessages([
+                        'required' => 'La confirmación de la nueva contraseña es obligatoria.',
+                        'same' => 'Las contraseñas no coinciden.',
+                    ]),
+
+                // Contraseña actual: se solicita al cambiar contraseña
+                // o al cambiar el correo electrónico.
+                $this->getCurrentPasswordFormComponent()
+                    ->label('Contraseña actual')
+                    ->validationMessages([
+                        'required' => 'La contraseña actual es obligatoria.',
+                        'current_password' => 'La contraseña actual es incorrecta.',
+                    ]),
+
+                // Roles: solo lectura
+                TextInput::make('roles')
                     ->label('Roles')
+                    ->formatStateUsing(
+                        fn () => Auth::user()
+                            ?->roles
+                            ?->pluck('name')
+                            ->implode(', ') ?? ''
+                    )
                     ->readOnly()
-                    ->disabled()
-                    ->formatStateUsing(function () {
-                        return Auth::user()->roles->pluck('name')->implode(', ');
-                    }),
+                    ->dehydrated(false),
             ]);
     }
 }

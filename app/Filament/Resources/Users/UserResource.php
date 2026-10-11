@@ -20,10 +20,13 @@ use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\TrashedFilter;
+use Filament\Tables\Filters\Filter;
+use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
+use Illuminate\Support\Facades\Auth;
 use UnitEnum;
 
 class UserResource extends Resource
@@ -80,14 +83,14 @@ class UserResource extends Resource
                     ]),
                 Select::make('roles')
                     ->label('Roles')
-                    ->relationship('roles', 'name', modifyQueryUsing: fn ($query) => $query
+                    ->relationship('roles', 'name', modifyQueryUsing: fn($query) => $query
                         ->where('guard_name', 'web')
                         ->orderBy('id'))
                     ->multiple()
                     ->preload()
                     ->searchable()
-                    ->visible(fn (): bool => (bool) auth()->user()?->can('roles.assign'))
-                    ->helperText('Todo usuario sin roles queda como Vendedor. El flag "es administrador" se sincroniza automáticamente según el rol asignado.'),
+                    ->visible(fn(): bool => (bool) Auth::user()?->can('roles.assign'))
+                    ->helperText('El rol del usuario indica que acciones puede realizar en el sistema.'),
             ]);
     }
 
@@ -95,19 +98,19 @@ class UserResource extends Resource
     {
         return $table
             ->recordTitleAttribute('User')
-            ->modifyQueryUsing(fn (Builder $query) => $query->where('id', '!=', 1)) // Excluir el usuario con ID 1
+            ->modifyQueryUsing(fn(Builder $query) => $query->where('id', '!=', 1)) // Excluir el usuario con ID 1
             ->columns([
                 TextColumn::make('username')
                     ->label('Usuario')
                     ->searchable(),
                 TextColumn::make('name')
                     ->label('Nombre')
-                    ->getStateUsing(fn (Model $record): string => $record->name.' '.($record->surname ?? ''))
+                    ->getStateUsing(fn(Model $record): string => $record->name . ' ' . ($record->surname ?? ''))
                     ->searchable(),
                 TextColumn::make('roles.name')
                     ->label('Roles')
                     ->badge()
-                    ->color(fn (string $state): string => match ($state) {
+                    ->color(fn(string $state): string => match ($state) {
                         Permissions::ROLE_SUPER => 'danger',
                         Permissions::ROLE_ADMIN => 'success',
                         default => 'info',
@@ -115,14 +118,15 @@ class UserResource extends Resource
             ])
             ->filters([
                 // TrashedFilter::make(),
+                /* SelectFilter::make('rol') */
             ])
             ->recordActions([
                 EditAction::make()
-                    ->disabled(fn (User $record): bool => $record->id === 2)
+                    ->disabled(fn(User $record): bool => $record->id === 2)
                     ->button()->hiddenLabel()->extraAttributes([
                         'title' => 'Editar',
                     ])
-                    ->after(fn (User $record) => $record->syncIsAdminFlag()),
+                    ->after(fn(User $record) => $record->syncIsAdminFlag()),
                 Action::make('resetPassword')
                     ->label('Restablecer contraseña')
                     ->icon(Heroicon::Key)
@@ -135,7 +139,7 @@ class UserResource extends Resource
                         // Aquí puedes agregar lógica para notificar al usuario sobre su nueva contraseña
                         Notification::make()
                             ->title('Contraseña restablecida')
-                            ->body('El nombre de usuario y la nueva contraseña es: '.$newPassword)
+                            ->body('El nombre de usuario y la nueva contraseña es: ' . $newPassword)
                             ->success()
                             ->icon('heroicon-o-key')
                             ->iconColor('info')
@@ -143,20 +147,20 @@ class UserResource extends Resource
                             ->send();
                     })
                     ->requiresConfirmation()
-                    ->disabled(fn (User $record): bool => $record->id === 2)
+                    ->disabled(fn(User $record): bool => $record->id === 2)
                     ->button()
                     ->hiddenLabel()
                     ->extraAttributes([
                         'title' => 'Restablecer contraseña',
                     ]),
 
-                DeleteAction::make()->disabled(fn (User $record): bool => $record->id === 2)->button()->hiddenLabel()->extraAttributes([
+                DeleteAction::make()->disabled(fn(User $record): bool => $record->id === 2)->button()->hiddenLabel()->extraAttributes([
                     'title' => 'Eliminar',
                 ]),
-                ForceDeleteAction::make()->disabled(fn (User $record): bool => $record->id === 2)->button()->hiddenLabel()->extraAttributes([
+                ForceDeleteAction::make()->disabled(fn(User $record): bool => $record->id === 2)->button()->hiddenLabel()->extraAttributes([
                     'title' => 'Eliminar permanentemente',
                 ]),
-                RestoreAction::make()->disabled(fn (User $record): bool => $record->id === 2)->button()->hiddenLabel()->extraAttributes([
+                RestoreAction::make()->disabled(fn(User $record): bool => $record->id === 2)->button()->hiddenLabel()->extraAttributes([
                     'title' => 'Restaurar',
                 ]),
             ])

@@ -106,8 +106,8 @@
                 class="inline-grid select-none"
                 style="grid-template-columns: repeat({{ $this->gridCols }}, 48px); gap: 4px; width: fit-content"
             >
-                @for ($row = 0; $row <= $this->gridRows; $row++)
-                    @for ($col = 0; $col <= $this->gridCols; $col++)
+                @for ($row = 0; $row < $this->gridRows; $row++)
+                    @for ($col = 0; $col < $this->gridCols; $col++)
                         @php
                             $seat = $this->seatAt($row, $col);
                             $area = $seat ? null : $this->areaAt($row, $col);
@@ -188,8 +188,8 @@
                     class="inline-grid gap-1"
                     style="grid-template-columns: repeat({{ max(1, $this->gridCols) }}, 34px)"
                 >
-                    @for ($row = 0; $row <= $this->gridRows; $row++)
-                        @for ($col = 0; $col <= $this->gridCols; $col++)
+                    @for ($row = 0; $row < $this->gridRows; $row++)
+                        @for ($col = 0; $col < $this->gridCols; $col++)
                             @php
                                 $seat = $this->seatAt($row, $col);
                                 $area = $seat ? null : $this->areaAt($row, $col);

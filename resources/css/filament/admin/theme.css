@@ -6,6 +6,7 @@
 @source '../../../../resources/views/filament/**/*';
 @source '../../../../resources/views/tickets/**/*.blade.php';
 @source '../../../../resources/views/livewire/**/*.blade.php';
+@source '../../../../resources/views/buses/**/*.blade.php';
 
 /* Personalización del botón de resetear filtros */
 

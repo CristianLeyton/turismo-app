@@ -16,8 +16,9 @@ use Illuminate\Database\Eloquent\SoftDeletingScope;
 use Illuminate\Support\Facades\Auth;
 
 /**
- * Recurso de auditoría de boletos: muestra los boletos ELIMINADOS y los
- * EDITADOS/REPROGRAMADOS (con su historial de cambios de fecha).
+ * Recurso de auditoría de boletos: muestra los boletos ELIMINADOS,
+ * REPROGRAMADOS y EDITADOS (corrección de datos de la venta), cada uno con su
+ * historial (cambios de fecha/asiento y ediciones de datos).
  *
  * Es 100% de solo lectura: no permite crear, editar, eliminar ni restaurar.
  * Solo visible para quienes tengan el permiso ticket_audit.view_any.
@@ -134,7 +135,7 @@ class TicketAuditResource extends Resource
     }
 
     /**
-     * Solo boletos eliminados o reprogramados alguna vez.
+     * Solo boletos eliminados, reprogramados o editados alguna vez.
      */
     public static function getEloquentQuery(): Builder
     {
@@ -145,7 +146,8 @@ class TicketAuditResource extends Resource
             ->where(function (Builder $query) {
                 $query
                     ->whereNotNull('tickets.deleted_at')
-                    ->orWhereHas('dateChanges');
+                    ->orWhereHas('dateChanges')
+                    ->orWhereHas('edits');
             });
     }
 

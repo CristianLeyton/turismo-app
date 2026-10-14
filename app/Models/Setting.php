@@ -29,6 +29,12 @@ class Setting extends Model
     public const REQUIRE_PASSWORD_TICKET_RESCHEDULE = 'tickets.require_password_reschedule';
 
     /**
+     * Pedir la contraseña del admin logueado antes de guardar una edición
+     * de datos de boleto (permiso tickets.edit).
+     */
+    public const REQUIRE_PASSWORD_TICKET_EDIT = 'tickets.require_password_edit';
+
+    /**
      * Horas de gracia para vender un boleto cuyo colectivo YA SALIÓ.
      * Pasado ese plazo sólo puede vender quien tenga el permiso
      * `tickets.vender_pasado_limite`. 0 = sin límite.

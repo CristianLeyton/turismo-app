@@ -180,6 +180,29 @@ class Ticket extends Model
     }
 
     /**
+     * Historial de ediciones de datos de este boleto (correcciones de venta
+     * vía permiso tickets.edit, una fila por campo cambiado).
+     */
+    public function edits(): HasMany
+    {
+        return $this->hasMany(TicketEdit::class)->orderBy('created_at');
+    }
+
+    /**
+     * Fecha de la última actividad registrada del boleto.
+     */
+    public function getUltimaActividadAttribute(): ?\Illuminate\Support\Carbon
+    {
+        $dates = collect([
+            $this->deleted_at,
+            $this->dateChanges->max('created_at'),
+            $this->edits->max('created_at'),
+        ])->filter();
+
+        return $dates->isEmpty() ? null : $dates->max();
+    }
+
+    /**
      * ¿El boleto fue reprogramado alguna vez?
      */
     public function wasRescheduled(): bool
@@ -196,7 +219,7 @@ class Ticket extends Model
     {
         return TicketDateChange::query()
             ->where('leg', TicketDateChange::LEG_RETURN)
-            ->whereHas('ticket', fn ($q) => $q
+            ->whereHas('ticket', fn($q) => $q
                 ->where('sale_id', $this->sale_id)
                 ->where('passenger_id', $this->passenger_id))
             ->exists();

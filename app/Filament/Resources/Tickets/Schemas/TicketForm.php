@@ -14,6 +14,7 @@ use App\Models\Seat;
 use App\Models\SeatReservation;
 use App\Models\Trip;
 use App\Services\TripTimesService;
+use App\Support\LiveValidation;
 use App\Support\Permissions;
 use App\Support\SaleCutoff;
 use Carbon\Carbon;
@@ -1952,7 +1953,11 @@ class TicketForm
                                         TextInput::make('dni')
                                             ->label('DNI')
                                             ->required()
-                                            ->live()
+                                            // Se valida al salir del campo: el aviso de
+                                            // cliente baneado (y el resto) aparece en el
+                                            // momento, sin avanzar de paso ni confirmar.
+                                            ->live(onBlur: true)
+                                            ->afterStateUpdated(fn (TextInput $component) => LiveValidation::only($component))
                                             ->numeric()
                                             ->rules([
                                                 'digits_between:7,8',

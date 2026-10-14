@@ -28,21 +28,25 @@ class TicketAuditDetailSchema
     }
 
     /**
-     * Estado del boleto para la tabla: Eliminado, Reprogramado o ambos.
+     * Estado del boleto para la tabla: combinación de Eliminado /
+     * Reprogramado / Editado (por ejemplo "Reprogramado + Editado").
      */
     public static function estado(Model $record): string
     {
-        $deleted = $record->trashed();
-        $rescheduled = $record->dateChanges->isNotEmpty();
+        $partes = [];
 
-        if ($deleted && $rescheduled) {
-            return 'Eliminado + Reprogramado';
+        if ($record->trashed()) {
+            $partes[] = 'Eliminado';
         }
 
-        if ($deleted) {
-            return 'Eliminado';
+        if ($record->dateChanges->isNotEmpty()) {
+            $partes[] = 'Reprogramado';
         }
 
-        return 'Reprogramado';
+        if ($record->edits->isNotEmpty()) {
+            $partes[] = 'Editado';
+        }
+
+        return $partes === [] ? '—' : implode(' + ', $partes);
     }
 }

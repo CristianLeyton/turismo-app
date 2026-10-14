@@ -47,6 +47,21 @@ En una venta de ida y vuelta **sin fecha**, el boleto de ida ofrece el alcance *
 - Los PDFs y pantallas muestran la leyenda "FECHA Y HORARIO A CONFIRMAR" en boletos pendientes.
 - Tests: `tests/Feature/SellWithoutDateTest.php`.
 
+### Edición de boletos (`tickets.edit`)
+
+Permiso del módulo Boletos que habilita **corregir errores de venta** en un boleto emitido: datos del pasajero (nombre, apellido, DNI, teléfono), el acompañante (menor con nombre/DNI, mascotas con nombres/cantidad), el **método de pago** y el **precio**.
+
+- **Ningún rol del sistema lo trae por defecto** (ni Administrador ni Vendedor); se habilita por rol desde la matriz. El Super Administrador lo tiene por bypass. Mientras ningún rol lo tenga, la acción "Editar boleto" queda oculta (mismo flag de rollout que `vender_sin_fecha`).
+- **Separado de la reprogramación**: la edición NO toca viaje, asiento, fecha ni horario (eso es `tickets.reschedule` vía Reprogramar). Origen/destino, `sale_id` y las marcas de ida/vuelta tampoco se editan: son de la estructura de la venta.
+- **Auditoría:** tabla `ticket_edits` (modelo `TicketEdit`), una fila por campo cambiado con valor viejo, valor nuevo, motivo (opcional), usuario y fecha. Se ve como sección "Historial de ediciones" en el detalle del boleto **y** en el Historial general (que ahora lista también los boletos editados, con estado "Editado" y filtro propio), siempre con el mismo formato: una entrada por edición con autor, fecha, motivo y el detalle Antes/Después de cada campo. Es distinta de `ticket_date_changes` (reprogramación).
+- **DNI sin `unique`:** un pasajero puede tener todos los boletos que quiera (por eso no se valida unicidad). Lo que sí se valida —en el form y server-side— es que el DNI no pertenezca a un **cliente baneado** (`can_buy = false`). El aviso corre **en tiempo real** al completar el campo (sin esperar a guardar), igual que en el paso "Pasajeros" del wizard de venta.
+- **Validaciones:** cada campo tiene su mensaje en castellano (obligatorio, formato, largo, rangos).
+- **Confirmación al guardar:** el modal muestra el resumen de los cambios y, si en *Configuración* se activó "Pedir contraseña al editar boletos", pide la contraseña **ahí mismo** (validada también server-side). Si la edición no se guarda —contraseña incorrecta, cliente baneado, datos inválidos o un error inesperado— **el modal se cierra y se emite una notificación explicando el motivo**; nada queda a medio guardar (transacción con rollback).
+- El tramo de **vuelta** de un ida y vuelta no edita precio/método de pago (el precio viaja en el boleto de ida y se muestra deshabilitado); sí permite corregir datos del pasajero.
+- **Boletos pendientes** (vendidos sin fecha, `trip_id` NULL) se pueden editar igual: los datos de pasajero aplican; el viaje se asigna después con reprogramación.
+- Server-side: la página `EditTicket` y la policy `TicketPolicy::edit` rechazan con 403 sin el permiso; guardado transaccional con auditoría.
+- Tests: `tests/Feature/TicketEditTest.php`.
+
 ### Venta fuera de término (`tickets.vender_pasado_limite`)
 
 Permiso del módulo Boletos que habilita **emitir pasajes de un viaje que YA SALIÓ** después del plazo configurado. Pasado ese plazo, quien no tenga el permiso no puede crear el boleto.

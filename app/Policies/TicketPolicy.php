@@ -40,6 +40,17 @@ class TicketPolicy
         return $user->can('tickets.reschedule');
     }
 
+    /**
+     * Editar datos del boleto (corrección de errores de venta: pasajero,
+     * acompañante, método de pago y precio). Permiso `tickets.edit`.
+     * No expone viaje/asiento/fecha: eso es `reschedule`. Nadie trae este
+     * permiso por defecto, se otorga a un rol desde la matriz de la UI.
+     */
+    public function edit(User $user, Ticket $ticket): bool
+    {
+        return $user->can('tickets.edit');
+    }
+
     public function delete(User $user, Ticket $ticket): bool
     {
         return $user->can('tickets.delete');

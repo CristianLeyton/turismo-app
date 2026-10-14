@@ -67,6 +67,7 @@ class TicketSettings extends Page
         return [
             'require_password_ticket_delete' => Setting::getBool(Setting::REQUIRE_PASSWORD_TICKET_DELETE),
             'require_password_ticket_reschedule' => Setting::getBool(Setting::REQUIRE_PASSWORD_TICKET_RESCHEDULE),
+            'require_password_ticket_edit' => Setting::getBool(Setting::REQUIRE_PASSWORD_TICKET_EDIT),
             'venta_limite_horas' => Setting::ventaLimiteHoras(),
         ];
     }
@@ -87,6 +88,11 @@ class TicketSettings extends Page
                         Toggle::make('require_password_ticket_reschedule')
                             ->label('Pedir contraseña al reprogramar boletos')
                             ->helperText('Antes de confirmar una reprogramación, se pedirá la clave del admin que ejecuta la acción. Si la clave no coincide, el boleto no se mueve.')
+                            ->default(false),
+
+                        Toggle::make('require_password_ticket_edit')
+                            ->label('Pedir contraseña al editar boletos')
+                            ->helperText('Antes de guardar los cambios de una edición de boleto, se pedirá la clave del admin que ejecuta la acción. Si la clave no coincide, nada se modifica.')
                             ->default(false),
                     ]),
 
@@ -163,6 +169,11 @@ class TicketSettings extends Page
         Setting::set(
             Setting::REQUIRE_PASSWORD_TICKET_RESCHEDULE,
             ($data['require_password_ticket_reschedule'] ?? false) ? '1' : '0',
+        );
+
+        Setting::set(
+            Setting::REQUIRE_PASSWORD_TICKET_EDIT,
+            ($data['require_password_ticket_edit'] ?? false) ? '1' : '0',
         );
 
         Setting::set(

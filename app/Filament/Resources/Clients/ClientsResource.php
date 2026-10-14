@@ -28,6 +28,7 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
 use Illuminate\Support\Facades\Auth;
+use Filament\Tables\Enums\FiltersLayout;
 
 class ClientsResource extends Resource
 {
@@ -130,8 +131,8 @@ class ClientsResource extends Resource
                 TextEntry::make('telefono'),
                 TextEntry::make('can_buy')
                     ->label('¿Puede comprar?')
-                    ->icon(fn (Clients $record): Heroicon => $record->can_buy ? Heroicon::CheckCircle : Heroicon::NoSymbol)
-                    ->color(fn (Clients $record): string => $record->can_buy ? 'success' : 'danger'),
+                    ->icon(fn(Clients $record): Heroicon => $record->can_buy ? Heroicon::CheckCircle : Heroicon::NoSymbol)
+                    ->color(fn(Clients $record): string => $record->can_buy ? 'success' : 'danger'),
                 TextEntry::make('comments')
                     ->label('Motivo / Comentarios')
                     ->placeholder('—'),
@@ -142,7 +143,7 @@ class ClientsResource extends Resource
     {
         return $table
             ->recordTitleAttribute('dni')
-            ->recordClasses(fn (Clients $record): array => $record->can_buy ? [] : [
+            ->recordClasses(fn(Clients $record): array => $record->can_buy ? [] : [
                 '!bg-red-100',
                 'hover:!bg-red-200',
             ])
@@ -163,14 +164,16 @@ class ClientsResource extends Resource
                 TextColumn::make('can_buy')
                     ->label('Estado')
                     ->badge()
-                    ->state(fn (Clients $record): string => $record->can_buy ? 'Habilitado' : 'Baneado')
-                    ->color(fn (Clients $record): string => $record->can_buy ? 'success' : 'danger'),
+                    ->state(fn(Clients $record): string => $record->can_buy ? 'Habilitado' : 'Baneado')
+                    ->color(fn(Clients $record): string => $record->can_buy ? 'success' : 'danger'),
                 TextColumn::make('boletos_historicos')
+                    ->alignCenter()
+                    ->badge()
+                    ->color('info')
                     ->label('Boletos históricos')
-                    ->state(fn (Clients $record): int => $record->tickets()->count())
-                    ->sortable(query: fn (Builder $query, string $direction): Builder => $query->orderBy('boletos_historicos', $direction))
-                    ->numeric()
-                    ->alignEnd(),
+                    ->state(fn(Clients $record): int => $record->tickets()->count())
+                    ->sortable(query: fn(Builder $query, string $direction): Builder => $query->orderBy('boletos_historicos', $direction))
+                    ->numeric(),
             ])
             ->recordUrl(null)
             ->recordAction(null)
@@ -183,29 +186,30 @@ class ClientsResource extends Resource
                     ->trueLabel('Baneados')
                     ->falseLabel('Habilitados')
                     ->queries(
-                        true: fn (Builder $query): Builder => $query->where('can_buy', false),
-                        false: fn (Builder $query): Builder => $query->where('can_buy', true),
-                        blank: fn (Builder $query): Builder => $query,
+                        true: fn(Builder $query): Builder => $query->where('can_buy', false),
+                        false: fn(Builder $query): Builder => $query->where('can_buy', true),
+                        blank: fn(Builder $query): Builder => $query,
                     ),
-            ])
+            ])->filtersLayout(FiltersLayout::AboveContent)
+            ->deferFilters(false)
             ->recordActions([
                 Action::make('toggleBan')
-                    ->visible(fn () => (bool) Auth::user()?->can('clients.ban'))
-                    ->label(fn (Clients $record): string => $record->can_buy ? 'Banear' : 'Habilitar')
-                    ->icon(fn (Clients $record): Heroicon => $record->can_buy ? Heroicon::NoSymbol : Heroicon::CheckCircle)
-                    ->color(fn (Clients $record): string => $record->can_buy ? 'danger' : 'success')
+                    ->visible(fn() => (bool) Auth::user()?->can('clients.ban'))
+                    ->label(fn(Clients $record): string => $record->can_buy ? 'Banear' : 'Habilitar')
+                    ->icon(fn(Clients $record): Heroicon => $record->can_buy ? Heroicon::NoSymbol : Heroicon::CheckCircle)
+                    ->color(fn(Clients $record): string => $record->can_buy ? 'danger' : 'success')
                     ->requiresConfirmation()
-                    ->modalHeading(fn (Clients $record): string => $record->can_buy ? 'Banear cliente' : 'Habilitar cliente')
-                    ->modalDescription(fn (Clients $record): string => $record->can_buy
+                    ->modalHeading(fn(Clients $record): string => $record->can_buy ? 'Banear cliente' : 'Habilitar cliente')
+                    ->modalDescription(fn(Clients $record): string => $record->can_buy
                         ? "¿Confirmás banear a {$record->nombre} {$record->apellido}? No se le podrán vender más boletos."
                         : "¿Confirmás habilitar a {$record->nombre} {$record->apellido}? Volverá a poder comprar boletos.")
-                    ->modalSubmitActionLabel(fn (Clients $record): string => $record->can_buy ? 'Banear' : 'Habilitar')
+                    ->modalSubmitActionLabel(fn(Clients $record): string => $record->can_buy ? 'Banear' : 'Habilitar')
                     ->action(function (Clients $record): void {
                         $record->update(['can_buy' => ! $record->can_buy]);
 
                         Notification::make()
                             ->title($record->can_buy ? 'Cliente habilitado' : 'Cliente baneado')
-                            ->body("{$record->nombre} {$record->apellido} ".($record->can_buy ? 'puede volver a comprar boletos.' : 'no podrá comprar boletos.'))
+                            ->body("{$record->nombre} {$record->apellido} " . ($record->can_buy ? 'puede volver a comprar boletos.' : 'no podrá comprar boletos.'))
                             ->success()
                             ->send();
                     })
@@ -217,7 +221,7 @@ class ClientsResource extends Resource
                 ]),
                 DeleteAction::make()->button()->hiddenLabel()->extraAttributes([
                     'title' => 'Eliminar',
-                ])->visible(fn () => (bool) Auth::user()?->can('clients.delete')),
+                ])->visible(fn() => (bool) Auth::user()?->can('clients.delete')),
                 ForceDeleteAction::make()->button()->hiddenLabel()->extraAttributes([
                     'title' => 'Eliminar permanentemente',
                 ]),
@@ -230,8 +234,7 @@ class ClientsResource extends Resource
                     DeleteBulkAction::make(),
                                          ForceDeleteBulkAction::make(),
                     RestoreBulkAction::make(),
-                ]), */
-            ]);
+                ]), */]);
     }
 
     public static function getPages(): array

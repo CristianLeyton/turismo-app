@@ -2,14 +2,9 @@
 
 namespace App\Filament\Resources\Tickets\Schemas;
 
-use Filament\Infolists\Components\TextEntry;
-use Filament\Infolists\Components\IconEntry;
-use Filament\Infolists\Components\BadgeEntry;
-use Filament\Infolists\Components\Section as Section;
+use Filament\Infolists\Components\ViewEntry;
 use Filament\Schemas\Components\Section as ComponentsSection;
 use Filament\Schemas\Schema;
-use Filament\Support\Enums\FontWeight;
-use Filament\Infolists\Components\ViewEntry;
 
 class TicketInfolist
 {
@@ -24,39 +19,28 @@ class TicketInfolist
                     ->view('tickets.infolist-summary-header')
                     ->columnSpanFull(),
 
-                // Información del Viaje
-                ComponentsSection::make('Detalles de venta')
+                // Información del Viaje: tarjeta de estilo consistente con el
+                // resumen general (ViewEntry blade, no badges sueltos).
+                ViewEntry::make('sale_details')
+                    ->label('')
+                    ->view('tickets.infolist-sale-details')
+                    ->columnSpanFull(),
+
+                // Historial de ediciones (correcciones de datos, tickets.edit).
+                // Una entrada por edición con autor, fecha, motivo y el detalle
+                // Antes/Después de cada campo: el mismo render que el detalle
+                // del Historial general (tickets/partials/edit-history).
+                ComponentsSection::make('Historial de ediciones')
+                    ->description(fn ($record): string => \App\Support\TicketEditHistory::summary($record?->edits))
                     ->columnSpanFull()
-                    ->columns(5)
                     ->collapsible()
+                    ->collapsed()
+                    ->visible(fn ($record) => $record?->edits()->exists())
                     ->schema([
-                        TextEntry::make('sale.id')
-                            ->label('N° Venta')
-                            ->badge()
-                            ->color('gray'),
-
-                        TextEntry::make('sale.sale_date')
-                            ->label('Fecha de venta')
-                            ->date('d/m/Y H:i')
-                            ->badge()
-                            ->color('info'),
-
-                        TextEntry::make('display_price')
-                            ->label('Precio')
-                            ->badge()
-                            ->prefix('$')
-                            ->color('success'),
-                        TextEntry::make('payment_method')
-                            ->label('Método de pago')
-                            ->badge()
-                            ->formatStateUsing(fn($state) => \App\Models\PaymentMethod::label($state))
-                            ->color(fn($state) => \App\Models\PaymentMethod::color($state)),
-                        TextEntry::make('sale.user.name')
-                            ->label('Vendedor')
-                            ->badge()
-                            ->color('warning'),
-
-
+                        ViewEntry::make('edit_history')
+                            ->label('')
+                            ->view('tickets.partials.edit-history')
+                            ->columnSpanFull(),
                     ]),
 
             ]);

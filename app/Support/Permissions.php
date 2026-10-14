@@ -56,6 +56,7 @@ final class Permissions
                     'vender_sin_fecha' => 'Vender sin fecha/horario',
                     'vender_pasado_limite' => 'Vender después del límite de salida',
                     'reschedule' => 'Reprogramar',
+                    'edit' => 'Editar datos del pasajero/venta',
                     'delete' => 'Eliminar',
                     'restore' => 'Restaurar',
                     'force_delete' => 'Eliminar definitivamente',
@@ -204,7 +205,10 @@ final class Permissions
             self::ROLE_SUPER => self::all(),
             self::ROLE_ADMIN => [
                 // Boletos: ver, vender, reprogramar, eliminar. NO editar
-                // genéricamente (los boletos son inmutables por diseño).
+                // genéricamente (los boletos son inmutables por diseño: solo
+                // correcciones de datos vía tickets.edit y reprogramación). La
+                // edición es un permiso "por bandera": nadie lo trae por
+                // defecto, se otorga a mano desde la matriz de la UI.
                 'tickets.view_any', 'tickets.view', 'tickets.create', 'tickets.reschedule',
                 'tickets.delete', 'tickets.restore', 'tickets.force_delete',
                 // Clientes: acceso completo (incluido banear).

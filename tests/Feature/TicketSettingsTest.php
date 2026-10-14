@@ -57,7 +57,8 @@ class TicketSettingsTest extends TestCase
         Livewire::test(TicketSettings::class)
             ->assertOk()
             ->assertSee('Confirmación de contraseña')
-            ->assertSee('Pedir contraseña al borrar boletos');
+            ->assertSee('Pedir contraseña al borrar boletos')
+            ->assertSee('Pedir contraseña al editar boletos');
 
         $response = $this->get(TicketSettings::getUrl());
 
@@ -91,15 +92,18 @@ class TicketSettingsTest extends TestCase
 
         $this->assertFalse(Setting::getBool(Setting::REQUIRE_PASSWORD_TICKET_DELETE));
         $this->assertFalse(Setting::getBool(Setting::REQUIRE_PASSWORD_TICKET_RESCHEDULE));
+        $this->assertFalse(Setting::getBool(Setting::REQUIRE_PASSWORD_TICKET_EDIT));
 
         Livewire::test(TicketSettings::class)
             ->set('data.require_password_ticket_delete', true)
             ->set('data.require_password_ticket_reschedule', true)
+            ->set('data.require_password_ticket_edit', true)
             ->call('save')
             ->assertOk();
 
         $this->assertTrue(Setting::getBool(Setting::REQUIRE_PASSWORD_TICKET_DELETE));
         $this->assertTrue(Setting::getBool(Setting::REQUIRE_PASSWORD_TICKET_RESCHEDULE));
+        $this->assertTrue(Setting::getBool(Setting::REQUIRE_PASSWORD_TICKET_EDIT));
 
         $this->assertDatabaseHas('settings', [
             'key' => Setting::REQUIRE_PASSWORD_TICKET_DELETE,

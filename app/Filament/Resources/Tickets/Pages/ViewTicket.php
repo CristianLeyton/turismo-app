@@ -23,7 +23,12 @@ class ViewTicket extends ViewRecord
     protected function getHeaderActions(): array
     {
         return [
-            // EditAction::make(),
+            Action::make('edit_ticket')
+                ->label('Editar boleto')
+                ->icon('heroicon-m-pencil-square')
+                ->color('info')
+                ->visible(fn (Ticket $record) => (bool) Auth::user()?->can('tickets.edit'))
+                ->url(fn (Ticket $record) => TicketResource::getUrl('edit', ['record' => $record])),
             Action::make('reschedule')
                 ->label('Reprogramar boleto')
                 ->icon('heroicon-m-arrow-path')

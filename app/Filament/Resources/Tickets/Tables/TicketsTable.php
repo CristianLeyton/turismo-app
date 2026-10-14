@@ -367,7 +367,13 @@ class TicketsTable
                 ViewAction::make()->button()->hiddenLabel()->extraAttributes(
                     ['title' => 'Ver boleto', 'class' => 'hidden md:inline-flex']
                 ),
-                //EditAction::make(),
+/*                 Action::make('edit_ticket')
+                    ->label('Editar')
+                    ->icon('heroicon-m-pencil-square')
+                    ->color('info')
+                    ->button()
+                    ->visible(fn (Ticket $record) => (bool) \Illuminate\Support\Facades\Auth::user()?->can('tickets.edit'))
+                    ->url(fn (Ticket $record) => \App\Filament\Resources\Tickets\TicketResource::getUrl('edit', ['record' => $record])), */
                 Action::make('download_pdf')
                     ->label('Descargar')
                     ->icon('heroicon-m-arrow-down-tray')

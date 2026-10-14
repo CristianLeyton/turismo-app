@@ -2,11 +2,13 @@
 
 namespace Tests\Feature;
 
+use App\Filament\Resources\TicketAudit\Classes\TicketAuditTable;
 use App\Filament\Resources\TicketAudit\TicketAuditResource;
 use App\Filament\Resources\Tickets\TicketResource;
 use App\Models\Bus;
 use App\Models\Location;
 use App\Models\Passenger;
+use App\Models\PaymentMethod;
 use App\Models\Route;
 use App\Models\RouteStop;
 use App\Models\Sale;
@@ -14,9 +16,11 @@ use App\Models\Schedule;
 use App\Models\Seat;
 use App\Models\Ticket;
 use App\Models\TicketDateChange;
+use App\Models\TicketEdit;
 use App\Models\Trip;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -106,6 +110,36 @@ class TicketAuditResourceTest extends TestCase
         ]);
     }
 
+    /**
+     * Registra una edición de datos del boleto (corrección de venta) como la
+     * deja la página Editar boleto: una fila por campo cambiado.
+     */
+    private function editTicket(
+        Ticket $ticket,
+        string $field = 'first_name',
+        string $label = 'Nombre',
+        ?string $old = 'Juana',
+        ?string $new = 'Juana María',
+        ?string $reason = 'Error de carga en ventanilla',
+        ?string $at = null,
+    ): TicketEdit {
+        $edit = TicketEdit::create([
+            'ticket_id' => $ticket->id,
+            'field' => $field,
+            'field_label' => $label,
+            'old_value' => $old,
+            'new_value' => $new,
+            'reason' => $reason,
+            'user_id' => $this->admin->id,
+        ]);
+
+        if ($at) {
+            $edit->forceFill(['created_at' => $at])->save();
+        }
+
+        return $edit->refresh();
+    }
+
     private function deleteTicketAs(Ticket $ticket, User $user): void
     {
         $this->actingAs($user);
@@ -133,7 +167,7 @@ class TicketAuditResourceTest extends TestCase
         $response->assertForbidden();
     }
 
-    public function test_solo_muestra_boletos_eliminados_o_reprogramados(): void
+    public function test_solo_muestra_boletos_eliminados_reprogramados_o_editados(): void
     {
         $this->actingAs($this->admin);
 
@@ -161,17 +195,83 @@ class TicketAuditResourceTest extends TestCase
             'user_id' => $this->admin->id,
         ]);
 
+        // Boleto solo editado (ni eliminado ni reprogramado): debe aparecer.
+        $edited = $this->createOneWayTicket('2026-10-04');
+        $this->editTicket($edited);
+
         Livewire::test(TicketAuditResource::getPages()['index']->getPage())
             ->assertOk()
             ->assertSee('Rendida')
             ->assertSee('Eliminado')
-            ->assertSee('Reprogramado');
+            ->assertSee('Reprogramado')
+            ->assertSee('Editado');
 
         $rows = TicketAuditResource::getEloquentQuery()->get();
 
-        $this->assertCount(2, $rows, 'Solo deben listarse el eliminado y el reprogramado.');
+        $this->assertCount(3, $rows, 'Deben listarse el eliminado, el reprogramado y el editado.');
         $this->assertTrue($rows->contains(fn (Ticket $t) => $t->id === $deleted->id));
         $this->assertTrue($rows->contains(fn (Ticket $t) => $t->id === $rescheduled->id));
+        $this->assertTrue($rows->contains(fn (Ticket $t) => $t->id === $edited->id));
+    }
+
+    public function test_filtro_estado_editados(): void
+    {
+        $this->actingAs($this->admin);
+
+        $deleted = $this->createOneWayTicket('2026-10-02');
+        $deleted->delete();
+
+        $edited = $this->createOneWayTicket('2026-10-04');
+        $this->editTicket($edited);
+
+        $component = Livewire::test(TicketAuditResource::getPages()['index']->getPage());
+
+        $visibleIds = fn (): array => $component->instance()
+            ->getFilteredTableQuery()
+            ->pluck('tickets.id')
+            ->all();
+
+        // Sin filtro: los dos aparecen.
+        $this->assertEqualsCanonicalizing([$deleted->id, $edited->id], $visibleIds());
+
+        // 'edited' => solo el boleto con ediciones de datos.
+        $component->set('tableFilters.audit_state.value', 'edited');
+        $this->assertEqualsCanonicalizing([$edited->id], $visibleIds());
+    }
+
+    public function test_la_ultima_modificacion_considera_las_ediciones(): void
+    {
+        $this->actingAs($this->admin);
+
+        $ticket = $this->createOneWayTicket('2026-10-03');
+        $this->editTicket($ticket, at: '2026-10-10 12:00:00');
+
+        $this->assertSame(
+            'Editado el 10/10/2026',
+            TicketAuditTable::ultimaModificacion($ticket->fresh()),
+        );
+
+        // Si después se reprograma, manda la acción más reciente.
+        $oldTripId = $ticket->trip_id;
+        $newTrip = $this->createAnotherTripFor($ticket, '2026-10-20');
+        $ticket->update(['trip_id' => $newTrip->id]);
+        TicketDateChange::create([
+            'ticket_id' => $ticket->id,
+            'leg' => TicketDateChange::LEG_OUTBOUND,
+            'from_trip_id' => $oldTripId,
+            'to_trip_id' => $newTrip->id,
+            'user_id' => $this->admin->id,
+        ])->forceFill(['created_at' => Carbon::parse('2026-10-12 09:00:00')])->save();
+
+        $this->assertSame(
+            'Reprogramado el 12/10/2026',
+            TicketAuditTable::ultimaModificacion($ticket->fresh()),
+        );
+
+        // Y si se elimina, la eliminación es la última acción.
+        $ticket->delete();
+
+        $this->assertStringStartsWith('Eliminado el ', TicketAuditTable::ultimaModificacion($ticket->fresh()));
     }
 
     public function test_filtro_estado_eliminados(): void
@@ -259,6 +359,62 @@ class TicketAuditResourceTest extends TestCase
         $response->assertSee('03/10/2026');   // desde (fecha vieja)
         $response->assertSee('05/10/2026');   // hacia (fecha nueva)
         $response->assertSee('Asiento 1');
+    }
+
+    public function test_la_vista_de_un_boleto_editado_muestra_el_historial_de_ediciones(): void
+    {
+        $this->actingAs($this->admin);
+
+        PaymentMethod::create(['code' => 'efectivo', 'label' => 'Efectivo', 'is_active' => true]);
+        PaymentMethod::create(['code' => 'transferencia', 'label' => 'Transferencia', 'is_active' => true]);
+        PaymentMethod::clearCache();
+
+        $ticket = $this->createOneWayTicket('2026-10-03');
+
+        // Una misma edición: dos campos, mismo autor, momento y motivo.
+        $this->editTicket($ticket, 'price', 'Precio', '100', '150', 'Se cobró de menos', '2026-10-10 12:00:00');
+        $this->editTicket($ticket, 'payment_method', 'Método de pago', 'efectivo', 'transferencia', 'Se cobró de menos', '2026-10-10 12:00:00');
+
+        $response = $this->get(TicketAuditResource::getUrl('view', ['record' => $ticket->id]));
+
+        $response->assertOk();
+        $response->assertSee('Editado');
+        $response->assertSee('Historial de ediciones');
+        $response->assertSee('2 campos corregidos en 1 edición.');
+        $response->assertSee('Realizado por:');
+        $response->assertSee('Admin (admin-audit)');
+        $response->assertSee('Se cobró de menos');
+        $response->assertSee('Antes');
+        $response->assertSee('Después');
+        $response->assertSee('$100');
+        $response->assertSee('$150');
+        $response->assertSee('Efectivo');
+        $response->assertSee('Transferencia');
+        $response->assertSee('10/10/2026 12:00');
+    }
+
+    public function test_el_modal_ver_de_un_boleto_editado_incluye_las_ediciones(): void
+    {
+        $this->actingAs($this->admin);
+
+        $ticket = $this->createOneWayTicket('2026-10-03');
+        $this->editTicket($ticket, 'price', 'Precio', '100', '150', 'Se cobró de menos', '2026-10-10 12:00:00');
+
+        $component = Livewire::test(TicketAuditResource::getPages()['index']->getPage());
+        $component->mountTableAction('ver', $ticket->id);
+
+        $mounted = $component->instance()->mountedActions;
+        $this->assertNotEmpty($mounted, 'La acción "ver" debe quedar montada.');
+        $this->assertSame('ver', $mounted[0]['name']);
+
+        $html = $this->mountedActionHtml($component->instance());
+
+        $this->assertStringContainsString('Historial de ediciones', $html);
+        $this->assertStringContainsString('Realizado por:', $html);
+        $this->assertStringContainsString('Se cobró de menos', $html);
+        $this->assertStringContainsString('Antes', $html);
+        $this->assertStringContainsString('Después', $html);
+        $this->assertStringContainsString('$150', $html, 'El precio nuevo se muestra con formato de moneda.');
     }
 
     public function test_los_boletos_eliminados_no_se_pueden_restaurar_ni_editar(): void

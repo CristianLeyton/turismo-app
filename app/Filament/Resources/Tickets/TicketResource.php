@@ -72,7 +72,7 @@ class TicketResource extends Resource
             'create' => CreateTicket::route('/create'),
             'view' => ViewTicket::route('/{record}'),
             'reschedule' => RescheduleTicket::route('/{record}/reschedule'),
-            //'edit' => EditTicket::route('/{record}/edit'),
+            'edit' => EditTicket::route('/{record}/edit'),
         ];
     }
 

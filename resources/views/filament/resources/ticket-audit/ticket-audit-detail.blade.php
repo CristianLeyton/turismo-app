@@ -20,13 +20,27 @@
     $sale = $record?->sale;
 
     $changes = $record?->dateChanges->sortByDesc('created_at')->values() ?? collect();
+    $edits = $record?->edits ?? collect();
 
     $isDeleted = $record?->trashed() ?? false;
     $isRescheduled = $changes->isNotEmpty();
+    $isEdited = $edits->isNotEmpty();
 
-    $estadoLabel = $isDeleted && $isRescheduled
-        ? 'Eliminado + Reprogramado'
-        : ($isDeleted ? 'Eliminado' : 'Reprogramado');
+    $estadoPartes = array_values(array_filter([
+        $isDeleted ? 'Eliminado' : null,
+        $isRescheduled ? 'Reprogramado' : null,
+        $isEdited ? 'Editado' : null,
+    ]));
+
+    $estadoLabel = $estadoPartes === [] ? '—' : implode(' + ', $estadoPartes);
+
+    // Color del badge de estado: lo eliminado manda (rojo), después lo
+    // reprogramado (ámbar) y, si solo se corrigieron datos, azul.
+    $estadoBadge = $isDeleted
+        ? 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300'
+        : ($isRescheduled
+            ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300'
+            : 'bg-sky-100 dark:bg-sky-900/30 text-sky-800 dark:text-sky-300');
 
     $tripLabel = function (?object $t): string {
         if (! $t) {
@@ -85,10 +99,7 @@
                 </div>
 
                 <div class="mt-3 flex flex-wrap items-center gap-2">
-                    <span class="inline-block px-2.5 py-1 text-xs font-semibold rounded-full
-                                {{ $isDeleted
-                                    ? 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300'
-                                    : 'bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300' }}">
+                    <span class="inline-block px-2.5 py-1 text-xs font-semibold rounded-full {{ $estadoBadge }}">
                         {{ $estadoLabel }}
                     </span>
 
@@ -96,6 +107,13 @@
                         <span class="inline-block px-2.5 py-1 text-xs font-semibold rounded-full
                                     bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300">
                             {{ $changes->count() }} reprogramacion{{ $changes->count() === 1 ? '' : 'es' }}
+                        </span>
+                    @endif
+
+                    @if ($isEdited)
+                        <span class="inline-block px-2.5 py-1 text-xs font-semibold rounded-full
+                                    bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300">
+                            {{ \App\Support\TicketEditHistory::summary($edits) }}
                         </span>
                     @endif
                 </div>
@@ -220,6 +238,16 @@
                 <p class="text-gray-500 dark:text-gray-400">Este boleto nunca fue reprogramado.</p>
             </div>
         @endforelse
+    </div>
+
+    {{-- ================== HISTORIAL DE EDICIONES ================== --}}
+    <div class="bg-white dark:bg-gray-900 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+        <div class="px-6 py-2 border-b border-gray-200 dark:border-gray-700 flex justify-between">
+            <h3 class="text-lg font-semibold text-gray-900 dark:text-gray-100">Historial de ediciones</h3>
+            <div class="text-lg font-semibold text-gray-900 dark:text-gray-100 text-right">({{ $edits->count() }})</div>
+        </div>
+
+        @include('tickets.partials.edit-history', ['edits' => $edits])
     </div>
 
 </div>

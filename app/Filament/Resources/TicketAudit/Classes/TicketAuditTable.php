@@ -37,22 +37,22 @@ class TicketAuditTable
                         'seat',
                         'deletedBy',
                         'dateChanges.user',
+                        'edits.user',
                     ])
-                    ->withCount('dateChanges');
+                    ->withCount(['dateChanges', 'edits']);
             })
             ->columns([
                 TextColumn::make('id')
                     ->label('N°')
                     ->badge()
-                    ->color('gray'),
-
+                    ->color('gray')
+                    ->sortable(),
                 TextColumn::make('passenger.last_name')
                     ->label('Pasajero')
                     ->limit(24)
-                    ->tooltip(fn ($state, $record) => $record->passenger?->last_name . ' ' . $record->passenger?->first_name)
+                    ->tooltip(fn($state, $record) => $record->passenger?->last_name . ' ' . $record->passenger?->first_name)
                     ->formatStateUsing(
-                        fn ($state, $record) =>
-                        ($record->passenger?->last_name ?? '') . ' ' . ($record->passenger?->first_name ?? ''),
+                        fn($state, $record) => ($record->passenger?->last_name ?? '') . ' ' . ($record->passenger?->first_name ?? ''),
                     )
                     ->placeholder('—'),
 
@@ -64,28 +64,58 @@ class TicketAuditTable
                 TextColumn::make('estado')
                     ->label('Estado')
                     ->badge()
-                    ->state(fn (Ticket $record): string => TicketAuditDetailSchema::estado($record))
-                    ->color(fn (Ticket $record): string => $record->trashed() ? 'danger' : 'warning'),
+                    ->state(fn(Ticket $record): string => TicketAuditDetailSchema::estado($record))
+                    ->color(fn(Ticket $record): string => match (true) {
+                        $record->trashed() => 'danger',
+                        $record->dateChanges->isNotEmpty() => 'warning',
+                        default => 'info',
+                    }),
 
-                TextColumn::make('last_change_at')
-                    ->label('Última modificación')
-
-                    ->state(function (Ticket $record): string {
-                        if ($record->dateChanges->isNotEmpty()) {
-                            return 'Reprogramado el ' . $record->dateChanges->max('created_at')->format('d/m/Y');
-                        }
-
-                        if ($record->trashed()) {
-                            return 'Eliminado el ' . $record->deleted_at?->format('d/m/Y');
-                        }
-
-                        return '—';
-                    })
+                TextColumn::make('ultima_actividad')
+                    ->label('Última actividad')
+                    ->state(fn(Ticket $record) => $record->ultima_actividad)
+                    ->dateTime('d/m/Y H:i')
+                    ->placeholder('Sin actividad')
                     ->badge()
                     ->color('info')
+                    ->sortable(
+                        query: function (Builder $query, string $direction): Builder {
+                            return $query->orderByRaw("
+                                GREATEST(
+                                    COALESCE(
+                                        tickets.deleted_at,
+                                        '1970-01-01 00:00:00'
+                                    ),
+                                    COALESCE(
+                                        (
+                                            SELECT MAX(ticket_date_changes.created_at)
+                                            FROM ticket_date_changes
+                                            WHERE ticket_date_changes.ticket_id = tickets.id
+                                        ),
+                                        '1970-01-01 00:00:00'
+                                    ),
+                                    COALESCE(
+                                        (
+                                            SELECT MAX(ticket_edits.created_at)
+                                            FROM ticket_edits
+                                            WHERE ticket_edits.ticket_id = tickets.id
+                                        ),
+                                        '1970-01-01 00:00:00'
+                                    )
+                                ) {$direction}
+                            ");
+                        }
+                    )
                     ->visibleFrom('md'),
+
+ /*                TextColumn::make('last_change_at')
+                    ->label('Última modificación')
+                    ->state(fn(Ticket $record): string => self::ultimaModificacion($record))
+                    ->badge()
+                    ->color('info')
+                    ->visibleFrom('md') */
             ])
-            ->defaultSort('id', 'desc')
+            ->defaultSort('ultima_actividad', 'desc')
             ->recordUrl(null)
             ->recordAction(null)
             ->recordActions([
@@ -94,11 +124,11 @@ class TicketAuditTable
                     ->icon('heroicon-m-eye')
                     ->button()
                     ->color('gray')
-                    ->modalHeading(fn (Ticket $record): string => "Boleto N°{$record->id}")
+                    ->modalHeading(fn(Ticket $record): string => "Boleto N°{$record->id}")
                     ->modalWidth(Width::FiveExtraLarge)
                     ->modalSubmitAction(false)
                     ->modalCancelActionLabel('Cerrar')
-                    ->schema(fn (Ticket $record): array => TicketAuditDetailSchema::make()),
+                    ->schema(fn(Ticket $record): array => TicketAuditDetailSchema::make()),
             ])
             ->toolbarActions([])
             ->paginated([5, 10, 25, 50, 100])
@@ -109,11 +139,13 @@ class TicketAuditTable
                     ->options([
                         'deleted' => 'Eliminados',
                         'rescheduled' => 'Reprogramados',
+                        'edited' => 'Editados',
                     ])
                     ->query(function (Builder $query, array $data): Builder {
                         return match ($data['value'] ?? null) {
                             'deleted' => $query->whereNotNull('tickets.deleted_at'),
                             'rescheduled' => $query->whereHas('dateChanges'),
+                            'edited' => $query->whereHas('edits'),
                             default => $query,
                         };
                     })
@@ -121,6 +153,7 @@ class TicketAuditTable
                         return match ($data['value'] ?? null) {
                             'deleted' => ['Estado: Eliminados'],
                             'rescheduled' => ['Estado: Reprogramados'],
+                            'edited' => ['Estado: Editados'],
                             default => [],
                         };
                     }),
@@ -137,7 +170,7 @@ class TicketAuditTable
                     ->query(function (Builder $query, array $data): Builder {
                         return $query->when(
                             $data['id'],
-                            fn (Builder $query, int $id): Builder => $query->where('tickets.id', $id),
+                            fn(Builder $query, int $id): Builder => $query->where('tickets.id', $id),
                         );
                     })
                     ->indicateUsing(function (array $data): array {
@@ -156,7 +189,7 @@ class TicketAuditTable
                     ->query(function (Builder $query, array $data): Builder {
                         return $query->when(
                             $data['query'],
-                            fn (Builder $query, string $search): Builder => $query->whereHas('passenger', function (Builder $q) use ($search) {
+                            fn(Builder $query, string $search): Builder => $query->whereHas('passenger', function (Builder $q) use ($search) {
                                 $q->where('first_name', 'like', "%{$search}%")
                                     ->orWhere('last_name', 'like', "%{$search}%")
                                     ->orWhere('dni', 'like', "%{$search}%");
@@ -173,7 +206,40 @@ class TicketAuditTable
             ->filtersFormColumns(3)
             ->deferFilters(false)
             ->persistFiltersInSession()
-            ->emptyStateHeading('No hay boletos eliminados ni reprogramados')
-            ->emptyStateDescription('Cuando un boleto sea eliminado o reprogramado, aparecerá acá con su historial.');
+            ->emptyStateHeading('No hay boletos eliminados, reprogramados ni editados')
+            ->emptyStateDescription('Cuando un boleto sea eliminado, reprogramado o se corrijan sus datos, aparecerá acá con su historial.');
+    }
+
+    /**
+     * Acción más reciente sobre el boleto (eliminación, reprogramación o
+     * edición de datos), con su fecha. Si no hay ninguna, devuelve '—'.
+     */
+    public static function ultimaModificacion(Ticket $record): string
+    {
+        $eventos = collect();
+
+        if ($record->dateChanges->isNotEmpty()) {
+            $at = $record->dateChanges->max('created_at');
+            $eventos->push(['at' => $at, 'label' => 'Reprogramado']);
+        }
+
+        if ($record->edits->isNotEmpty()) {
+            $at = $record->edits->max('created_at');
+            $eventos->push(['at' => $at, 'label' => 'Editado']);
+        }
+
+        if ($record->trashed() && $record->deleted_at) {
+            $eventos->push(['at' => $record->deleted_at, 'label' => 'Eliminado']);
+        }
+
+        $ultimo = $eventos
+            ->sortByDesc(fn(array $evento): int => $evento['at']?->getTimestamp() ?? 0)
+            ->first();
+
+            return $ultimo['label'];
+
+/*         return $ultimo
+            ? $ultimo['label'] . ' el ' . $ultimo['at']->format('d/m/Y')
+            : '—'; */
     }
 }

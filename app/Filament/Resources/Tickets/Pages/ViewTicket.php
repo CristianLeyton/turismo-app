@@ -11,6 +11,7 @@ use Filament\Actions\DeleteAction;
 use Filament\Actions\EditAction;
 use Filament\Actions\ForceDeleteAction;
 use Filament\Actions\RestoreAction;
+use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Resources\Pages\ViewRecord;
 use Illuminate\Support\Facades\Auth;
@@ -41,7 +42,10 @@ class ViewTicket extends ViewRecord
                     return TicketResource::getUrl('reschedule', ['record' => $record])
                         .'?ticket='.$ticketId;
                 }),
-            self::configurePasswordConfirmation(DeleteAction::make()->icon('heroicon-m-trash')),
+            self::configurePasswordConfirmation(
+                DeleteAction::make()->icon('heroicon-m-trash'),
+                withReason: true,
+            ),
             self::configurePasswordConfirmation(ForceDeleteAction::make()),
             RestoreAction::make(),
             Action::make('download_pdf')
@@ -81,20 +85,30 @@ class ViewTicket extends ViewRecord
     }
 
     /**
-     * Si el parámetro de configuración está activo, exige la contraseña del
-     * admin logueado en el modal de la acción antes de ejecutarla.
+     * Modal de las acciones destructivas del boleto.
      *
-     * La validación vive como regla del campo password: si no coincide, el
-     * formulario del modal falla y la acción estándar de borrado (con sus
-     * notificaciones y halt) nunca se ejecuta. Sin override del closure de
-     * la acción.
+     * - Si el parámetro de configuración está activo, exige la contraseña del
+     *   admin logueado antes de ejecutar la acción. La validación vive como
+     *   regla del campo password: si no coincide, el formulario del modal
+     *   falla y la acción estándar de borrado (con sus notificaciones y halt)
+     *   nunca se ejecuta. Sin override del closure de la acción.
+     * - `withReason` agrega el campo MOTIVO obligatorio (sólo en la
+     *   eliminación normal, `DeleteAction`): se persiste en
+     *   `tickets.deletion_reason` antes del soft delete y se muestra en el
+     *   detalle de la auditoría de boletos (`ticket-audit-detail`). La
+     *   eliminación definitiva no lo pide porque el registro desaparece y
+     *   ese motivo quedaría sin historia donde mostrarlo.
      */
-    public static function configurePasswordConfirmation(\Filament\Actions\Action $action): \Filament\Actions\Action
-    {
-        return $action
-            ->form(fn (): array => Setting::getBool(Setting::REQUIRE_PASSWORD_TICKET_DELETE)
-                ? [
-                    TextInput::make('password')
+    public static function configurePasswordConfirmation(
+        \Filament\Actions\Action $action,
+        bool $withReason = false,
+    ): \Filament\Actions\Action {
+        $action
+            ->form(function () use ($withReason): array {
+                $fields = [];
+
+                if (Setting::getBool(Setting::REQUIRE_PASSWORD_TICKET_DELETE)) {
+                    $fields[] = TextInput::make('password')
                         ->label('Tu contraseña')
                         ->password()
                         ->revealable()
@@ -104,8 +118,33 @@ class ViewTicket extends ViewRecord
                                 $fail('La contraseña no es correcta.');
                             }
                         })
-                        ->helperText('Confirmá tu clave de administrador para ejecutar esta acción.'),
-                ]
-                : []);
+                        ->helperText('Confirmá tu clave de administrador para ejecutar esta acción.');
+                }
+
+                if ($withReason) {
+                    $fields[] = Textarea::make('motivo')
+                        ->label('Motivo de la eliminación')
+                        ->placeholder('Ej.: venta duplicada, pasajero se arrepintió…')
+                        ->rows(3)
+                        ->required()
+                        ->maxLength(250)
+                        ->helperText('Obligatorio: se guarda en el historial del boleto y se muestra en la auditoría junto a la marca "Eliminado".')
+                        ->validationMessages([
+                            'required' => 'El motivo de la eliminación es obligatorio.',
+                            'max' => 'El motivo no debe superar los :max caracteres.',
+                        ]);
+                }
+
+                return $fields;
+            });
+
+        if ($withReason) {
+            $action->before(function (array $data, Ticket $record): void {
+                $record->deletion_reason = trim((string) ($data['motivo'] ?? ''));
+                $record->save();
+            });
+        }
+
+        return $action;
     }
 }

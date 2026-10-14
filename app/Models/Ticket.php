@@ -33,6 +33,7 @@ class Ticket extends Model
         'origin_location_id',
         'destination_location_id',
         'deleted_by',
+        'deletion_reason',
     ];
 
     protected $casts = [

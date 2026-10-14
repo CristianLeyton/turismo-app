@@ -175,6 +175,14 @@
                     por {{ $record->deletedBy->name }}{{ $record->deletedBy->username ? ' (' . $record->deletedBy->username . ')' : '' }}
                 @endif
             </div>
+            <div class="mt-1 text-sm font-semibold">
+                Motivo:
+                @if (filled($record->deletion_reason))
+                    {{ $record->deletion_reason }}
+                @else
+                    <span class="font-normal text-red-700 dark:text-red-300/70">—</span>
+                @endif
+            </div>
             <div class="mt-1 text-xs">
                 Los boletos eliminados no pueden restaurarse ni editarse desde la auditoría. Esta vista es informativa.
             </div>

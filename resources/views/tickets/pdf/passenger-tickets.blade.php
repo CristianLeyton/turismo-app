@@ -118,9 +118,22 @@
             font-weight: bold;
             padding: 2mm;
             margin-bottom: 2mm;
-            border-radius: 4px;
+            border-radius: 6px;
             text-align: center;
             letter-spacing: 0.5px;
+            text-transform: uppercase;
+        }
+
+        .pending-note {
+            background: #fffbeb;
+            border: 1px dashed #f59e0b;
+            border-radius: 6px;
+            padding: 2mm 3mm;
+            font-size: 10px;
+            line-height: 1.5;
+            color: #1f2937;
+            text-align: center;
+            margin-bottom: 2mm;
         }
 
         .seat {
@@ -287,12 +300,11 @@
                                         <div class='pending-date'>
                                             FECHA Y HORARIO A CONFIRMAR
                                         </div>
-                                        <strong>Colectivo:</strong> A asignar<br>
-                                        <strong>Fecha del viaje:</strong> A confirmar<br>
-                                        <strong>Hora de salida:</strong> A confirmar<br>
-                                        <strong>Hora de llegada:</strong> A confirmar<br>
-                                        <strong>Ruta:</strong>
-                                        {{ $ticket->origin?->name ?? '—' }} &gt; {{ $ticket->destination?->name ?? '—' }}
+                                        <div class='pending-note'>
+                                            Al adquirir el pasaje queda en responsabilidad del pasajero
+                                            elegir con 24hs de anticipación la fecha y horario sin aplicar recargos.
+                                            La asignación del mismo será solo si la unidad cuente con asientos disponibles.
+                                        </div>
                                     @endif
                                 </div>
 

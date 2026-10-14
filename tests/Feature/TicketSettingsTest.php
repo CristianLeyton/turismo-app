@@ -284,11 +284,12 @@ class TicketSettingsTest extends TestCase
         $ticket = $this->createOneWayTicket();
 
         Livewire::test(\App\Filament\Resources\Tickets\Pages\ViewTicket::class, ['record' => $ticket->id])
-            ->callAction('delete', ['password' => 'secreto123'])
+            ->callAction('delete', ['password' => 'secreto123', 'motivo' => 'Prueba de borrado'])
             ->assertHasNoActionErrors();
 
         $this->assertSoftDeleted($ticket->fresh());
         $this->assertSame($this->admin->id, $ticket->fresh()->deleted_by);
+        $this->assertSame('Prueba de borrado', $ticket->fresh()->deletion_reason);
     }
 
     // ====================== Reprogramar boleto ======================

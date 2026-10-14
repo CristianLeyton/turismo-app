@@ -37,10 +37,19 @@ mysqldump ... > backup_antes_de_deploy.sql
 git pull                # o subir los archivos por SFTP si no hay git
 
 # 3.3 Migraciones (imprescindible si el diff incluye database/migrations)
+
 php artisan migrate --force
+
+o 
+
+/opt/alt/php84/usr/bin/php artisan migrate
 
 # 3.4 Permisos (imprescindible si cambió app/Support/Permissions.php)
 php artisan permissions:sync
+
+o
+
+/opt/alt/php84/usr/bin/php artisan permissions:sync
 
 # 3.5 Assets del frontend (public/build NO viaja en git: se compila en el server)
 npm ci && npm run build

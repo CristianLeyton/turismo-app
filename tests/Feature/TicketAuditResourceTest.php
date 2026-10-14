@@ -247,8 +247,12 @@ class TicketAuditResourceTest extends TestCase
         $this->editTicket($ticket, at: '2026-10-10 12:00:00');
 
         $this->assertSame(
-            'Editado el 10/10/2026',
+            'Editado',
             TicketAuditTable::ultimaModificacion($ticket->fresh()),
+        );
+        $this->assertSame(
+            '10/10/2026',
+            TicketAuditTable::ultimaActividad($ticket->fresh())?->format('d/m/Y'),
         );
 
         // Si después se reprograma, manda la acción más reciente.
@@ -264,14 +268,45 @@ class TicketAuditResourceTest extends TestCase
         ])->forceFill(['created_at' => Carbon::parse('2026-10-12 09:00:00')])->save();
 
         $this->assertSame(
-            'Reprogramado el 12/10/2026',
+            'Reprogramado',
             TicketAuditTable::ultimaModificacion($ticket->fresh()),
+        );
+        $this->assertSame(
+            '12/10/2026',
+            TicketAuditTable::ultimaActividad($ticket->fresh())?->format('d/m/Y'),
         );
 
         // Y si se elimina, la eliminación es la última acción.
         $ticket->delete();
 
-        $this->assertStringStartsWith('Eliminado el ', TicketAuditTable::ultimaModificacion($ticket->fresh()));
+        $this->assertSame('Eliminado', TicketAuditTable::ultimaModificacion($ticket->fresh()));
+        $this->assertNotNull(TicketAuditTable::ultimaActividad($ticket->fresh()));
+    }
+
+    public function test_la_tabla_se_ordena_por_la_actividad_mas_reciente(): void
+    {
+        $this->actingAs($this->admin);
+
+        $editado = $this->createOneWayTicket('2026-10-03');
+        $this->editTicket($editado, at: '2026-10-10 12:00:00');
+
+        // Se elimina ahora: su última actividad (hoy) es más reciente que
+        // la edición del otro boleto (10/10).
+        $eliminado = $this->createOneWayTicket('2026-10-04');
+        $eliminado->delete();
+
+        $component = Livewire::test(TicketAuditResource::getPages()['index']->getPage());
+
+        $ids = $component->instance()
+            ->getTableRecords()
+            ->pluck('id')
+            ->all();
+
+        $this->assertSame(
+            [$eliminado->id, $editado->id],
+            $ids,
+            'El orden por defecto debe ser por la actividad más reciente.'
+        );
     }
 
     public function test_filtro_estado_eliminados(): void
@@ -573,7 +608,7 @@ class TicketAuditResourceTest extends TestCase
         $columns = array_keys($component->instance()->getTable()->getColumns());
 
         $this->assertEqualsCanonicalizing(
-            ['id', 'passenger.last_name', 'passenger.dni', 'estado', 'last_change_at'],
+            ['id', 'passenger.last_name', 'passenger.dni', 'estado', 'ultima_actividad'],
             $columns,
             'La tabla debe ser compacta: el detalle va en el modal.'
         );

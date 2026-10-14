@@ -12,6 +12,8 @@ use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Carbon;
+use Carbon\CarbonInterface;
 
 /**
  * Tabla de auditoría compacta: boletos eliminados y reprogramados.
@@ -73,36 +75,28 @@ class TicketAuditTable
 
                 TextColumn::make('ultima_actividad')
                     ->label('Última actividad')
-                    ->state(fn(Ticket $record) => $record->ultima_actividad)
+                    ->state(fn (Ticket $record) => self::ultimaActividad($record))
                     ->dateTime('d/m/Y H:i')
                     ->placeholder('Sin actividad')
                     ->badge()
                     ->color('info')
                     ->sortable(
                         query: function (Builder $query, string $direction): Builder {
+                            // "Mayor de tres fechas" en SQL portable: ni
+                            // GREATEST (existe en MySQL, no en SQLite viejo)
+                            // ni MAX multi-arg (funcionaba en MySQL < 8.0.13,
+                            // hoy da error 1064) sirven en ambos motores. El
+                            // CASE WHEN funciona igual en MySQL y SQLite.
+                            $eliminado = "COALESCE(tickets.deleted_at, '1970-01-01 00:00:00')";
+                            $reprogramado = "COALESCE((SELECT MAX(ticket_date_changes.created_at) FROM ticket_date_changes WHERE ticket_date_changes.ticket_id = tickets.id), '1970-01-01 00:00:00')";
+                            $editado = "COALESCE((SELECT MAX(ticket_edits.created_at) FROM ticket_edits WHERE ticket_edits.ticket_id = tickets.id), '1970-01-01 00:00:00')";
+
                             return $query->orderByRaw("
-                                GREATEST(
-                                    COALESCE(
-                                        tickets.deleted_at,
-                                        '1970-01-01 00:00:00'
-                                    ),
-                                    COALESCE(
-                                        (
-                                            SELECT MAX(ticket_date_changes.created_at)
-                                            FROM ticket_date_changes
-                                            WHERE ticket_date_changes.ticket_id = tickets.id
-                                        ),
-                                        '1970-01-01 00:00:00'
-                                    ),
-                                    COALESCE(
-                                        (
-                                            SELECT MAX(ticket_edits.created_at)
-                                            FROM ticket_edits
-                                            WHERE ticket_edits.ticket_id = tickets.id
-                                        ),
-                                        '1970-01-01 00:00:00'
-                                    )
-                                ) {$direction}
+                                CASE
+                                    WHEN {$eliminado} >= {$reprogramado} AND {$eliminado} >= {$editado} THEN {$eliminado}
+                                    WHEN {$reprogramado} >= {$editado} THEN {$reprogramado}
+                                    ELSE {$editado}
+                                END {$direction}
                             ");
                         }
                     )
@@ -208,6 +202,22 @@ class TicketAuditTable
             ->persistFiltersInSession()
             ->emptyStateHeading('No hay boletos eliminados, reprogramados ni editados')
             ->emptyStateDescription('Cuando un boleto sea eliminado, reprogramado o se corrijan sus datos, aparecerá acá con su historial.');
+    }
+
+    /**
+     * Fecha de la última acción sobre el boleto (eliminación, reprogramación
+     * o edición de datos). null si no hubo ninguna.
+     */
+    public static function ultimaActividad(Ticket $record): ?Carbon
+    {
+        return collect([
+            $record->deleted_at,
+            $record->dateChanges->max('created_at'),
+            $record->edits->max('created_at'),
+        ])
+            ->filter()
+            ->map(fn ($value) => $value instanceof CarbonInterface ? $value : Carbon::parse($value))
+            ->max();
     }
 
     /**

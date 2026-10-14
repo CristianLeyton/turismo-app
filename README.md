@@ -1,3 +1,5 @@
+DEPLOY A PRODUCCION: ver docs/deploy.md (checklist: migrate, permissions:sync, npm run build, caches)
+
 CRON JOB: 
 
 php artisan app:cleanup-expired-reservations

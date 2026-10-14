@@ -19,9 +19,9 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
-use Filament\Tables\Filters\TrashedFilter;
-use Filament\Tables\Filters\Filter;
+use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Filters\SelectFilter;
+use Filament\Tables\Filters\TrashedFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -95,8 +95,17 @@ class UserResource extends Resource
                     ->multiple()
                     ->preload()
                     ->searchable()
-                    ->visible(fn(): bool => (bool) Auth::user()?->can('roles.assign'))
-                    ->helperText('El rol del usuario indica que acciones puede realizar en el sistema.')
+                    ->visible(fn (): bool => (bool) Auth::user()?->can('roles.assign'))
+                    // Obligatorio: no se permiten usuarios sin rol. Se valida
+                    // sólo cuando el campo es visible (quien no tiene
+                    // roles.assign no puede asignar roles de todos modos).
+                    // Red de seguridad extra: User::syncIsAdminFlag() asigna
+                    // Vendedor a todo usuario que quede sin roles.
+                    ->required(fn (): bool => (bool) Auth::user()?->can('roles.assign'))
+                    ->validationMessages([
+                        'required' => 'El usuario debe tener al menos un rol.',
+                    ])
+                    ->helperText('Obligatorio: el rol define qué acciones puede realizar el usuario en el sistema.'),
             ]);
     }
 
@@ -104,35 +113,53 @@ class UserResource extends Resource
     {
         return $table
             ->recordTitleAttribute('User')
-            ->modifyQueryUsing(fn(Builder $query) => $query->where('id', '!=', 1)) // Excluir el usuario con ID 1
+            ->modifyQueryUsing(fn (Builder $query) => $query->where('id', '!=', 1)) // Excluir el usuario con ID 1
             ->columns([
                 TextColumn::make('username')
                     ->label('Usuario')
                     ->searchable(),
                 TextColumn::make('name')
                     ->label('Nombre')
-                    ->getStateUsing(fn(Model $record): string => $record->name . ' ' . ($record->surname ?? ''))
+                    ->getStateUsing(fn (Model $record): string => $record->name.' '.($record->surname ?? ''))
                     ->searchable(),
                 TextColumn::make('roles.name')
                     ->label('Roles')
                     ->badge()
-                    ->color(fn(string $state): string => match ($state) {
+                    ->color(fn (string $state): string => match ($state) {
                         Permissions::ROLE_SUPER => 'danger',
                         Permissions::ROLE_ADMIN => 'success',
                         default => 'info',
                     }),
             ])
             ->filters([
-                // TrashedFilter::make(),
-                /* SelectFilter::make('rol') */
+                TrashedFilter::make(),
+                SelectFilter::make('roles')
+                    ->label('Roles')
+                    ->relationship('roles', 'name', modifyQueryUsing: function ($query) {
+                        $query->where('guard_name', 'web')
+                            ->orderBy('id');
+
+                        // El rol Super Administrador sólo se muestra (y se
+                        // puede filtrar) si el usuario logueado ES super
+                        // administrador, igual que en el formulario.
+                        if (! Auth::user()?->hasRole(Permissions::ROLE_SUPER)) {
+                            $query->where('name', '!=', Permissions::ROLE_SUPER);
+                        }
+                    })
+                    ->multiple()
+                    ->preload(),
             ])
+            // Filtros arriba de la tabla y aplicados al instante: sin botón
+            // "Aplicar" (deferFilters(false)).
+            ->filtersLayout(FiltersLayout::AboveContent)
+            ->deferFilters(false)
             ->recordActions([
                 EditAction::make()
-                    ->disabled(fn(User $record): bool => $record->id === 2)
+                    ->disabled(fn (User $record): bool => $record->id === 2)
                     ->button()->hiddenLabel()->extraAttributes([
                         'title' => 'Editar',
                     ])
-                    ->after(fn(User $record) => $record->syncIsAdminFlag()),
+                    ->after(fn (User $record) => $record->syncIsAdminFlag()),
                 Action::make('resetPassword')
                     ->label('Restablecer contraseña')
                     ->icon(Heroicon::Key)
@@ -145,7 +172,7 @@ class UserResource extends Resource
                         // Aquí puedes agregar lógica para notificar al usuario sobre su nueva contraseña
                         Notification::make()
                             ->title('Contraseña restablecida')
-                            ->body('El nombre de usuario y la nueva contraseña es: ' . $newPassword)
+                            ->body('El nombre de usuario y la nueva contraseña es: '.$newPassword)
                             ->success()
                             ->icon('heroicon-o-key')
                             ->iconColor('info')
@@ -153,20 +180,20 @@ class UserResource extends Resource
                             ->send();
                     })
                     ->requiresConfirmation()
-                    ->disabled(fn(User $record): bool => $record->id === 2)
+                    ->disabled(fn (User $record): bool => $record->id === 2)
                     ->button()
                     ->hiddenLabel()
                     ->extraAttributes([
                         'title' => 'Restablecer contraseña',
                     ]),
 
-                DeleteAction::make()->disabled(fn(User $record): bool => $record->id === 2)->button()->hiddenLabel()->extraAttributes([
+                DeleteAction::make()->disabled(fn (User $record): bool => $record->id === 2)->button()->hiddenLabel()->extraAttributes([
                     'title' => 'Eliminar',
                 ]),
-                ForceDeleteAction::make()->disabled(fn(User $record): bool => $record->id === 2)->button()->hiddenLabel()->extraAttributes([
+                ForceDeleteAction::make()->disabled(fn (User $record): bool => $record->id === 2)->button()->hiddenLabel()->extraAttributes([
                     'title' => 'Eliminar permanentemente',
                 ]),
-                RestoreAction::make()->disabled(fn(User $record): bool => $record->id === 2)->button()->hiddenLabel()->extraAttributes([
+                RestoreAction::make()->disabled(fn (User $record): bool => $record->id === 2)->button()->hiddenLabel()->extraAttributes([
                     'title' => 'Restaurar',
                 ]),
             ])

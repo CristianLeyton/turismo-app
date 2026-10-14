@@ -1,7 +1,7 @@
 # Registro de funcionalidades y cambios
 
 > Documento de control de versiones funcional del panel de venta de pasajes (Expresso Sofia).
-> Estilo changelog: un bloque por fecha, orden inverso al cronológico. Sin detalle técnico: cada funcionalidad se describe en una o dos líneas. Para detalles profundos ver `docs/roles-y-permisos.md`.
+> Estilo changelog: un bloque por fecha, orden inverso al cronológico. Sin detalle técnico: cada funcionalidad se describe en una o dos líneas. Para detalles profundos ver `docs/roles-y-permisos.md`. Para llevar los cambios a producción ver `docs/deploy.md`.
 
 ## Panorama general del sistema
 
@@ -21,6 +21,12 @@ Panel de administración para venta de pasajes de colectivos, construido sobre L
 | Cron | `app:cleanup-expired-reservations` limpia reservas vencidas (documentado en el README). |
 
 ---
+
+## 2026-10-13 — Usuarios: rol obligatorio y filtros
+
+- No se pueden crear ni editar usuarios sin rol: el campo Roles es obligatorio (si alguien llegara a quedar sin rol, el sistema le asigna Vendedor como red de seguridad).
+- Historial de usuarios: nuevos filtros por rol y por usuarios eliminados (con opción de ver sólo los eliminados). Los filtros están arriba de la tabla y se aplican solos, sin botón "Aplicar".
+- Historial general de boletos: se corrigió el orden por "Última actividad" (no funcionaba en algunos entornos) y la fecha de la columna (antes no se calculaba y siempre mostraba vacío).
 
 ## 2026-10-13 — Edición de boletos (corrección de errores de venta)
 

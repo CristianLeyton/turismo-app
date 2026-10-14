@@ -125,10 +125,10 @@ class ViewTicket extends ViewRecord
                     $fields[] = Textarea::make('motivo')
                         ->label('Motivo de la eliminación')
                         ->placeholder('Ej.: venta duplicada, pasajero se arrepintió…')
-                        ->rows(3)
+                        ->rows(2)
                         ->required()
                         ->maxLength(250)
-                        ->helperText('Obligatorio: se guarda en el historial del boleto y se muestra en la auditoría junto a la marca "Eliminado".')
+                        ->helperText('Obligatorio: se guarda en el historial de boletos.')
                         ->validationMessages([
                             'required' => 'El motivo de la eliminación es obligatorio.',
                             'max' => 'El motivo no debe superar los :max caracteres.',

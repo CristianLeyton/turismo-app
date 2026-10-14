@@ -125,13 +125,13 @@
         }
 
         .pending-note {
-            background: #fffbeb;
-            border: 1px dashed #f59e0b;
+            background: #fef3c7;
+            border: 1.5px dashed #f59e0b;
             border-radius: 6px;
             padding: 2mm 3mm;
             font-size: 10px;
             line-height: 1.5;
-            color: #1f2937;
+            color: #92400e;
             text-align: center;
             margin-bottom: 2mm;
         }
@@ -302,8 +302,8 @@
                                         </div>
                                         <div class='pending-note'>
                                             Al adquirir el pasaje queda en responsabilidad del pasajero
-                                            elegir con 24hs de anticipación la fecha y horario sin aplicar recargos.
-                                            La asignación del mismo será solo si la unidad cuente con asientos disponibles.
+                                            elegir fecha y horario con al menos 24hs de anticipación, dentro de las cuales no se aplicaran recargos.
+                                            La asignación del mismo se realizará solo si la unidad cuenta con asientos disponibles.
                                         </div>
                                     @endif
                                 </div>

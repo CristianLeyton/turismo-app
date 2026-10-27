@@ -1918,6 +1918,122 @@ class TicketForm
                         Repeater::make('passengers')
                             ->label('Pasajeros')
                             ->schema([
+                                // DNI y teléfono primero: lo primero que carga el
+                                // vendedor es el DNI y los demás datos se
+                                // autocompletan si el pasajero ya existe en el
+                                // padrón de clientes.
+                                Grid::make(2)
+                                    ->schema([
+                                        TextInput::make('dni')
+                                            ->label('DNI')
+                                            ->required()
+                                            // Se valida en el momento: el aviso de cliente
+                                            // baneado (y el resto) aparece sin avanzar de
+                                            // paso ni confirmar. Lo mismo dispara el
+                                            // autocompletado desde el padrón.
+                                            ->live()
+                                            ->afterStateUpdated(static function (TextInput $component, $state, Set $set): void {
+                                                // Menos de 7 dígitos = campo todavía en
+                                                // edición: ni validar (números parciales
+                                                // marcarían error antes de tiempo) ni buscar
+                                                // en el padrón (el mínimo del DNI es 7).
+                                                $dni = preg_replace('/\D+/', '', trim((string) $state));
+
+                                                if (strlen($dni) < 7) {
+                                                    return;
+                                                }
+
+                                                LiveValidation::only($component);
+
+                                                $client = Clients::query()->where('dni', $dni)->first();
+
+                                                if (! $client) {
+                                                    return;
+                                                }
+
+                                                // El DNI identifica a la persona: los datos de
+                                                // la ficha del padrón ganan sobre lo tipeado a
+                                                // mano. De paso, las acciones Crear/Cargar
+                                                // cliente viajan con nombres ya coordinados con
+                                                // la ficha existente (menos fichas duplicadas).
+                                                $set('last_name', $client->apellido);
+                                                $set('first_name', $client->nombre);
+
+                                                // Sólo si entra en la regla del campo (7-12 cifras).
+                                                if (preg_match('/^\d{7,12}$/', (string) $client->telefono)) {
+                                                    $set('phone_number', $client->telefono);
+                                                }
+                                            })
+                                            ->numeric()
+                                            ->rules([
+                                                'digits_between:7,8',
+                                            ])
+                                            ->rule(static function (Get $get): \Closure {
+                                                return static function (string $attribute, $value, \Closure $fail): void {
+                                                    if (blank($value)) {
+                                                        return;
+                                                    }
+
+                                                    $banned = Clients::query()
+                                                        ->where('dni', $value)
+                                                        ->where('can_buy', false)
+                                                        ->first();
+
+                                                    if ($banned) {
+                                                        $reason = filled($banned->comments)
+                                                            ? " Motivo: {$banned->comments}"
+                                                            : '';
+
+                                                        $fail("El cliente {$banned->nombre} {$banned->apellido} (DNI {$banned->dni}) está baneado y no se le pueden vender boletos.{$reason}");
+                                                    }
+                                                };
+                                            })
+                                            // Venta sin fecha: sólo pasajeros del padrón. El panel de
+                                            // clientes ubica los boletos vía el DNI del padrón
+                                            // (App\Support\ClientSession::fromDni), así que un boleto
+                                            // sin fecha emitido a un DNI fuera del padrón le quedaria
+                                            // invisible al cliente. Corre en vivo igual que la regla
+                                            // de baneados (al salir del campo).
+                                            ->rule(static function (Get $get): \Closure {
+                                                return static function (string $attribute, $value, \Closure $fail) use ($get): void {
+                                                    if (blank($value)) {
+                                                        return;
+                                                    }
+
+                                                    // Desde el item del repeater, la raíz del wizard queda
+                                                    // dos niveles arriba (item -> repeater).
+                                                    $withoutDate = (bool) $get('../../sell_without_date_ida')
+                                                        || (bool) $get('../../sell_without_date_vuelta');
+
+                                                    if (! $withoutDate) {
+                                                        return;
+                                                    }
+
+                                                    if (! Clients::query()->where('dni', $value)->exists()) {
+                                                        $fail("El pasajero con DNI {$value} no está registrado en el padrón de clientes. Los boletos sin fecha sólo se venden a pasajeros registrados.");
+                                                    }
+                                                };
+                                            })
+                                            ->validationMessages([
+                                                'required' => 'Debe ingresar un DNI.',
+                                                'numeric' => 'El DNI debe ser numérico.',
+                                                'digits_between' => 'El DNI debe tener entre 7 y 8 dígitos.',
+                                            ]),
+                                        TextInput::make('phone_number')
+                                            ->label('Teléfono')
+                                            ->numeric()
+                                            ->rules([
+                                                'digits_between:7,12',
+                                            ])
+                                            ->validationMessages([
+                                                'required' => 'Debe ingresar un número de teléfono.',
+                                                'numeric' => 'El número de teléfono debe ser numérico.',
+                                                'digits_between' => 'El número de teléfono debe tener entre 7 y 12 dígitos.',
+                                            ]),
+                                    ]),
+
+                                // Apellido y nombre después del DNI/Teléfono: si el
+                                // pasajero existe en el padrón, ya vienen llenos.
                                 Grid::make(2)
                                     ->schema([
                                         TextInput::make('last_name')
@@ -1945,58 +2061,6 @@ class TicketForm
                                                 'min' => 'El nombre debe tener al menos :min caracteres.',
                                                 'max' => 'El nombre no puede tener más de :max caracteres.',
                                                 'regex' => 'El nombre solo puede contener letras y espacios.',
-                                            ]),
-                                    ]),
-
-                                Grid::make(2)
-                                    ->schema([
-                                        TextInput::make('dni')
-                                            ->label('DNI')
-                                            ->required()
-                                            // Se valida al salir del campo: el aviso de
-                                            // cliente baneado (y el resto) aparece en el
-                                            // momento, sin avanzar de paso ni confirmar.
-                                            ->live(onBlur: true)
-                                            ->afterStateUpdated(fn (TextInput $component) => LiveValidation::only($component))
-                                            ->numeric()
-                                            ->rules([
-                                                'digits_between:7,8',
-                                            ])
-                                            ->rule(static function (Get $get): \Closure {
-                                                return static function (string $attribute, $value, \Closure $fail): void {
-                                                    if (blank($value)) {
-                                                        return;
-                                                    }
-
-                                                    $banned = Clients::query()
-                                                        ->where('dni', $value)
-                                                        ->where('can_buy', false)
-                                                        ->first();
-
-                                                    if ($banned) {
-                                                        $reason = filled($banned->comments)
-                                                            ? " Motivo: {$banned->comments}"
-                                                            : '';
-
-                                                        $fail("El cliente {$banned->nombre} {$banned->apellido} (DNI {$banned->dni}) está baneado y no se le pueden vender boletos.{$reason}");
-                                                    }
-                                                };
-                                            })
-                                            ->validationMessages([
-                                                'required' => 'Debe ingresar un DNI.',
-                                                'numeric' => 'El DNI debe ser numérico.',
-                                                'digits_between' => 'El DNI debe tener entre 7 y 8 dígitos.',
-                                            ]),
-                                        TextInput::make('phone_number')
-                                            ->label('Teléfono')
-                                            ->numeric()
-                                            ->rules([
-                                                'digits_between:7,12',
-                                            ])
-                                            ->validationMessages([
-                                                'required' => 'Debe ingresar un número de teléfono.',
-                                                'numeric' => 'El número de teléfono debe ser numérico.',
-                                                'digits_between' => 'El número de teléfono debe tener entre 7 y 12 dígitos.',
                                             ]),
                                     ]),
 

@@ -227,6 +227,22 @@ class Ticket extends Model
     }
 
     /**
+     * Boleto de ida hermano de este tramo de vuelta (misma venta y pasajero).
+     * El precio del diferido vive en la ida: la vuelta lista "—" con una nota
+     * que referencia ese boleto. Null si no hay hermano (dato reparado/borro).
+     */
+    public function roundTripOutboundTicket(): ?self
+    {
+        return self::query()
+            ->where('sale_id', $this->sale_id)
+            ->where('passenger_id', $this->passenger_id)
+            ->where('is_round_trip', true)
+            ->where('is_return_leg', false)
+            ->whereNull('deleted_at')
+            ->first();
+    }
+
+    /**
      * Precio para mostrar en PDF y panel.
      * Para tickets de vuelta (is_round_trip=true, return_trip_id=null),
      * busca el precio del boleto de ida asociado (mismo pasajero, misma venta).

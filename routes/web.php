@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\ClientTicketPdfController;
 use App\Http\Controllers\TicketDownloadController;
 use App\Http\Controllers\Api\SeatReservationController;
 use App\Models\Trip;
@@ -11,6 +12,9 @@ use App\Filament\Resources\Tickets\TicketResource;
 Route::get('/', function () {
     return redirect('/admin');
 });
+
+// PDF de boletos para el panel público de clientes (valida propiedad por DNI de sesión)
+Route::get('clientes/boletos/{ticket}/pdf', [ClientTicketPdfController::class, 'download'])->name('clientes.boletos.pdf');
 
 // Rutas para descarga de tickets PDF
 Route::get('tickets/download', [TicketDownloadController::class, 'download'])->name('tickets.download');

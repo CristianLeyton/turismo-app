@@ -5,6 +5,7 @@ namespace App\Filament\Resources\PaymentMethods;
 use App\Filament\Resources\PaymentMethods\Pages\ManagePaymentMethods;
 use App\Models\PaymentMethod;
 use BackedEnum;
+use Filament\Actions\ActionGroup;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\EditAction;
 use Filament\Actions\RestoreAction;
@@ -93,14 +94,27 @@ class PaymentMethodResource extends Resource
                     ->falseLabel('Inactivos') */
                 TrashedFilter::make(),
             ])
-            ->actions([
-                EditAction::make()->button()->hiddenLabel()->extraAttributes(['title' => 'Editar']),
+            ->recordActions([
+                ActionGroup::make([
+                    EditAction::make()->button()->hiddenLabel()->extraAttributes(['title' => 'Editar']),
+                    DeleteAction::make()
+                        ->modalHeading('Eliminar método de pago')
+                        ->modalDescription('El método quedará oculto pero los boletos y pagos históricos seguirán mostrando su nombre. Podrás restaurarlo desde el filtro "eliminados".')
+                        ->modalSubmitActionLabel('Eliminar')
+                        ->button()->hiddenLabel()->extraAttributes(['title' => 'Eliminar']),
+                    RestoreAction::make()->button()->hiddenLabel()->extraAttributes(['title' => 'Restaurar']),
+                ])->icon('heroicon-m-ellipsis-vertical')
+                    ->hiddenLabel()
+                    ->size('sm')
+                    ->extraAttributes(['class' => 'md:hidden']),
+
+                EditAction::make()->button()->hiddenLabel()->extraAttributes(['title' => 'Editar', 'class' => 'hidden md:inline-flex']),
                 DeleteAction::make()
                     ->modalHeading('Eliminar método de pago')
                     ->modalDescription('El método quedará oculto pero los boletos y pagos históricos seguirán mostrando su nombre. Podrás restaurarlo desde el filtro "eliminados".')
                     ->modalSubmitActionLabel('Eliminar')
-                    ->button()->hiddenLabel()->extraAttributes(['title' => 'Eliminar']),
-                RestoreAction::make()->button()->hiddenLabel()->extraAttributes(['title' => 'Restaurar']),
+                    ->button()->hiddenLabel()->extraAttributes(['title' => 'Eliminar', 'class' => 'hidden md:inline-flex']),
+                RestoreAction::make()->button()->hiddenLabel()->extraAttributes(['title' => 'Restaurar', 'class' => 'hidden md:inline-flex']),
             ])
             ->bulkActions([
                 //

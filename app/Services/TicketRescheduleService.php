@@ -75,6 +75,26 @@ class TicketRescheduleService
         // cualquier mutación o reserva: defensa server-side además del form.
         $this->assertPasswordConfirmed($data['confirm_password'] ?? null);
 
+        return $this->rescheduleForActor($ticket, $data, Auth::id());
+    }
+
+    /**
+     * Núcleo de la reprogramación, sin dependencias de Auth.
+     *
+     * Llamado por reschedule() (admin, con actor = usuario logueado) y por el
+     * panel de clientes para la asignación primera de boletos sin fecha, con
+     * actor null. Las validaciones de autorización de ese caso (propiedad del
+     * boleto por DNI de sesión, sólo boletos pendientes) viven en
+     * ClientTicketAssignmentService.
+     *
+     * @param  Ticket  $ticket  Boleto a mover (ida, o el tramo de vuelta del pasajero)
+     * @param  array{scope: string, date: string, schedule_id: int, seat_id: int, return_date?: ?string, return_schedule_id?: ?int, return_seat_id?: ?int}  $data
+     * @return array{ticket: Ticket, changes: array<int, array<string, mixed>>, moved_return: bool}
+     *
+     * @throws ValidationException
+     */
+    public function rescheduleForActor(Ticket $ticket, array $data, ?int $actorId): array
+    {
         $this->assertTicketIsReschedulable($ticket);
 
         $scope = $data['scope'] ?? 'outbound';
@@ -223,7 +243,7 @@ class TicketRescheduleService
         $changes = [];
 
         try {
-            $result = DB::transaction(function () use ($ticket, $newOutboundTrip, $newOutboundSeat, $newReturnTrip, $newReturnSeat, $hasReturnMove, $isReturnLegTicket, &$changes) {
+            $result = DB::transaction(function () use ($ticket, $actorId, $newOutboundTrip, $newOutboundSeat, $newReturnTrip, $newReturnSeat, $hasReturnMove, $isReturnLegTicket, &$changes) {
                 $mainTicket = $ticket->fresh();
                 if (! $mainTicket || $mainTicket->trashed()) {
                     throw ValidationException::withMessages(['ticket' => 'El boleto fue eliminado mientras se procesaba el cambio.']);
@@ -350,7 +370,7 @@ class TicketRescheduleService
 
                 // 4) Auditoría (una fila por tramo realmente movido)
                 foreach ($changes as $change) {
-                    TicketDateChange::create($change + ['user_id' => Auth::id()]);
+                    TicketDateChange::create($change + ['user_id' => $actorId]);
                 }
 
                 // 5) Liberar reservas temporales de esta sesión (asientos elegidos en el selector)

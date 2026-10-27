@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Support\Permissions;
 use BackedEnum;
 use Filament\Actions\Action;
+use Filament\Actions\ActionGroup;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\EditAction;
 use Filament\Actions\ForceDeleteAction;
@@ -66,9 +67,14 @@ class UserResource extends Resource
                     ]),
                 TextInput::make('password')
                     /* ->password() */
-                    ->required()
                     ->label('Contraseña')
-                    ->hiddenOn('edit')
+                    ->required(fn (string $operation): bool => $operation === 'create')
+                    ->dehydrated(fn (?string $state): bool => filled($state))
+                    ->afterStateHydrated(fn (TextInput $component) => $component->state(null))
+                    ->visible(fn (): bool => (bool) Auth::user()?->is_admin)
+                    ->helperText(fn (string $operation): ?string => $operation === 'edit'
+                        ? 'Dejá vacío para mantener la contraseña actual.'
+                        : null)
                     ->validationMessages(['required' => 'El campo contraseña es obligatorio.']),
                 TextInput::make('name')
                     ->label('Nombre')
@@ -154,50 +160,70 @@ class UserResource extends Resource
             ->filtersLayout(FiltersLayout::AboveContent)
             ->deferFilters(false)
             ->recordActions([
+                // Menú de tres puntitos (sólo celular): los ítems conservan
+                // su label para que el menú abierto muestre el texto.
+                ActionGroup::make([
+                    EditAction::make()
+                        ->disabled(fn (User $record): bool => $record->id === 2)
+                        ->after(fn (User $record) => $record->syncIsAdminFlag()),
+                    static::resetPasswordAction(),
+                    DeleteAction::make()->disabled(fn (User $record): bool => $record->id === 2),
+                    ForceDeleteAction::make()->disabled(fn (User $record): bool => $record->id === 2),
+                    RestoreAction::make()->disabled(fn (User $record): bool => $record->id === 2),
+                ])->icon('heroicon-m-ellipsis-vertical')
+                    ->hiddenLabel()
+                    ->size('sm')
+                    ->extraAttributes(['class' => 'md:hidden']),
+
                 EditAction::make()
                     ->disabled(fn (User $record): bool => $record->id === 2)
                     ->button()->hiddenLabel()->extraAttributes([
-                        'title' => 'Editar',
+                        'title' => 'Editar', 'class' => 'hidden md:inline-flex',
                     ])
                     ->after(fn (User $record) => $record->syncIsAdminFlag()),
-                Action::make('resetPassword')
-                    ->label('Restablecer contraseña')
-                    ->icon(Heroicon::Key)
-                    ->color('info')
-                    ->action(function (User $record) {
-                        $newPassword = $record->username;
-                        $record->password = bcrypt($newPassword);
-                        $record->save();
-
-                        // Aquí puedes agregar lógica para notificar al usuario sobre su nueva contraseña
-                        Notification::make()
-                            ->title('Contraseña restablecida')
-                            ->body('El nombre de usuario y la nueva contraseña es: '.$newPassword)
-                            ->success()
-                            ->icon('heroicon-o-key')
-                            ->iconColor('info')
-                            ->duration(3000)
-                            ->send();
-                    })
-                    ->requiresConfirmation()
-                    ->disabled(fn (User $record): bool => $record->id === 2)
-                    ->button()
-                    ->hiddenLabel()
-                    ->extraAttributes([
-                        'title' => 'Restablecer contraseña',
-                    ]),
-
+                static::resetPasswordAction()->button()->hiddenLabel()->extraAttributes([
+                    'title' => 'Restablecer contraseña', 'class' => 'hidden md:inline-flex',
+                ]),
                 DeleteAction::make()->disabled(fn (User $record): bool => $record->id === 2)->button()->hiddenLabel()->extraAttributes([
-                    'title' => 'Eliminar',
+                    'title' => 'Eliminar', 'class' => 'hidden md:inline-flex',
                 ]),
                 ForceDeleteAction::make()->disabled(fn (User $record): bool => $record->id === 2)->button()->hiddenLabel()->extraAttributes([
-                    'title' => 'Eliminar permanentemente',
+                    'title' => 'Eliminar permanentemente', 'class' => 'hidden md:inline-flex',
                 ]),
                 RestoreAction::make()->disabled(fn (User $record): bool => $record->id === 2)->button()->hiddenLabel()->extraAttributes([
-                    'title' => 'Restaurar',
+                    'title' => 'Restaurar', 'class' => 'hidden md:inline-flex',
                 ]),
             ])
             ->toolbarActions([]);
+    }
+
+    /**
+     * Restablecer contraseña: se instancia dos veces (copia en el menú de
+     * tres puntitos para mobile y botón directo para desktop), así que el
+     * cuerpo vive acá y cada copia agrega sus atributos de visibilidad.
+     */
+    private static function resetPasswordAction(): Action
+    {
+        return Action::make('resetPassword')
+            ->label('Restablecer contraseña')
+            ->icon(Heroicon::Key)
+            ->color('info')
+            ->action(function (User $record) {
+                $newPassword = $record->username;
+                $record->password = bcrypt($newPassword);
+                $record->save();
+
+                Notification::make()
+                    ->title('Contraseña restablecida')
+                    ->body('El nombre de usuario y la nueva contraseña es: '.$newPassword)
+                    ->success()
+                    ->icon('heroicon-o-key')
+                    ->iconColor('info')
+                    ->duration(3000)
+                    ->send();
+            })
+            ->requiresConfirmation()
+            ->disabled(fn (User $record): bool => $record->id === 2);
     }
 
     public static function getPages(): array

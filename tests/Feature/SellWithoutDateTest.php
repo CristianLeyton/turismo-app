@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Filament\Resources\Tickets\Pages\CreateTicket;
 use App\Models\Bus;
+use App\Models\Clients;
 use App\Models\Location;
 use App\Models\Passenger;
 use App\Models\PaymentMethod;
@@ -35,6 +36,16 @@ class SellWithoutDateTest extends TestCase
         PaymentMethod::create(['code' => 'efectivo', 'label' => 'Efectivo', 'is_active' => true]);
         \Illuminate\Support\Facades\Cache::forget('payment_methods.options');
         \Illuminate\Support\Facades\Cache::forget('payment_methods.all');
+
+        // La venta sin fecha exige pasajeros del padrón de clientes (regex de
+        // la nueva guard): el helper pendingSaleData usa este DNI, así que lo
+        // dejamos registrado para no repetirlo en cada test.
+        Clients::create([
+            'dni' => '12345678',
+            'nombre' => 'Juan',
+            'apellido' => 'Pérez',
+            'can_buy' => true,
+        ]);
     }
 
     // ====================== Permiso ======================
@@ -134,6 +145,79 @@ class SellWithoutDateTest extends TestCase
         $this->assertInstanceOf(Ticket::class, $ticket);
         $this->assertNotNull($ticket->id);
         $this->assertSame($bus->id, $ticket->bus_id, 'El boleto pendiente debe acarrear el colectivo elegido.');
+    }
+
+    public function test_la_venta_sin_fecha_exige_pasajeros_del_padron(): void
+    {
+        $this->travelTo(\Carbon\Carbon::parse('2026-10-01 09:00:00'));
+
+        $seller = User::factory()->vendedor()->create();
+        $seller->givePermissionTo('tickets.vender_sin_fecha');
+        $this->actingAs($seller);
+
+        $oran = Location::create(['name' => 'Orán S', 'is_active' => true]);
+        $salta = Location::create(['name' => 'Salta S', 'is_active' => true]);
+        $bus = Bus::create(['name' => 'Linea S', 'plate' => 'SSS111', 'seat_count' => 4, 'floors' => 1]);
+
+        // Un DNI que NO está en el padrón: la venta sin fecha debe abortar.
+        $data = $this->pendingSaleData(originId: $oran->id, destinationId: $salta->id, busId: $bus->id);
+        $data['passengers'][0]['dni'] = '88888888';
+
+        try {
+            $this->invokeHandleRecordCreation($data);
+            $this->fail('La venta sin fecha a un pasajero fuera del padrón debió ser rechazada.');
+        } catch (\Filament\Support\Exceptions\Halt $e) {
+            // OK: la guard hace $this->halt().
+        }
+
+        $this->assertSame(0, Sale::count(), 'La venta no debió crearse.');
+        $this->assertSame(0, Ticket::count(), 'Ningún boleto debió emitirse.');
+        $this->assertSame(0, Passenger::count(), 'Ningún pasajero debió crearse.');
+    }
+
+    public function test_la_venta_con_fecha_no_exige_pasajeros_del_padron(): void
+    {
+        // La restricción sólo aplica a tramos sin fecha: una venta NORMAL (con
+        // fecha resuelta) sigue admitiendo DNIs fuera del padrón.
+        $this->travelTo(\Carbon\Carbon::parse('2026-10-01 09:00:00'));
+
+        $seller = User::factory()->vendedor()->create();
+        $this->actingAs($seller);
+
+        $oran = Location::create(['name' => 'Orán T', 'is_active' => true]);
+        $salta = Location::create(['name' => 'Salta T', 'is_active' => true]);
+
+        $bus = Bus::create(['name' => 'Linea T', 'plate' => 'TTT111', 'seat_count' => 4, 'floors' => 1]);
+        foreach ([1, 2, 3, 4] as $n) {
+            Seat::create(['bus_id' => $bus->id, 'seat_number' => (string) $n, 'is_active' => true, 'floor' => '1']);
+        }
+
+        $route = Route::create(['name' => 'Orán - Salta T', 'bus_id' => $bus->id, 'is_active' => true]);
+        RouteStop::create(['route_id' => $route->id, 'location_id' => $oran->id, 'stop_order' => 1]);
+        RouteStop::create(['route_id' => $route->id, 'location_id' => $salta->id, 'stop_order' => 2]);
+
+        $schedule = Schedule::create([
+            'route_id' => $route->id,
+            'name' => 'Horario T',
+            'departure_time' => '08:00',
+            'arrival_time' => '12:00',
+            'is_active' => true,
+        ]);
+
+        $trip = Trip::findOrCreateForBooking($schedule->id, '2026-10-02', $oran->id, $salta->id)['trip'];
+        $seat = Seat::where('bus_id', $bus->id)->where('seat_number', '1')->first();
+
+        $data = $this->pendingSaleData(originId: $oran->id, destinationId: $salta->id, busId: $bus->id);
+        $data['sell_without_date_ida'] = null; // sin el switch: venta normal
+        $data['trip_id'] = $trip->id;
+        $data['seat_ids'] = [$seat->id];
+        $data['passengers'][0]['dni'] = '88888888'; // fuera del padrón
+
+        $ticket = $this->invokeHandleRecordCreation($data);
+
+        $this->assertInstanceOf(Ticket::class, $ticket);
+        $this->assertSame($trip->id, $ticket->trip_id);
+        $this->assertSame('88888888', $ticket->passenger->dni);
     }
 
     // ====================== Feature flag: visibilidad de los switches ======================

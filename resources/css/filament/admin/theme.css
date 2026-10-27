@@ -148,6 +148,19 @@ input[type="checkbox"].toggle-checkbox.fi-checkbox-input:checked::before {
     min-width: 0;
 }
 
+/* Inputs numéricos: sin flechas de incrementar/decrementar (el valor se
+tipea o se ajusta con los botones +/– del propio campo) */
+input[type="number"] {
+    -moz-appearance: textfield !important;
+    appearance: textfield !important;
+}
+
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none !important;
+    margin: 0 !important;
+}
+
 /* Logo personalizado */
 .logo-personalizado {
     margin-top: -0.30rem;

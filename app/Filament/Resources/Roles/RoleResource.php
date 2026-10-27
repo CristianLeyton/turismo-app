@@ -7,6 +7,7 @@ use App\Filament\Resources\Roles\Pages\ManageRoles;
 use App\Support\Permissions;
 use App\Models\User;
 use BackedEnum;
+use Filament\Actions\ActionGroup;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\EditAction;
 use Filament\Forms\Components\CheckboxList;
@@ -162,57 +163,79 @@ class RoleResource extends Resource
                     ->alignCenter(),
             ])
             ->recordActions([
-                EditAction::make()
-                    ->button()
+                ActionGroup::make([
+                    static::editRoleAction()->extraAttributes(['title' => 'Editar']),
+                    static::deleteRoleAction()->extraAttributes(['title' => 'Eliminar']),
+                ])->icon('heroicon-m-ellipsis-vertical')
                     ->hiddenLabel()
-                    ->extraAttributes(['title' => 'Editar'])
-                    ->fillForm(fn (Role $record): array => [
-                        // fillForm REEMPLAZA el fill por defecto del EditAction
-                        // (que era attributesToArray), así que hay que incluir
-                        // también los atributos del rol, no sólo los permisos
-                        // agrupados por módulo.
-                        'name' => $record->name,
-                        'guard_name' => $record->guard_name,
-                        'permissions' => $record->permissions->pluck('name')
-                            ->groupBy(fn (string $name) => str_contains($name, '.')
-                                ? explode('.', $name)[0]
-                                : 'otros')
-                            ->all(),
-                    ])
-                    ->using(function (Role $record, array $data): void {
-                        $record->update(collect($data)->except('permissions')->all());
-                        $record->syncPermissions(static::flattenPermissions($data['permissions'] ?? []));
-                    }),
-                DeleteAction::make()
-                    ->button()
-                    ->hiddenLabel()
-                    ->extraAttributes(['title' => 'Eliminar'])
-                    ->modalDescription(function (Role $record): string {
-                        $usersCount = $record->users()->count();
+                    ->size('sm')
+                    ->extraAttributes(['class' => 'md:hidden']),
 
-                        return $usersCount > 0
-                            ? "⚠ Este rol tiene {$usersCount} usuario(s) asignado(s) y no se puede eliminar. Reasignalos a otro rol primero."
-                            : 'Esta acción no se puede deshacer.';
-                    })
-                    ->before(function (DeleteAction $action, Role $record): void {
-                        // Política de borrado: un rol con usuarios asignados no
-                        // se elimina (quedarían sin acceso al sistema). Roles
-                        // sin usuarios sí, para poder limpiar errores.
-                        $usersCount = $record->users()->count();
-
-                        if ($usersCount === 0) {
-                            return;
-                        }
-
-                        Notification::make()
-                            ->title('No se puede eliminar el rol')
-                            ->body("\"{$record->name}\" tiene {$usersCount} usuario(s) asignado(s). Reasignalos a otro rol antes de eliminarlo.")
-                            ->danger()
-                            ->send();
-
-                        $action->cancel();
-                    }),
+                static::editRoleAction()->extraAttributes(['title' => 'Editar', 'class' => 'hidden md:inline-flex']),
+                static::deleteRoleAction()->extraAttributes(['title' => 'Eliminar', 'class' => 'hidden md:inline-flex']),
             ]);
+    }
+
+    /**
+     * Editar rol: se instancia dos veces (copia en el menú de tres puntitos
+     * para mobile y botón directo para desktop), así que el cuerpo vive acá
+     * y cada copia agrega sus atributos de visibilidad.
+     */
+    private static function editRoleAction(): EditAction
+    {
+        return EditAction::make()
+            ->button()
+            ->hiddenLabel()
+            ->fillForm(fn (Role $record): array => [
+                // fillForm REEMPLAZA el fill por defecto del EditAction
+                // (que era attributesToArray), así que hay que incluir
+                // también los atributos del rol, no sólo los permisos
+                // agrupados por módulo.
+                'name' => $record->name,
+                'guard_name' => $record->guard_name,
+                'permissions' => $record->permissions->pluck('name')
+                    ->groupBy(fn (string $name) => str_contains($name, '.')
+                        ? explode('.', $name)[0]
+                        : 'otros')
+                    ->all(),
+            ])
+            ->using(function (Role $record, array $data): void {
+                $record->update(collect($data)->except('permissions')->all());
+                $record->syncPermissions(static::flattenPermissions($data['permissions'] ?? []));
+            });
+    }
+
+    /** Eliminar rol (misma lógica de las dos copias, con política de borrado). */
+    private static function deleteRoleAction(): DeleteAction
+    {
+        return DeleteAction::make()
+            ->button()
+            ->hiddenLabel()
+            ->modalDescription(function (Role $record): string {
+                $usersCount = $record->users()->count();
+
+                return $usersCount > 0
+                    ? "⚠ Este rol tiene {$usersCount} usuario(s) asignado(s) y no se puede eliminar. Reasignalos a otro rol primero."
+                    : 'Esta acción no se puede deshacer.';
+            })
+            ->before(function (DeleteAction $action, Role $record): void {
+                // Política de borrado: un rol con usuarios asignados no
+                // se elimina (quedarían sin acceso al sistema). Roles
+                // sin usuarios sí, para poder limpiar errores.
+                $usersCount = $record->users()->count();
+
+                if ($usersCount === 0) {
+                    return;
+                }
+
+                Notification::make()
+                    ->title('No se puede eliminar el rol')
+                    ->body("\"{$record->name}\" tiene {$usersCount} usuario(s) asignado(s). Reasignalos a otro rol antes de eliminarlo.")
+                    ->danger()
+                    ->send();
+
+                $action->cancel();
+            });
     }
 
     public static function getPages(): array

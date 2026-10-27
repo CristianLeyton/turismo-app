@@ -18,6 +18,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
+use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
 /**
@@ -112,6 +113,122 @@ class TicketSaleDniValidationTest extends TestCase
         $page = $this->mountPassengersStep($schedule, $date);
 
         $page->set('data.passengers.0.dni', '30111222')->assertHasNoErrors(['data.passengers.0.dni']);
+    }
+
+    public function test_la_venta_sin_fecha_exige_padrón_al_completar_el_dni(): void
+    {
+        // El switch "sin fecha" solo es visible con el permiso cargado en la
+        // matriz de roles (misma condición que el feature flag del form).
+        \App\Support\Permissions::syncToDatabase();
+        Role::findByName(\App\Support\Permissions::ROLE_SELLER)->givePermissionTo('tickets.vender_sin_fecha');
+        \App\Support\Permissions::forgetFeatureFlagCache();
+
+        $schedule = $this->makeSchedule();
+        $date = '2027-01-07';
+        Trip::findOrCreateForBooking($schedule->id, $date, $this->oran->id, $this->salta->id);
+
+        $this->actingAs(User::factory()->vendedor()->create());
+
+        // Un DNI que NO está en el padrón.
+        $page = $this->mountPassengersStep($schedule, $date);
+
+        $page->set('data.sell_without_date_ida', true)
+            ->assertHasNoErrors(['data.passengers.0.dni']);
+
+        $page->set('data.passengers.0.dni', '76543210')
+            ->assertHasErrors(['data.passengers.0.dni']);
+
+        $this->assertStringContainsString(
+            'padrón',
+            (string) $page->errors()->first('data.passengers.0.dni'),
+        );
+    }
+
+    public function test_la_venta_sin_fecha_admite_un_dni_del_padron(): void    {
+        \App\Support\Permissions::syncToDatabase();
+        Role::findByName(\App\Support\Permissions::ROLE_SELLER)->givePermissionTo('tickets.vender_sin_fecha');
+        \App\Support\Permissions::forgetFeatureFlagCache();
+
+        $schedule = $this->makeSchedule();
+        $date = '2027-01-07';
+        Trip::findOrCreateForBooking($schedule->id, $date, $this->oran->id, $this->salta->id);
+
+        $this->actingAs(User::factory()->vendedor()->create());
+
+        Clients::create([
+            'dni' => '76543210',
+            'nombre' => 'Beto',
+            'apellido' => 'Lopez',
+            'can_buy' => true,
+        ]);
+
+        $page = $this->mountPassengersStep($schedule, $date);
+
+        $page->set('data.sell_without_date_ida', true)
+            ->set('data.passengers.0.dni', '76543210')
+            ->assertHasNoErrors(['data.passengers.0.dni']);
+    }
+
+    public function test_el_dni_del_padron_autocompleta_nombre_apellido_y_telefono(): void
+    {
+        $schedule = $this->makeSchedule();
+        $date = '2027-01-07';
+        Trip::findOrCreateForBooking($schedule->id, $date, $this->oran->id, $this->salta->id);
+
+        $this->actingAs(User::factory()->vendedor()->create());
+
+        Clients::create([
+            'dni' => '30222333',
+            'nombre' => 'Ana',
+            'apellido' => 'Gomez',
+            'telefono' => '3875550003',
+            'can_buy' => true,
+        ]);
+
+        $page = $this->mountPassengersStep($schedule, $date);
+
+        // Al completar el DNI (>= 7 dígitos), el padrón llena apellido,
+        // nombre y teléfono de ese pasajero.
+        $page->set('data.passengers.0.dni', '30222333')
+            ->assertFormSet([
+                'passengers.0.last_name' => 'Gomez',
+                'passengers.0.first_name' => 'Ana',
+                'passengers.0.phone_number' => '3875550003',
+            ]);
+    }
+
+    public function test_con_menos_de_7_digitos_no_se_valida_ni_se_autocompleta(): void
+    {
+        $schedule = $this->makeSchedule();
+        $date = '2027-01-07';
+        Trip::findOrCreateForBooking($schedule->id, $date, $this->oran->id, $this->salta->id);
+
+        $this->actingAs(User::factory()->vendedor()->create());
+
+        // El borrador del DNI (5 dígitos) coincide con el prefijo del DNI
+        // del cliente, pero no debe buscar ni validar todavía.
+        Clients::create([
+            'dni' => '3011122',
+            'nombre' => 'Ana',
+            'apellido' => 'Perez',
+            'can_buy' => true,
+        ]);
+
+        $page = $this->mountPassengersStep($schedule, $date);
+
+        $page->set('data.passengers.0.dni', '30111');
+
+        $passenger = $page->instance()->form->getRawState()['passengers'][0] ?? [];
+
+        $this->assertSame('', (string) ($passenger['last_name'] ?? ''));
+        $this->assertSame('', (string) ($passenger['first_name'] ?? ''));
+
+        // Al completar los 7 dígitos, sí llena.
+        $page->set('data.passengers.0.dni', '3011122')
+            ->assertFormSet([
+                'passengers.0.last_name' => 'Perez',
+                'passengers.0.first_name' => 'Ana',
+            ]);
     }
 
     /** Avanza el wizard hasta el paso "Pasajeros" con 1 pasajero y 1 asiento. */

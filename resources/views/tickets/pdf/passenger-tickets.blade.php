@@ -3,9 +3,7 @@
 
 <head>
     <meta charset='utf-8'>
-    @foreach ($tickets->chunk(2) as $pair)
-        <title>Boleto N° {{ $pair[0]->id }} {{ isset($pair[1]) ? 'y ' . $pair[1]->id : '' }} </title>
-    @endforeach
+    <title>Boleto N° {{ $tickets->first()?->id }} {{ $tickets->count() > 1 ? 'y ' . $tickets->last()->id : '' }} </title>
 
     <style>
         @page {
@@ -28,7 +26,7 @@
             border: 1px solid #e5e7eb;
             border-radius: 10px;
             padding: 3mm;
-            height: 125mm;
+            height: 130mm;
             /* media hoja A4 */
         }
 

@@ -25,6 +25,7 @@ use App\Filament\Pages\Auth\EditProfile;
 use App\Filament\Resources\Tickets\TicketResource;
 use Filament\Enums\ThemeMode;
 use Filament\Navigation\NavigationItem;
+use Filament\View\PanelsRenderHook;
 use App\Filament\Widgets\Panel as PanelWidget;
 use App\Filament\Widgets\UserAccount;
 
@@ -86,7 +87,71 @@ class AdminPanelProvider extends PanelProvider
             ])
             ->authMiddleware([
                 Authenticate::class,
-            ]);
-            
+            ])
+            /* La ruedita del mouse no cambia el valor de los inputs numéricos:
+               sólo interfiere si el campo tiene foco (sino la página scrollea
+               con normalidad). Lo inverso de las flechas ya se ocultó en el
+               tema; esto cubre el cambio por rueda conjugado con foco. */
+            ->renderHook(
+                PanelsRenderHook::BODY_END,
+                fn () => <<<'HTML'
+                    <script>
+                        document.addEventListener('wheel', (event) => {
+                            const el = event.target instanceof Element
+                                ? event.target.closest('input[type="number"]')
+                                : null;
+
+                            if (el && document.activeElement === el) {
+                                event.preventDefault();
+                            }
+                        }, { passive: false });                    </script>
+                HTML,
+            )
+            /* Atajo para clientes: un pasajero puede llegar por error al login
+               del panel de administración; desde ahí lo mando al panel
+               público de clientes ("Mis boletos", PanelProvider con path
+               'clientes', que incluye el ingreso por DNI). Sólo en el login
+               del panel de administración: PanelsRenderHook sólo se
+               aplica en la página Login de este panel. */
+/*             ->renderHook(
+                PanelsRenderHook::AUTH_LOGIN_FORM_AFTER,
+                fn () => <<<'HTML'
+                    <style>
+                        .clientes-login-shortcut {
+                            margin-top: 1rem;
+                            padding: 0.75rem 1rem;
+                            border: 1px solid #f3e8f6;
+                            border-radius: 0.75rem;
+                            background: #faf5fd;
+                            display: flex;
+                            align-items: center;
+                            justify-content: space-between;
+                            gap: 0.75rem;
+                            flex-wrap: wrap;
+                            font-size: 0.875rem;
+                            color: #57534e;
+                        }
+
+                        .clientes-login-shortcut p {
+                            margin: 0;
+                        }
+
+                        .clientes-login-shortcut a {
+                            color: #c026d3;
+                            font-weight: 600;
+                            text-decoration: none;
+                            white-space: nowrap;
+                        }
+
+                        .clientes-login-shortcut a:hover {
+                            text-decoration: underline;
+                        }
+                    </style>
+                    <div class="clientes-login-shortcut">
+                        <p>¿Sos pasajero? Tus boletos están en el <a href="/clientes">panel de Clientes.</a></p>
+                        
+                    </div>
+                HTML,
+            ) */;
     }
 }

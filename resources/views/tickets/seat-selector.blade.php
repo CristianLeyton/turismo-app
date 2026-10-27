@@ -14,7 +14,10 @@
 
 
 <div x-data="{
-    selected: @entangle('data.' . $fieldId),
+    // Opcional: $seatSelectorStatePath apunta al estado real del form (p.
+    // ej. mountedActions.0.data.seat_ids en modales de acción, donde no existe
+    // la propiedad data). Sin valor, se usa data.<fieldId> como antes.
+    selected: @entangle($seatSelectorStatePath ?? ('data.' . $fieldId)),
     required: {{ (int) $passengers_count }},
     tripId: {{ $tripId ?? 'null' }},
     sessionId: '{{ $sessionId }}',
@@ -576,7 +579,7 @@
             </div>
             @if ($requiredSeats > 0)
                 <div class="mt-3 text-sm text-gray-600 dark:text-gray-400">
-                    <span x-text="`Asientos seleccionados: ${selected.length} de ${required}`"></span>
+                    <span x-text="`Asientos seleccionados: ${(selected ?? []).length} de ${required}`"></span>
                 </div>
             @endif
         </div>
@@ -768,7 +771,7 @@
                                         <button type="button" @click="toggleSeat({{ $seatId }})"
                                             :disabled="!isSelected({{ $seatId }}) && (@js($isOccupied) || (
                                                     @js($isReserved) && !@js($isReservedByCurrentUser)
-                                                    ) || selected.length >= required)"
+                                                    ) || (selected ?? []).length >= required)"
                                             :class="{
                                                 'bg-gray-300 dark:bg-gray-600 border-gray-400 hover:bg-gray-400 dark:hover:bg-gray-500':
                                                     !isSelected({{ $seatId }}) && !@js($isOccupied),
@@ -820,10 +823,10 @@
             @endforeach
         </div>
 
-        <div x-show="selected.length < required"
+        <div x-show="(selected ?? []).length < required"
             class="w-full mt-0 p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
             <p class="text-sm text-yellow-800 dark:text-yellow-200">
-                Debe seleccionar <span x-text="required - selected.length"></span> asiento(s) más.
+                Debe seleccionar <span x-text="required - (selected ?? []).length"></span> asiento(s) más.
             </p>
         </div>
     @endif

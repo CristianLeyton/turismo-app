@@ -7,6 +7,7 @@ use App\Filament\Resources\Seats\Pages\ManageSeats;
 use App\Models\Bus;
 use App\Models\Seat;
 use BackedEnum;
+use Filament\Actions\ActionGroup;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
@@ -201,17 +202,35 @@ class SeatResource extends Resource
                 TrashedFilter::make(),
             ])
             ->recordActions([
+                ActionGroup::make([
+                    EditAction::make()->button()->hiddenLabel()->extraAttributes([
+                        'title' => 'Editar',
+                    ]),
+                    DeleteAction::make()->button()->hiddenLabel()->extraAttributes([
+                        'title' => 'Eliminar',
+                    ]),
+                    ForceDeleteAction::make()->button()->hiddenLabel()->extraAttributes([
+                        'title' => 'Eliminar permanentemente',
+                    ]),
+                    RestoreAction::make()->button()->hiddenLabel()->extraAttributes([
+                        'title' => 'Restaurar',
+                    ]),
+                ])->icon('heroicon-m-ellipsis-vertical')
+                    ->hiddenLabel()
+                    ->size('sm')
+                    ->extraAttributes(['class' => 'md:hidden']),
+
                 EditAction::make()->button()->hiddenLabel()->extraAttributes([
-                    'title' => 'Editar',
+                    'title' => 'Editar', 'class' => 'hidden md:inline-flex',
                 ]),
                 DeleteAction::make()->button()->hiddenLabel()->extraAttributes([
-                    'title' => 'Eliminar',
+                    'title' => 'Eliminar', 'class' => 'hidden md:inline-flex',
                 ]),
                 ForceDeleteAction::make()->button()->hiddenLabel()->extraAttributes([
-                    'title' => 'Eliminar permanentemente',
+                    'title' => 'Eliminar permanentemente', 'class' => 'hidden md:inline-flex',
                 ]),
                 RestoreAction::make()->button()->hiddenLabel()->extraAttributes([
-                    'title' => 'Restaurar',
+                    'title' => 'Restaurar', 'class' => 'hidden md:inline-flex',
                 ]),
             ])
             ->toolbarActions([

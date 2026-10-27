@@ -6,6 +6,7 @@ use App\Filament\Resources\Clients\Pages\ManageClients;
 use App\Models\Clients;
 use BackedEnum;
 use Filament\Actions\Action;
+use Filament\Actions\ActionGroup;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
@@ -193,6 +194,20 @@ class ClientsResource extends Resource
             ])->filtersLayout(FiltersLayout::AboveContent)
             ->deferFilters(false)
             ->recordActions([
+                // Menú de tres puntitos (construido desde los builders,
+                // con visibilidad duplicada para las acciones): sólo celular.
+                ActionGroup::make([
+                    static::toggleBanAction(),
+                    static::resetPasswordAction(),
+                    EditAction::make(),
+                    DeleteAction::make()->visible(fn() => (bool) Auth::user()?->can('clients.delete')),
+                    ForceDeleteAction::make(),
+                    RestoreAction::make(),
+                ])->icon('heroicon-m-ellipsis-vertical')
+                    ->hiddenLabel()
+                    ->size('sm')
+                    ->extraAttributes(['class' => 'md:hidden']),
+
                 Action::make('toggleBan')
                     ->visible(fn() => (bool) Auth::user()?->can('clients.ban'))
                     ->label(fn(Clients $record): string => $record->can_buy ? 'Banear' : 'Habilitar')
@@ -215,18 +230,51 @@ class ClientsResource extends Resource
                     })
                     ->button()
                     ->hiddenLabel()
-                    ->extraAttributes(['title' => 'Banear / Habilitar']),
+                    ->extraAttributes(['title' => 'Banear / Habilitar', 'class' => 'hidden md:inline-flex']),
+                // Contraseña inicial del cliente = su DNI. Si ya se la cambió
+                // y la olvidó, se resetea: vuelve a ser el DNI (sin hash) y al
+                // próximo ingreso se le obliga a elegir otra.
+                Action::make('resetPassword')
+                    ->visible(fn() => (bool) Auth::user()?->can('clients.reset_password'))
+                    ->label('Resetear contraseña')
+                    ->icon('heroicon-o-key')
+                    ->color('warning')
+                    ->requiresConfirmation()
+                    ->modalHeading('Resetear contraseña')
+                    ->modalDescription(fn(Clients $record): string => $record->hasPersonalPassword()
+                        ? "\u00bfResetear la contrase\u00f1a de {$record->nombre} {$record->apellido}? Entrar\u00e1 con su DNI (como contrase\u00f1a inicial) y tendr\u00e1 que elegir una nueva al pr\u00f3ximo ingreso."
+                        : "{$record->nombre} {$record->apellido} todav\u00eda no eligi\u00f3 su propia contrase\u00f1a: entra con su DNI.")
+                    ->modalSubmitActionLabel('Resetear')
+                    ->action(function (Clients $record): void {
+                        // Vuelve al estado inicial: contraseña = su DNI (el
+                        // cast 'hashed' la guarda bcrypt) y bandera de primer
+                        // ingreso en true, para que el panel lo obligue a
+                        // elegir una nueva.
+                        $record->update([
+                            'password' => $record->dni,
+                            'must_change_password' => true,
+                        ]);
+
+                        Notification::make()
+                            ->title('Contraseña reseteada')
+                            ->body($record->nombre . ' ' . $record->apellido . ' entra con su DNI y elige una contrase\u00f1a nueva al pr\u00f3ximo ingreso.')
+                            ->success()
+                            ->send();
+                    })
+                    ->button()
+                    ->hiddenLabel()
+                    ->extraAttributes(['title' => 'Resetear contraseña', 'class' => 'hidden md:inline-flex']),
                 EditAction::make()->button()->hiddenLabel()->extraAttributes([
-                    'title' => 'Editar',
+                    'title' => 'Editar', 'class' => 'hidden md:inline-flex',
                 ]),
                 DeleteAction::make()->button()->hiddenLabel()->extraAttributes([
-                    'title' => 'Eliminar',
+                    'title' => 'Eliminar', 'class' => 'hidden md:inline-flex',
                 ])->visible(fn() => (bool) Auth::user()?->can('clients.delete')),
                 ForceDeleteAction::make()->button()->hiddenLabel()->extraAttributes([
-                    'title' => 'Eliminar permanentemente',
+                    'title' => 'Eliminar permanentemente', 'class' => 'hidden md:inline-flex',
                 ]),
                 RestoreAction::make()->button()->hiddenLabel()->extraAttributes([
-                    'title' => 'Restaurar',
+                    'title' => 'Restaurar', 'class' => 'hidden md:inline-flex',
                 ]),
             ])
             ->toolbarActions([
@@ -235,6 +283,67 @@ class ClientsResource extends Resource
                                          ForceDeleteBulkAction::make(),
                     RestoreBulkAction::make(),
                 ]), */]);
+    }
+
+    /**
+     * Banear / habilitar cliente: se instancia dos veces (copia en el menú de
+     * tres puntitos para mobile y botón directo para desktop), así que el
+     * cuerpo vive acá y cada copia agrega sus atributos de visibilidad.
+     */
+    private static function toggleBanAction(): Action
+    {
+        return Action::make('toggleBan')
+            ->visible(fn() => (bool) Auth::user()?->can('clients.ban'))
+            ->label(fn(Clients $record): string => $record->can_buy ? 'Banear' : 'Habilitar')
+            ->icon(fn(Clients $record): Heroicon => $record->can_buy ? Heroicon::NoSymbol : Heroicon::CheckCircle)
+            ->color(fn(Clients $record): string => $record->can_buy ? 'danger' : 'success')
+            ->requiresConfirmation()
+            ->modalHeading(fn(Clients $record): string => $record->can_buy ? 'Banear cliente' : 'Habilitar cliente')
+            ->modalDescription(fn(Clients $record): string => $record->can_buy
+                ? "¿Confirmás banear a {$record->nombre} {$record->apellido}? No se le podrán vender más boletos."
+                : "¿Confirmás habilitar a {$record->nombre} {$record->apellido}? Volverá a poder comprar boletos.")
+            ->modalSubmitActionLabel(fn(Clients $record): string => $record->can_buy ? 'Banear' : 'Habilitar')
+            ->action(function (Clients $record): void {
+                $record->update(['can_buy' => ! $record->can_buy]);
+
+                Notification::make()
+                    ->title($record->can_buy ? 'Cliente habilitado' : 'Cliente baneado')
+                    ->body("{$record->nombre} {$record->apellido} " . ($record->can_buy ? 'puede volver a comprar boletos.' : 'no podrá comprar boletos.'))
+                    ->success()
+                    ->send();
+            });
+    }
+
+    /** Resetear contraseña a su DNI (misma lógica en las dos copias). */
+    private static function resetPasswordAction(): Action
+    {
+        return Action::make('resetPassword')
+            ->visible(fn() => (bool) Auth::user()?->can('clients.reset_password'))
+            ->label('Resetear contraseña')
+            ->icon('heroicon-o-key')
+            ->color('warning')
+            ->requiresConfirmation()
+            ->modalHeading('Resetear contraseña')
+            ->modalDescription(fn(Clients $record): string => $record->hasPersonalPassword()
+                ? "\u00bfResetear la contrase\u00f1a de {$record->nombre} {$record->apellido}? Entrar\u00e1 con su DNI (como contrase\u00f1a inicial) y tendr\u00e1 que elegir una nueva al pr\u00f3ximo ingreso."
+                : "{$record->nombre} {$record->apellido} todav\u00eda no eligió su propia contrase\u00f1a: entra con su DNI.")
+            ->modalSubmitActionLabel('Resetear')
+            ->action(function (Clients $record): void {
+                // Vuelve al estado inicial: contraseña = su DNI (el
+                // cast 'hashed' la guarda bcrypt) y bandera de primer
+                // ingreso en true, para que el panel lo obligue a
+                // elegir una nueva.
+                $record->update([
+                    'password' => $record->dni,
+                    'must_change_password' => true,
+                ]);
+
+                Notification::make()
+                    ->title('Contraseña reseteada')
+                    ->body($record->nombre . ' ' . $record->apellido . ' entra con su DNI y elige una contrase\u00f1a nueva al pr\u00f3ximo ingreso.')
+                    ->success()
+                    ->send();
+            });
     }
 
     public static function getPages(): array

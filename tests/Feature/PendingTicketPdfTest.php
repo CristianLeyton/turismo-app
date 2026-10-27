@@ -82,8 +82,10 @@ class PendingTicketPdfTest extends TestCase
         // El cartel (banner + leyenda) reemplaza a los placeholders.
         $this->assertStringContainsString('FECHA Y HORARIO A CONFIRMAR', $html);
         $this->assertStringContainsString('queda en responsabilidad del pasajero', $html);
-        $this->assertStringContainsString('sin aplicar recargos', $html);
-        $this->assertStringContainsString('si la unidad cuente con asientos disponibles', $html);
+        // Redacción vigente desde baa13d1 (baa13d1 cambió el texto del cartel:
+        // antes "sin aplicar recargos" / "la unidad cuente").
+        $this->assertStringContainsString('no se aplicaran recargos', $html);
+        $this->assertStringContainsString('cuenta con asientos disponibles', $html);
 
         // Ya no se imprimen los campos "A confirmar" / "A asignar".
         $this->assertStringNotContainsString('A confirmar', $html);

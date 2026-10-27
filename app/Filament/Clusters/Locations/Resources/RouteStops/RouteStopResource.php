@@ -6,6 +6,7 @@ use App\Filament\Clusters\Locations\LocationsCluster;
 use App\Filament\Clusters\Locations\Resources\RouteStops\Pages\ManageRouteStops;
 use App\Models\RouteStop;
 use BackedEnum;
+use Filament\Actions\ActionGroup;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
@@ -122,17 +123,29 @@ class RouteStopResource extends Resource
                 TrashedFilter::make(),
             ])
             ->recordActions([
+                // Menú de tres puntitos (sólo celular): los ítems conservan
+                // su label para que el menú abierto muestre el texto.
+                ActionGroup::make([
+                    EditAction::make(),
+                    DeleteAction::make(),
+                    ForceDeleteAction::make(),
+                    RestoreAction::make(),
+                ])->icon('heroicon-m-ellipsis-vertical')
+                    ->hiddenLabel()
+                    ->size('sm')
+                    ->extraAttributes(['class' => 'md:hidden']),
+
                 EditAction::make()->button()->hiddenLabel()->extraAttributes([
-                    'title' => 'Editar',
+                    'title' => 'Editar', 'class' => 'hidden md:inline-flex',
                 ]),
                 DeleteAction::make()->button()->hiddenLabel()->extraAttributes([
-                    'title' => 'Eliminar',
+                    'title' => 'Eliminar', 'class' => 'hidden md:inline-flex',
                 ]),
                 ForceDeleteAction::make()->button()->hiddenLabel()->extraAttributes([
-                    'title' => 'Eliminar permanentemente',
+                    'title' => 'Eliminar permanentemente', 'class' => 'hidden md:inline-flex',
                 ]),
                 RestoreAction::make()->button()->hiddenLabel()->extraAttributes([
-                    'title' => 'Restaurar',
+                    'title' => 'Restaurar', 'class' => 'hidden md:inline-flex',
                 ]),
             ])
             ->toolbarActions([

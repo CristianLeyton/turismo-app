@@ -307,6 +307,38 @@ class CreateTicket extends CreateRecord
             }
         }
 
+        // 0.bis Venta sin fecha: sólo pasajeros registrados en el padrón de
+        // clientes. El panel de clientes ubica los boletos vía el DNI del
+        // padrón, así que un boleto sin fecha emitido a un DNI fuera del
+        // padrón le quedaría invisible al cliente. Defensa espeja de la
+        // regla del form (el vendedor puede saltársela manipulando Livewire).
+        if ((bool) ($data['sell_without_date_ida'] ?? false) || (bool) ($data['sell_without_date_vuelta'] ?? false)) {
+            $pendingDnis = collect($data['passengers'] ?? [])
+                ->pluck('dni')
+                ->filter(fn ($dni) => filled($dni))
+                ->unique()
+                ->values();
+
+            $unregistered = $pendingDnis
+                ->reject(fn ($dni) => \App\Models\Clients::query()->where('dni', $dni)->exists());
+
+            if ($unregistered->isNotEmpty()) {
+                $details = $unregistered->implode(', ');
+
+                Notification::make()
+                    ->title('No se puede completar la venta')
+                    ->icon('heroicon-m-shield-exclamation')
+                    ->body("Los boletos sin fecha sólo se venden a pasajeros registrados en el padrón de clientes. DNIs sin registrar: {$details}. Si no, el pasajero no podría ver su boleto desde el panel de clientes. Registralo en Clientes (o con la acción «Crear cliente» del pasajero) y volvé a intentar la venta.")
+                    ->danger()
+                    ->persistent()
+                    ->send();
+
+                $this->halt();
+
+                return $data;
+            }
+        }
+
         // 0.b Validar que los métodos de pago enviados existan y estén activos.
         // La columna ya no es ENUM (es VARCHAR + FK), así que la DB no rechaza
         // códigos raros por sí sola; validamos contra los métodos activos.
@@ -1024,121 +1056,25 @@ class CreateTicket extends CreateRecord
      */
     private function generateCombinedPDF($sale, $ticketsByPassenger): string
     {
-        $html = '<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <title>Boletos N° ' . implode(', ', $ticketsByPassenger->flatMap(function ($passengerTickets) {
-            return $passengerTickets->pluck('id');
-        })->toArray()) . '</title>';
+        // Todos los boletos juntos, con el MISMO maquetado de la vista individual:
+        // pares por hoja (2 por página A4) y alturas reales de cada boleto.
+        // El blad ya pinta la marca "FECHA MODIFICADA" por boleto, por lo que aqúi
+        // no hace falta repetirla.
+        $allTickets = $ticketsByPassenger->flatten();
 
-        // Incluir los estilos CSS del PDF original
-        $originalStyles = file_get_contents(resource_path('views/tickets/pdf/passenger-tickets.blade.php'));
-        if (preg_match('/<style>(.*?)<\/style>/s', $originalStyles, $matches)) {
-            $html .= '<style>' . $matches[1] . '</style>';
-        }
+        $data = [
+            'sale' => $sale,
+            'tickets' => $allTickets,
+            'passenger' => $allTickets->first()->passenger,
+            'hasChild' => $allTickets->contains('travels_with_child', true),
+        ];
 
-        // Marca de reprogramación (mismo estilo que la vista PDF)
-        $html .= '<style>
-        .reschedule-mark {
-            background: #ffedd5;
-            border: 2px solid #ea580c;
-            color: #9a3412;
-            font-size: 11px;
-            font-weight: bold;
-            padding: 2mm;
-            margin-bottom: 2mm;
-            border-radius: 4px;
-            text-align: center;
-            letter-spacing: 0.5px;
-        }
-        </style>';
-
-        $html .= '
-    <style>
-        .ticket-container {
-            page-break-inside: avoid;
-            min-height: 123mm; /* Más compacto que el PDF individual */
-        }
-
-        .ticket-container.no-return:nth-child(odd) {
-            margin-bottom: 17mm;
-        }
-
-        /* Para tickets sin vuelta, hacerlos más compactos */
-        .ticket-container.no-return {
-            height: 123mm; /* Altura fija para tickets de ida solamente */
-        }
-        
-        /* Para tickets con vuelta, mantener tamaño completo */
-        .ticket-container.with-return {
-            height: 123mm; /* Altura completa para tickets de ida y vuelta */
-            page-break-after: always;
-        }
-    </style>
-</head>
-<body>';
-
-        // Generar HTML para cada ticket usando la vista existente SIN saltos de página
-        foreach ($ticketsByPassenger as $index => $passengerTickets) {
-            $passenger = $passengerTickets->first()->passenger;
-            $hasChild = $passengerTickets->contains('travels_with_child', true);
-
-            // Generar el HTML del ticket usando la misma lógica que la vista individual
-            $html .= $this->generateTicketHTML($sale, $passengerTickets, $passenger, $hasChild);
-        }
-
-        $html .= '</body></html>';
-
-        // Generar el PDF combinado final
         $dompdf = new \Dompdf\Dompdf();
-        $dompdf->loadHtml($html);
+        $dompdf->loadHtml(view('tickets.pdf.passenger-tickets', $data)->render());
         $dompdf->setPaper('A4', 'portrait');
         $dompdf->render();
 
         return $dompdf->output();
-    }
-
-    /**
-     * Generar HTML para un ticket específico
-     */
-    private function generateTicketHTML($sale, $tickets, $passenger, $hasChild): string
-    {
-        // Determinar si el ticket tiene vuelta
-        $firstTicket = $tickets->first();
-        $hasReturn = $firstTicket->is_round_trip && $firstTicket->returnTrip;
-        $cssClass = $hasReturn ? 'with-return' : 'no-return';
-
-        // Marca de reprogramación (el PDF se genera on-demand: el boleto ya movido sale marcado)
-        $rescheduleMark = '';
-        if ($tickets->contains(fn ($t) => $t->wasRescheduled())) {
-            $lastChangeAt = $tickets
-                ->flatMap(fn ($t) => $t->dateChanges)
-                ->sortByDesc('created_at')
-                ->first()?->created_at;
-
-            $rescheduleMark = "<div class='reschedule-mark'>FECHA MODIFICADA EL "
-                . optional($lastChangeAt)->format('d/m/Y H:i')
-                . '</div>';
-        }
-
-        // Extraer el HTML de la vista passenger-tickets para un solo pasajero
-        $data = [
-            'sale' => $sale,
-            'tickets' => $tickets,
-            'passenger' => $passenger,
-            'hasChild' => $hasChild,
-        ];
-
-        // Renderizar la vista y extraer el contenido del body
-        $fullHtml = view('tickets.pdf.passenger-tickets', $data)->render();
-
-        // Extraer solo el contenido dentro del body
-        if (preg_match('/<body[^>]*>(.*?)<\/body>/s', $fullHtml, $matches)) {
-            return '<div class="ticket-container ' . $cssClass . '">' . $rescheduleMark . $matches[1] . '</div>';
-        }
-
-        return '<div class="ticket-container ' . $cssClass . '">' . $rescheduleMark . $fullHtml . '</div>';
     }
 
     /**

@@ -70,6 +70,7 @@ final class Permissions
                     'create' => 'Crear',
                     'update' => 'Editar',
                     'ban' => 'Banear / habilitar',
+                    'reset_password' => 'Resetear contraseña del cliente',
                     'delete' => 'Eliminar',
                     'restore' => 'Restaurar',
                     'force_delete' => 'Eliminar definitivamente',
@@ -213,7 +214,8 @@ final class Permissions
                 'tickets.delete', 'tickets.restore', 'tickets.force_delete',
                 // Clientes: acceso completo (incluido banear).
                 'clients.view_any', 'clients.view', 'clients.create', 'clients.update',
-                'clients.ban', 'clients.delete', 'clients.restore', 'clients.force_delete',
+                'clients.ban', 'clients.reset_password',
+                'clients.delete', 'clients.restore', 'clients.force_delete',
                 // Ventas y viajes (hoy sin policy: todos accedían).
                 ...array_map(fn (string $a) => "sales.{$a}", array_keys(self::standardActions())),
                 ...array_map(fn (string $a) => "trips.{$a}", array_keys(self::standardActions())),

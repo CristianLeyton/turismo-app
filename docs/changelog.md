@@ -1,3 +1,37 @@
+## 2026-10-22 — Mi perfil del panel de clientes: formulario Filament nativo
+
+- La página **Mi perfil** del panel de clientes se reescribe con el mismo mecanismo del perfil del panel administrativo: un **form Filament real** (Secciones «Mis datos» y «Cambiar contraseña», un solo botón **Guardar cambios**, Ctrl+S) con **validaciones nativas resaltadas debajo de cada campo**.
+- **Nombre y Apellido son obligatorios** (máxima 255 caracteres, los mismos textos de validación «El nombre es obligatorio.» / «El apellido es obligatorio.» etc.). Si algo falla, **nada se guarda y los campos mantienen lo escrito**.
+- El **Teléfono** valida que (si viene) sea de **7 a 12 números** (se limpian espacios de más, sin invalidar). El **DNI** queda read-only con su explicación.
+- Contraseña: mínimo 6 caracteres y confirmación igual; si se escribe una nueva se **exige la actual** (o el DNI si todavía no eligió una propia). Después de guardar, campos de contraseña se vacían.
+
+## 2026-10-22 — Tablas administrativas: acciones con tres puntitos en el celular
+
+- Todas las tablas del panel administrativo que faltaban pasan a usar la convención de Boletos (TicketsTable): en el celular las acciones van dentro del **menú de tres puntitos** de cada fila, y en pantallas medianas o mayores quedan los botones directos. Aplicado a Usuarios, Clientes, Pagos, Métodos de pago, Roles y permisos, Asientos, Colectivos, Layouts de colectivo, y el clúster de Destinos (Ubicaciones, Rutas, Paradas y Horarios). Los actions con closures largas (Roles, Usuarios y Clientes) se extrajeron a builders privados para no duplicar lógica.
+- Métodos de pago también migra de `->actions(` (API vieja de Filament) a `->recordActions(`.
+- Auditoría de boletos queda por fuera del lote: su botón «Ver» sigue directo en la fila (avisar si también va dentro del menú).
+
+## 2026-10-22 — Panel de clientes: mis boletos a la medida del celular
+
+- La tabla «Mis boletos» se alza **a la medida del celular**: en pantallas chicas quedan las columnas **N°, Tramo y Fecha/Horario**, y el resto (Pasajero, Tipo, Estado, Asiento, Precio) reaparece en pantallas medianas o mayores.
+- Las acciones (Elegir fecha, Ver boleto) ya no quedan colgando de la fila: se agrupan adentro del **menú de tres puntitos**, como en el resto del panel administrativo.
+
+## 2026-10-22 — Clientes con perfil y contraseña en el panel público
+
+- El panel de clientes ahora identifica con **DNI + contraseña siempre obligatoria** (nadie entra con el DNI solo). La contraseña inicial de cada cliente es **su propio DNI** (viaja hasheada en la base desde una migración de backfill) y al primer ingreso (bandera de primer login) el panel muestra la pantalla **«¡Bienvenido a Expresso Sofia, Nombre!»** que lo obliga a **elegir una contraseña propia** y no muestra nada hasta que la define; desde entonces entra con DNI + la elegida.
+- Validaciones simples de contraseña (mínimo 6 caracteres y que las dos coincidan); **el error se resalta debajo de cada campo, estilo Filament**, y las notificaciones se reservan para éxitos, límite de intentos y problemas inesperados. Los campos de contraseña tienen **botón de ojito** para mostrar/ocultar lo tipeado.
+- El primer ingreso **recibe al cliente por su nombre**: la pantalla de clave dice «¡Bienvenido a Expresso Sofia, Nombre!» y explica el porqué del cambio de contraseña.
+- **Mi perfil** (menú del panel público): el cliente actualiza Nombre, Apellido y Teléfono y cambia su contraseña (exigiendo la actual). El DNI queda read-only: es la clave que une clientes, pasajeros y boletos.
+- **Resetear contraseña** en el listado de Clientes (permiso `clients.reset_password`, lo trae Administrador): si el cliente la olvidó, se resetea y vuelve a entrar con su DNI, eligiendo una nueva al primer ingreso.
+
+## 2026-10-22 — Panel de clientes: ida y vuelta bien identificados
+
+- En el listado «Mis boletos» del panel de clientes, la columna **Tipo** marca el tramo: **«Ida»** (fucsia) para la ida de un pasaje de ida y vuelta, **«Vuelta de N°X»** (fucsia) para la vuelta con el N° del boleto de ida que lleva el precio, y **«Solo ida»** (neutro) para el boleto que no pertenece a un diferido.
+
+## 2026-10-22 — Atajo al panel de clientes en el login de administración
+
+- La página de login del panel de administración muestra, debajo del formulario, un apartado con el enlace **Ingresar a «Mis boletos»** que lleva al panel de clientes (ingreso por DNI), para el pasajero que llegó por error a ese login.
+
 # Registro de funcionalidades y cambios
 
 > Documento de control de versiones funcional del panel de venta de pasajes (Expresso Sofia).
@@ -21,6 +55,22 @@ Panel de administración para venta de pasajes de colectivos, construido sobre L
 | Cron | `app:cleanup-expired-reservations` limpia reservas vencidas (documentado en el README). |
 
 ---
+
+## 2026-10-22 — Autocompletado del pasajero desde el padrón de clientes
+
+- Al escribir el DNI de un pasajero en la venta, si ese DNI existe en el padrón de clientes se **autocompletan apellido, nombre y teléfono** (los datos de la ficha reemplazan a los tipeados a mano). Solo se activa desde los 7 dígitos.
+- El paso Pasajeros reordenado: **DNI y Teléfono van primero** y Apellido/Nombre después — así lo primero que carga el vendedor es el DNI.
+- La validación del DNI (cliente baneado, etc.) corre también en el momento a partir de los 7 dígitos, sin salir del campo ni avanzar de paso.
+
+## 2026-10-22 — Inputs numéricos sin flechas ni cambio por ruedita
+
+- Los campos numéricos dejan de mostrar las flechas de incrementar/decrementar del navegador y la **ruedita del mouse ya no cambia su valor** (el valor se tipea; el scroll de la página funciona con normalidad).
+
+## 2026-10-21 — Venta sin fecha: sólo pasajeros del padrón de clientes
+
+- Los boletos sin fecha (ida, vuelta o mixta) sólo se venden a pasajeros **registrados en el padrón de clientes**: si el DNI no está registrado, el wizard avisa al completar el campo (en el momento, como el aviso de cliente baneado) y la venta se bloquea también server-side.
+- Motivo: el panel de clientes muestra los boletos por el DNI del padrón; un boleto sin fecha a un DNI no registrado le quedaría invisible al pasajero para verlo o reprogramarlo.
+- El alta del pasajero se puede hacer en el mismo wizard con las acciones **Crear cliente** o **Cargar cliente** del paso Pasajeros.
 
 ## 2026-10-13 — Usuarios: rol obligatorio y filtros
 

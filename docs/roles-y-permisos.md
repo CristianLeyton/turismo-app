@@ -31,7 +31,11 @@ Cualquier **rol custom** (ej. "Supervisor") se crea desde la UI y se le asignan 
 
 Formato: `{modulo}.{accion}`, ejemplos: `tickets.create`, `users.delete`, `payments.force_delete`, `settings.manage`, `roles.assign`.
 
-Acciones estándar: `view_any`, `view`, `create`, `update`, `delete`, `restore`, `force_delete`. Acciones especiales: `tickets.vender_sin_fecha`, `tickets.vender_pasado_limite`, `tickets.reschedule`, `clients.ban`, `settings.manage`, `roles.assign`.
+Acciones estándar: `view_any`, `view`, `create`, `update`, `delete`, `restore`, `force_delete`. Acciones especiales: `tickets.vender_sin_fecha`, `tickets.vender_pasado_limite`, `tickets.reschedule`, `clients.ban`, `clients.reset_password`, `settings.manage`, `roles.assign`.
+
+### Reset de contraseña de cliente (`clients.reset_password`)
+
+Permiso de Clientes que habilita el action **Resetear contraseña** del listado: la contraseña del cliente vuelve a ser su DNI (hasheada), se activa la bandera de primer ingreso y al próximo ingreso el panel lo obliga a elegir una nueva. Lo trae **Administrador** por defecto; sirve cuando el cliente olvidó la contraseña que eligió.
 
 ### Venta sin fecha (`tickets.vender_sin_fecha`)
 
@@ -42,10 +46,11 @@ En una venta de ida y vuelta **sin fecha**, el boleto de ida ofrece el alcance *
 - **Ningún rol del sistema lo trae por defecto** (ni Administrador ni Vendedor); se habilita por rol desde la matriz de la UI. El Super Administrador lo tiene por bypass total (no cuenta como asignación).
 - **Feature flag de rollout:** los switches "Ida/Vuelta sin fecha" permanecen ocultos mientras el permiso exista pero **ningún rol** lo tenga asignado en la matriz (`Permissions::permissionGrantedToAnyRole()`, cache 60s). Basta asignarlo a un rol para que aparezcan para quien tenga el permiso.
 - **El colectivo es obligatorio en toda venta** (con o sin fecha): `bus_id` es requerido en el wizard y `CreateTicket` lo defiende server-side con `halt()`.
+- **Pasajeros del padrón:** la venta sin fecha (ida, vuelta o mixta) sólo admite DNIs registrados en el padrón de clientes (`Clients`). La regla del form avisa en tiempo real al completar el DNI y `CreateTicket` la defiende server-side con `halt()`; motivo: el panel de clientes ubica los boletos por el DNI del padrón (`ClientSession::fromDni`). El alta se hace en el mismo wizard con "Crear cliente" / "Cargar cliente".
 - Server-side: `CreateTicket` rechaza con `halt()` la venta sin fecha de quien no tenga el permiso, aunque fuerce los switches por Livewire.
 - En ventas mixtas (ida con fecha + vuelta sin fecha, o viceversa) la vuelta pendiente se marca con `is_return_leg = true` y precio 0; el precio viaja en el boleto de ida.
 - Los PDFs y pantallas muestran la leyenda "FECHA Y HORARIO A CONFIRMAR" en boletos pendientes.
-- Tests: `tests/Feature/SellWithoutDateTest.php`.
+- Tests: `tests/Feature/SellWithoutDateTest.php` y `tests/Feature/TicketSaleDniValidationTest.php`.
 
 ### Edición de boletos (`tickets.edit`)
 

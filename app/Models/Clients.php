@@ -12,7 +12,33 @@ class Clients extends Model
 {
     use HasFactory, SoftDeletes;
 
-    protected $fillable = ['dni', 'nombre', 'apellido', 'telefono', 'can_buy', 'comments'];
+    protected $fillable = ['dni', 'nombre', 'apellido', 'telefono', 'can_buy', 'comments', 'password', 'must_change_password'];
+
+    /** Nunca se serializa en JSON/arrays de la UI. */
+    protected $hidden = ['password'];
+
+    protected $casts = [
+        // Se asigna texto plano y se guarda ya hasheado (bcrypt).
+        'password' => 'hashed',
+        'can_buy' => 'boolean',
+        'must_change_password' => 'boolean',
+    ];
+
+    /** ¿El cliente entró por primera vez y todavía eligió su propia contraseña? */
+    public function needsPasswordSetup(): bool
+    {
+        return (bool) $this->must_change_password;
+    }
+
+    /**
+     * ¿El ingreso exige una contraseña aparte del DNI? Sólo los que ya
+     * eligieron la suya (los nuevos arrancan con la inicial = DNI, así que
+     * pedir el ingreso del DNI dos veces no agregaría nada).
+     */
+    public function hasPersonalPassword(): bool
+    {
+        return ! $this->needsPasswordSetup();
+    }
 
     /**
      * Pasajeros históricos con el DNI de este cliente. El DNI es la clave de

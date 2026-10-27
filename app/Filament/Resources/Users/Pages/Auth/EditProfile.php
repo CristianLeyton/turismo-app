@@ -27,10 +27,8 @@ class EditProfile extends BaseEditProfile
                 TextInput::make('surname')
                     ->label('Apellido')
                     ->maxLength(255)
-                    ->required()
                     ->disabled()
                     ->validationMessages([
-                        'required' => 'El apellido es obligatorio.',
                         'max' => 'El apellido no debe exceder los :max caracteres.',
                     ]),
 

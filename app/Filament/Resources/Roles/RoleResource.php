@@ -82,14 +82,30 @@ class RoleResource extends Resource
         // Matriz de permisos: un bloque de checkboxes por módulo del sistema.
         // Cada bloque escribe en el estado `permissions.{modulo}`; al guardar
         // se aplanan todos los módulos en la lista de permisos del rol.
+        //
+        // Restricción: el editor sólo puede otorgar los permisos que él
+        // mismo posee, así que cada bloque ofrece únicamente sus acciones
+        // dentro de ese conjunto. Los módulos donde no tiene NINGÚN permiso
+        // se omiten por completo. El SUPER ve todo el catálogo.
+        $grantable = static::grantablePermissions();
+
         $permissionLists = [];
 
         foreach (Permissions::catalog() as $module => $config) {
             $options = collect($config['actions'])
+                ->filter(fn (string $label, string $action): bool => in_array(
+                    Permissions::permissionName($module, $action),
+                    $grantable,
+                    true,
+                ))
                 ->mapWithKeys(fn (string $label, string $action) => [
                     Permissions::permissionName($module, $action) => $label,
                 ])
                 ->all();
+
+            if ($options === []) {
+                continue;
+            }
 
             $permissionLists[] = CheckboxList::make("permissions.{$module}")
                 ->label($config['label'])
@@ -120,14 +136,43 @@ class RoleResource extends Resource
     /**
      * Aplana el estado `permissions.{modulo}` a la lista de nombres.
      *
+     * Además descarta todo permiso que el usuario actual no pueda otorgar
+     * (sÃ³lo se sincroniza lo que el editor tiene en su propio alcance). Es
+     * el choke point de guardado: protege tanto el alta como la edición
+     * contra payloads manipulados desde el cliente.
+     *
      * @param  array<string, list<string>>  $permissionsByModule
      * @return list<string>
      */
     public static function flattenPermissions(array $permissionsByModule): array
     {
+        $grantable = static::grantablePermissions();
+
         return collect($permissionsByModule)
             ->flatten()
             ->filter()
+            ->values()
+            ->filter(fn (string $permission): bool => in_array($permission, $grantable, true))
+            ->all();
+    }
+
+    /**
+     * Lista de permisos del catálogo que el usuario actual puede otorgar:
+     * únicamente los que él mismo posee. El Super Administrador (bypass
+     * vía Gate::before) obtiene todo el catálogo.
+     *
+     * @return list<string>
+     */
+    public static function grantablePermissions(): array
+    {
+        $user = Auth::user();
+
+        if ($user === null) {
+            return [];
+        }
+
+        return collect(Permissions::all())
+            ->filter(fn (string $permission): bool => (bool) $user->can($permission))
             ->values()
             ->all();
     }
@@ -191,7 +236,16 @@ class RoleResource extends Resource
                 // agrupados por módulo.
                 'name' => $record->name,
                 'guard_name' => $record->guard_name,
+                // Sólo se precargan los permisos dentro del alcance del
+                // editor: los que no puede ver no se muestran (y rompería
+                // la validación del checkbox list) pero se preservan igual
+                // al guardar, tomados del registro y no del formulario.
                 'permissions' => $record->permissions->pluck('name')
+                    ->filter(fn (string $name): bool => in_array(
+                        $name,
+                        static::grantablePermissions(),
+                        true,
+                    ))
                     ->groupBy(fn (string $name) => str_contains($name, '.')
                         ? explode('.', $name)[0]
                         : 'otros')
@@ -199,7 +253,21 @@ class RoleResource extends Resource
             ])
             ->using(function (Role $record, array $data): void {
                 $record->update(collect($data)->except('permissions')->all());
-                $record->syncPermissions(static::flattenPermissions($data['permissions'] ?? []));
+
+                // Sólo se sincroniza el alcance del editor: los permisos
+                // del rol que el editor NO posee (por ejemplo, si edita
+                // rol con más permisos que él) se preservan tal cual — el
+                // no puede quitar lo que no puede otorgar.
+                $grantable = static::grantablePermissions();
+                $preserved = $record->permissions
+                    ->pluck('name')
+                    ->reject(fn (string $permission): bool => in_array($permission, $grantable, true))
+                    ->all();
+
+                $record->syncPermissions(array_values(array_unique([
+                    ...$preserved,
+                    ...static::flattenPermissions($data['permissions'] ?? []),
+                ])));
             });
     }
 

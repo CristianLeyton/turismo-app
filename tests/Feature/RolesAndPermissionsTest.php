@@ -420,6 +420,127 @@ class RolesAndPermissionsTest extends TestCase
         $this->assertSame(['tickets.view_any'], $role->fresh()->permissions->pluck('name')->all());
     }
 
+    public function test_un_editor_limitado_ve_solo_sus_permisos_en_la_matriz(): void
+    {
+        // Editor custom: gestiona roles + clientes view/edit. Nada más.
+        $editorRole = Role::create(['name' => 'Gestor de Roles', 'guard_name' => 'web']);
+        $editorRole->syncPermissions([
+            'roles.view_any', 'roles.view', 'roles.create', 'roles.update',
+            'clients.view_any', 'clients.view', 'clients.update',
+        ]);
+
+        $editor = User::factory()->create();
+        $editor->syncRoles($editorRole);
+        $this->actingAs($editor);
+
+        $component = Livewire::test(\App\Filament\Resources\Roles\Pages\ManageRoles::class)
+            ->assertOk()
+            ->mountAction('create');
+
+        $mountedAction = $component->instance()->getMountedAction();
+        $schema = $mountedAction->getSchema(\Filament\Schemas\Schema::make($component->instance()));
+
+        $checkboxLists = collect($schema->getComponents())
+            ->flatMap(fn ($c) => method_exists($c, 'getChildComponents') ? $c->getChildComponents() : [$c])
+            ->filter(fn ($c) => $c instanceof \Filament\Forms\Components\CheckboxList);
+
+        $labels = $checkboxLists->map(fn ($list) => $list->getLabel())->values()->all();
+
+        // Módulos donde el editor tiene algo: visibles.
+        $this->assertContains('Clientes', $labels);
+        $this->assertContains('Roles y permisos', $labels);
+
+        // Módulos donde no tiene NINGÚN permiso: ocultos por completo.
+        $this->assertNotContains('Boletos', $labels);
+        $this->assertNotContains('Pagos', $labels);
+        $this->assertNotContains('Usuarios', $labels);
+        $this->assertNotContains('Configuración', $labels);
+
+        // En Clientes, sólo las acciones que él mismo posee.
+        $clientsOptions = $checkboxLists
+            ->first(fn ($list) => $list->getLabel() === 'Clientes')
+            ?->getOptions() ?? [];
+
+        $this->assertSame(['clients.view_any', 'clients.view', 'clients.update'], array_keys($clientsOptions));
+
+        // En Roles, no puede otorgar lo que no tiene (delete, assign).
+        $rolesOptions = $checkboxLists
+            ->first(fn ($list) => $list->getLabel() === 'Roles y permisos')
+            ?->getOptions() ?? [];
+
+        $this->assertArrayNotHasKey('roles.delete', $rolesOptions);
+        $this->assertArrayNotHasKey('roles.assign', $rolesOptions);
+    }
+
+    public function test_guardar_desde_la_matriz_no_otorga_permisos_fuera_del_editor_ni_quita_los_que_no_ve(): void
+    {
+        $editorRole = Role::create(['name' => 'Gestor de Roles', 'guard_name' => 'web']);
+        $editorRole->syncPermissions([
+            'roles.view_any', 'roles.view', 'roles.create', 'roles.update',
+            'clients.view_any', 'clients.update',
+        ]);
+
+        $editor = User::factory()->create();
+        $editor->syncRoles($editorRole);
+        $this->actingAs($editor);
+
+        // El rol editado tiene clients.delete, que el editor NO posee:
+        // no aparece en su matriz pero debe sobrevivir al guardado.
+        $role = Role::create(['name' => 'Supervisor', 'guard_name' => 'web']);
+        $role->syncPermissions(['clients.view_any', 'clients.update', 'clients.delete']);
+
+        Livewire::test(\App\Filament\Resources\Roles\Pages\ManageRoles::class)
+            ->assertOk()
+            // Se envía además un módulo "forged" (users) que el editor no
+            // tiene: debería descartarse en el guardado.
+            ->callTableAction('edit', $role, data: [
+                'name' => 'Supervisor',
+                'permissions' => [
+                    'clients' => ['clients.view_any', 'clients.update'],
+                    'users' => ['users.view_any'],
+                ],
+            ])
+            ->assertHasNoTableActionErrors();
+
+        $permissionNames = $role->fresh()->permissions->pluck('name')->sort()->values()->all();
+
+        // Preservado (fuera del alcance del editor) + lo seleccionado.
+        $this->assertEqualsCanonicalizing(
+            ['clients.view_any', 'clients.update', 'clients.delete'],
+            $permissionNames,
+        );
+    }
+
+    // ====================== Menú del avatar ======================
+
+    public function test_el_menu_del_avatar_muestra_nombre_apellido_y_roles(): void
+    {
+        $admin = User::factory()->admin()->create(['name' => 'Julian', 'surname' => 'Fernandez']);
+
+        $this->actingAs($admin);
+
+        // El bloque se renderiza en el menú del avatar de cualquier página
+        // del panel: nombre completo + los roles del usuario como chips.
+        $this->get('/admin')
+            ->assertOk()
+            ->assertSee('Julian Fernandez')
+            ->assertSee('Administrador');
+    }
+
+    public function test_el_menu_del_avatar_muestra_sin_roles_para_quien_no_tiene(): void
+    {
+        $user = User::factory()->create(['name' => 'Ana', 'surname' => 'Perez']);
+
+        $this->actingAs($user);
+
+        // El UserObserver asigna Vendedor a todo usuario nuevo sin roles:
+        // el chip se ve con ese rol.
+        $this->get('/admin')
+            ->assertOk()
+            ->assertSee('Ana Perez')
+            ->assertSee('Vendedor');
+    }
+
     // ====================== Mapeo resource -> módulo ======================
 
     public function test_cada_modelo_resuelve_su_policy_de_modulo(): void

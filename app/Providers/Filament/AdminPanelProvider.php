@@ -92,6 +92,14 @@ class AdminPanelProvider extends PanelProvider
                sólo interfiere si el campo tiene foco (sino la página scrollea
                con normalidad). Lo inverso de las flechas ya se ocultó en el
                tema; esto cubre el cambio por rueda conjugado con foco. */
+            /* El menú de usuario (click en el avatar): encabezado con el
+               nombre completo y los roles asignados, arriba de "Perfil". */
+            ->renderHook(
+                PanelsRenderHook::USER_MENU_PROFILE_BEFORE,
+                fn () => auth()->user()
+                    ? view('filament.admin.user-menu-info', ['user' => auth()->user()])->render()
+                    : '',
+            )
             ->renderHook(
                 PanelsRenderHook::BODY_END,
                 fn () => <<<'HTML'

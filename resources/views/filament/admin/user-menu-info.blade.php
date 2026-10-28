@@ -11,7 +11,7 @@
     $roles = $user->roles->sortBy('name')->values();
 @endphp
 
-<div class="px-3 pt-2.5 pb-2.5 min-w-[13rem]">
+<div class="px-3 pt-2.5 pb-2.5 min-w-52">
     <p class="truncate text-sm font-semibold text-gray-700 dark:text-gray-200" title="{{ $fullName }}">
         {{ $fullName !== '' ? $fullName : $user->username }}
     </p>

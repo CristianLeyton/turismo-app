@@ -19,14 +19,15 @@ class DatabaseSeeder extends Seeder
 
         User::create([
             'id' => 1,
-            'name' => 'Super Administrador',
+            'name' => 'Super',
+            'surname' =>  'Administrador',
             'password' => bcrypt('superadmin'),
             'username' => 'superadmin',
             'is_admin' => true,
             'email_verified_at' => now(),
         ]);
 
-        User::create([
+/*         User::create([
             'id' => 2,
             'name' => 'Casa Central',
             'email' => 'admin@mail.com',
@@ -44,14 +45,14 @@ class DatabaseSeeder extends Seeder
             'username' => 'vendedor',
             'is_admin' => false,
             'email_verified_at' => now(),
-        ]);
+        ]); */
 
         // Roles explícitos (paridad con el sistema anterior).
         User::find(1)->assignRole(Permissions::ROLE_SUPER);
-        User::find(2)->assignRole(Permissions::ROLE_ADMIN);
-        $vendedor->assignRole(Permissions::ROLE_SELLER);
+/*         User::find(2)->assignRole(Permissions::ROLE_ADMIN);
+        $vendedor->assignRole(Permissions::ROLE_SELLER); */
 
-        $this->call([
+/*         $this->call([
             BusSeeder::class,
             SeatSeeder::class,
             LocationSeeder::class,
@@ -59,6 +60,6 @@ class DatabaseSeeder extends Seeder
             RouteStopSeeder::class,
             ScheduleSeeder::class,
             SeatLayoutSeeder::class,
-        ]);
+        ]); */
     }
 }

@@ -205,6 +205,7 @@
             font-size: 14px;
             font-weight: bold;
             letter-spacing: 1px;
+            text-transform: uppercase;
         }
 
         .company-subtitle {
@@ -232,7 +233,7 @@
                                 <table width='100%' cellspacing='0' cellpadding='0'>
                                     <tr>
                                         <td valign='top'>
-                                            <div class='company-name'>EXPRESSO SOFIA</div>
+                                            <div class='company-name'>{{ config('app.name') }}</div>
                                         </td>
 
                                         <td align='right' valign='top'>

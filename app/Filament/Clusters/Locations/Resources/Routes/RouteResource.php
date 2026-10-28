@@ -23,8 +23,8 @@ use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Columns\ToggleColumn;
-use Filament\Tables\Filters\TrashedFilter;
 use Filament\Tables\Filters\TernaryFilter;
+use Filament\Tables\Filters\TrashedFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
@@ -40,10 +40,12 @@ class RouteResource extends Resource
     protected static ?string $recordTitleAttribute = 'name';
 
     protected static ?string $modelLabel = 'ruta';
-    protected static ?string $pluralModelLabel = 'Rutas';
-    protected static bool $hasTitleCaseModelLabel = false;
-    protected static ?int $navigationSort = 1;
 
+    protected static ?string $pluralModelLabel = 'Rutas';
+
+    protected static bool $hasTitleCaseModelLabel = false;
+
+    protected static ?int $navigationSort = 1;
 
     public static function form(Schema $schema): Schema
     {
@@ -96,8 +98,11 @@ class RouteResource extends Resource
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
+                // Por defecto sólo se ven las rutas activas: el filtro arranca
+                // en "Sí" y el usuario puede quitarlo para ver inactivas.
                 TernaryFilter::make('is_active')
-                    ->label('Activa'),
+                    ->label('Activa')
+                    ->default(true),
                 TrashedFilter::make(),
             ])
             ->recordActions([

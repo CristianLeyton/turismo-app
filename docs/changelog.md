@@ -1,3 +1,11 @@
+## 2026-10-28 — Rutas: en el listado por defecto se ven sólo las activas
+
+- En el recurso **Rutas**, el filtro **Activa** arranca en **Sí**: las rutas inactivas no se ven hasta que se cambia o limpia el filtro. Igual que antes, las inactivas siguen existiendo para viajes y boletos ya vendidos, y activar/desactivar sigue disponible con el toggle de la fila.
+
+## 2026-10-28 — Nuevo comando `app:setup-don-esteban`
+
+- Comando artesanal (idempotente, sólo agrega) que prepara el colectivo **“Don Esteban”**: doble piso con 60 asientos y layout de 60 plazas, **ruta ida “La Plata - El Charco”** (40 paradas, sale 13:00, llega 12:00 del día siguiente) y **ruta vuelta “El Charco - La Plata”** (40 paradas, sale 11:00, llega 09:30 del día siguiente), con todas las **localidades** del flyer (se crean las que falten) y los **horarios de cada parada** tal como están en el flyer. Acepta `--plate=` y `--force` para recrear paradas/horarios/layout.
+
 ## 2026-10-22 — Mi perfil del panel de clientes: formulario Filament nativo
 
 - La página **Mi perfil** del panel de clientes se reescribe con el mismo mecanismo del perfil del panel administrativo: un **form Filament real** (Secciones «Mis datos» y «Cambiar contraseña», un solo botón **Guardar cambios**, Ctrl+S) con **validaciones nativas resaltadas debajo de cada campo**.

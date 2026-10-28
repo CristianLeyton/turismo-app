@@ -18,7 +18,16 @@ class SetPassword extends Page
 
     public ?string $nuevaClave = null;
 
+    public ?string $nombreApp = null;
+
     public ?string $nuevaClaveConfirmacion = null;
+
+    public function mount(): void
+    {
+        // El default de una propiedad de clase no admite llamadas a
+        // funciones (parse error "constant expression"): se resuelve acá.
+        $this->nombreApp = (string) env('APP_NAME', '');
+    }
 
     public static function getNavigationLabel(): string
     {
@@ -31,8 +40,8 @@ class SetPassword extends Page
         $nombre = ClientSession::current()?->nombre;
 
         return filled($nombre)
-            ? '¡Bienvenido a Expresso Sofia, ' . $nombre . '!'
-            : '¡Bienvenido a Expresso Sofia!';
+            ? '¡Bienvenido a' . $this->nombreApp . ' , ' . $nombre . '!'
+            : '¡Bienvenido a '. $this->nombreApp . '!';
     }
 
     protected function getHeaderActions(): array

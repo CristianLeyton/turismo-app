@@ -2,7 +2,7 @@
     <div class="max-w-md mx-auto py-10 flex flex-col gap-6 text-center">
         <div class="flex flex-col gap-1">
             <h2 class="text-2xl font-semibold tracking-tight">
-                ¡Bienvenido a Expresso Sofia{{ filled(\App\Support\ClientSession::current()?->nombre) ? ', ' . \App\Support\ClientSession::current()->nombre : '' }}!
+                ¡Bienvenido a {{ config('app.name') }}{{ filled(\App\Support\ClientSession::current()?->nombre) ? ', ' . \App\Support\ClientSession::current()->nombre : '' }}!
             </h2>
             <p class="text-gray-500 dark:text-gray-400">
                 Estás en tu panel de boletos. Tu contraseña inicial es tu DNI

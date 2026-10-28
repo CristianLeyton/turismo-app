@@ -50,7 +50,7 @@
 
         <a href="data:application/pdf;base64,{{ $pdfContent }}" download="{{ $filename }}"
             class="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-lg
-                  bg-blue-600 hover:bg-fuchsia-700
+                  bg-blue-600 hover:bg-blue-700
                   text-white text-sm font-semibold transition-colors
                   focus:outline-none focus:ring-2 focus:ring-fuchsia-500 focus:ring-offset-2">
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"

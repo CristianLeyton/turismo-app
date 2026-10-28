@@ -39,7 +39,7 @@
                     <a href="data:application/pdf;base64,{{ $download['content'] }}"
                         download="{{ $download['filename'] }}"
                         class="inline-flex items-center gap-1 px-3 py-1.5 rounded-md
-                              bg-blue-600 hover:bg-fuchsia-700
+                              bg-blue-600 hover:bg-blue-700
                               text-white text-xs font-semibold transition-colors
                               focus:outline-none focus:ring-2 focus:ring-fuchsia-500 focus:ring-offset-2">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"

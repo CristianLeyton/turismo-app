@@ -563,7 +563,7 @@
                     <span class="text-sm text-gray-700 dark:text-gray-300">Disponible</span>
                 </div>
                 <div class="flex items-center gap-2">
-                    <div class="w-6 h-6 bg-purple-500 rounded border border-purple-600"></div>
+                    <div class="w-6 h-6 bg-blue-500 rounded border border-blue-600"></div>
                     <span class="text-sm text-gray-700 dark:text-gray-300">Seleccionado</span>
                 </div>
                 <div class="flex items-center gap-2">
@@ -776,7 +776,7 @@
                                                 'bg-gray-300 dark:bg-gray-600 border-gray-400 hover:bg-gray-400 dark:hover:bg-gray-500':
                                                     !isSelected({{ $seatId }}) && !@js($isOccupied),
                                             
-                                                'bg-purple-500 border-purple-600 text-white hover:bg-purple-600': isSelected(
+                                                'bg-blue-500 border-blue-600 text-white hover:bg-blue-600': isSelected(
                                                     {{ $seatId }}),
                                             
                                                 'bg-red-500 border-red-600 cursor-not-allowed': @js($isOccupied),

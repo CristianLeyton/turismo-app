@@ -12,7 +12,7 @@
     ViewEntry de Filament.
 --}}
 @php
-    $record = (isset($getRecord) && $getRecord()) ? $getRecord() : null;
+    $record = isset($getRecord) && $getRecord() ? $getRecord() : null;
     $edits = $edits ?? ($record?->edits ?? collect());
     $groups = \App\Support\TicketEditHistory::groups($edits);
 @endphp
@@ -20,14 +20,17 @@
 @forelse ($groups as $group)
     <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 last:border-b-0">
         <div class="flex flex-col sm:flex-row sm:justify-between gap-2">
-            <span class="self-start inline-block px-2.5 py-1 text-xs font-semibold rounded-lg
-                         bg-fuchsia-100 dark:bg-fuchsia-900/30 text-fuchsia-800 dark:text-fuchsia-300">
-                {{ count($group['changes']) }} campo{{ count($group['changes']) === 1 ? '' : 's' }} corregido{{ count($group['changes']) === 1 ? '' : 's' }}
+            <span
+                class="self-start inline-block px-2.5 py-1 text-xs font-semibold rounded-lg
+                         bg-fuchsia-100 dark:bg-blue-900/30 text-fuchsia-800 dark:text-fuchsia-300">
+                {{ count($group['changes']) }} campo{{ count($group['changes']) === 1 ? '' : 's' }}
+                corregido{{ count($group['changes']) === 1 ? '' : 's' }}
             </span>
 
             <div class="text-sm text-gray-600 dark:text-gray-400 sm:text-right">
                 <span class="font-semibold text-gray-900 dark:text-gray-100">
-                    Realizado por: {{ $group['user']?->name ?? 'Usuario eliminado del sistema' }}{{ $group['user']?->username ? ' (' . $group['user']->username . ')' : '' }}
+                    Realizado por:
+                    {{ $group['user']?->name ?? 'Usuario eliminado del sistema' }}{{ $group['user']?->username ? ' (' . $group['user']->username . ')' : '' }}
                 </span>
                 <span class="mx-1">•</span>
                 {{ $group['at']?->format('d/m/Y H:i') ?? '—' }}

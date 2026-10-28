@@ -20,8 +20,8 @@
                         {{ $this->totals['tickets_count'] }}</p>
                 </div>
                 <div class="rounded-lg bg-fuchsia-500/10 p-3">
-                    <p class="text-xs text-fuchsia-700 dark:text-blue-400">Total ventas</p>
-                    <p class="mt-0.5 text-lg font-bold text-fuchsia-700 dark:text-blue-400">
+                    <p class="text-xs text-blue-700 dark:text-blue-400">Total ventas</p>
+                    <p class="mt-0.5 text-lg font-bold text-blue-700 dark:text-blue-400">
                         {{ $this->money($this->totals['ventas_total']) }}</p>
                 </div>
             @endif
@@ -224,7 +224,7 @@
 
         <div class="flex items-center gap-2">
             <button type="button" wire:click="exportPdf" wire:loading.attr="disabled"
-                class="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-fuchsia-700 disabled:opacity-50">
+                class="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-blue-700 disabled:opacity-50">
                 <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"
                     aria-hidden="true">
                     <path stroke-linecap="round" stroke-linejoin="round"
@@ -282,7 +282,7 @@
                             @else
                                 <span class="font-medium text-gray-900 dark:text-white">#{{ $record['id'] }}</span>
                                 <span
-                                    class="mt-1 block w-fit rounded-full bg-fuchsia-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-fuchsia-700 dark:text-blue-400">
+                                    class="mt-1 block w-fit rounded-full bg-fuchsia-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-400">
                                     Venta
                                 </span>
                             @endif
@@ -382,7 +382,7 @@
                                                     <td class="whitespace-nowrap px-3 py-2 text-center">
                                                         @if ($ticket->seat)
                                                             <span
-                                                                class="rounded-full bg-fuchsia-500/10 px-2 py-0.5 text-[11px] font-semibold text-fuchsia-700 dark:text-blue-400">
+                                                                class="rounded-full bg-fuchsia-500/10 px-2 py-0.5 text-[11px] font-semibold text-blue-700 dark:text-blue-400">
                                                                 {{ $ticket->seat->seat_number }}
                                                             </span>
                                                         @else

@@ -27,8 +27,8 @@
                 <p class="text-base font-bold text-gray-900 dark:text-white">{{ $t['boletos'] }}</p>
             </div>
             <div class="rounded-lg bg-fuchsia-500/10 p-2.5">
-                <p class="text-[11px] text-fuchsia-700 dark:text-blue-400">Ventas</p>
-                <p class="text-base font-bold text-fuchsia-700 dark:text-blue-400">
+                <p class="text-[11px] text-blue-700 dark:text-blue-400">Ventas</p>
+                <p class="text-base font-bold text-blue-700 dark:text-blue-400">
                     {{ SalesResource::formatMoneyPublic($t['ventas']) }}</p>
             </div>
             <div class="rounded-lg bg-amber-500/10 p-2.5">

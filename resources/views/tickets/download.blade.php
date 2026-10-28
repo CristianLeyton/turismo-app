@@ -52,7 +52,7 @@
             class="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-lg
                   bg-blue-600 hover:bg-blue-700
                   text-white text-sm font-semibold transition-colors
-                  focus:outline-none focus:ring-2 focus:ring-fuchsia-500 focus:ring-offset-2">
+                  focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
                 stroke="currentColor" class="size-5">
                 <path stroke-linecap="round" stroke-linejoin="round"

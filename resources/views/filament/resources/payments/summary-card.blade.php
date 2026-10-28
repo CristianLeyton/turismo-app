@@ -20,8 +20,8 @@
         {{-- grilla 2x2. --}}
         <div class="grid grid-cols-2 gap-2">
             <div class="rounded-lg bg-fuchsia-50 p-2.5 dark:bg-blue-900/50">
-                <p class="text-[11px] text-fuchsia-500 dark:text-blue-400">Pagos recibidos</p>
-                <p class="text-base font-bold text-blue-600 dark:text-fuchsia-500">{{ $totals['count'] }}</p>
+                <p class="text-[11px] text-blue-500 dark:text-blue-400">Pagos recibidos</p>
+                <p class="text-base font-bold text-blue-600 dark:text-blue-500">{{ $totals['count'] }}</p>
             </div>
             <div class="rounded-lg bg-amber-500/10 p-2.5">
                 <p class="text-[11px] text-amber-700 dark:text-amber-400">Total cobrado</p>

@@ -210,7 +210,7 @@
             <div class="mt-4">
                 @foreach ($record->passenger->children as $child)
                     <div
-                        class="border-l-4 border-fuchsia-500 pl-4 py-2 my-2
+                        class="border-l-4 border-blue-500 pl-4 py-2 my-2
                                 bg-gray-50 dark:bg-gray-800 rounded">
                         <div
                             class="text-sm font-semibold text-blue-600 dark:text-blue-400 flex flex-row justify-between gap-3 mb-1 flex-nowrap">

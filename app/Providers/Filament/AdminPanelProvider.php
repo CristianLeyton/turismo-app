@@ -28,6 +28,7 @@ use Filament\Navigation\NavigationItem;
 use Filament\View\PanelsRenderHook;
 use App\Filament\Widgets\Panel as PanelWidget;
 use App\Filament\Widgets\UserAccount;
+use Illuminate\Support\Facades\Auth;
 
 class AdminPanelProvider extends PanelProvider
 {
@@ -96,8 +97,8 @@ class AdminPanelProvider extends PanelProvider
                nombre completo y los roles asignados, arriba de "Perfil". */
             ->renderHook(
                 PanelsRenderHook::USER_MENU_PROFILE_BEFORE,
-                fn () => auth()->user()
-                    ? view('filament.admin.user-menu-info', ['user' => auth()->user()])->render()
+                fn () => Auth::user()
+                    ? view('filament.admin.user-menu-info', ['user' => Auth::user()])->render()
                     : '',
             )
             ->renderHook(

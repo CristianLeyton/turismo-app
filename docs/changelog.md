@@ -1,3 +1,10 @@
+## 2026-10-28 — Paradas: una ruta a la vez, reordenar con drag & drop que intercambia horarios, y horarios por hora
+
+- El recurso **Paradas** trabaja con una ruta por pantalla: el filtro de **Ruta** arranca mostrando la primera ruta activa, con desplegable para cambiar. Con ruta elegida el recorrido completo va en una sola pantalla (sin paginar), y la columna «Ruta» sale del listado por ser redundante.
+- **Reordenar arrastrando y soltando** (drag & drop de tabla de Filament, sin código custom): al soltar una fila, **los horarios de salida/llegada se intercambian** con la parada de destino — el horario queda pegado a la posición, no a la fila. Ejemplo: arrastra “Cruce Castelar” (17:50) sobre “Moreno” (17:30) → Cruce Castelar muestra 17:30 y Moreno 17:50. El reordenar sólo está activo con una ruta elegida (evita mezclar el orden entre rutas) y también funciona con el botón de reordenar de la tabla.
+- Los horarios de paradas se configuran por **Hora (Salida / Llegada)**, no por desfase de minutos: el administrador elige la hora tal cual se ve en el recorrido (ej. 17:30) y el sistema la guarda como minutos desde la salida del horario de la ruta. Si la ruta tiene varios horarios activos, muestra un selector de “Horario de referencia”.
+- En el listado, las columnas de minuteros pasan a mostrar **Hora de salida / Hora de llegada en HH:MM** (hora de la primera parada activada de la ruta).
+
 ## 2026-10-28 — Rutas: en el listado por defecto se ven sólo las activas
 
 - En el recurso **Rutas**, el filtro **Activa** arranca en **Sí**: las rutas inactivas no se ven hasta que se cambia o limpia el filtro. Igual que antes, las inactivas siguen existiendo para viajes y boletos ya vendidos, y activar/desactivar sigue disponible con el toggle de la fila.

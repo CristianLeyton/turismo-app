@@ -22,7 +22,7 @@
         <div class="flex flex-col sm:flex-row sm:justify-between gap-2">
             <span
                 class="self-start inline-block px-2.5 py-1 text-xs font-semibold rounded-lg
-                         bg-fuchsia-100 dark:bg-blue-900/30 text-fuchsia-800 dark:text-fuchsia-300">
+                         bg-blue-100 dark:bg-blue-900/30 text-fuchsia-800 dark:text-fuchsia-300">
                 {{ count($group['changes']) }} campo{{ count($group['changes']) === 1 ? '' : 's' }}
                 corregido{{ count($group['changes']) === 1 ? '' : 's' }}
             </span>

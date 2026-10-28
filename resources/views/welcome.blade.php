@@ -179,7 +179,7 @@
                     --color-purple-900: oklch(.381 .176 304.987);
                     --color-purple-950: oklch(.291 .149 302.717);
                     --color-fuchsia-50: oklch(.977 .017 320.058);
-                    --color-fuchsia-100: oklch(.952 .037 318.852);
+                    --color-blue-100: oklch(.952 .037 318.852);
                     --color-blue-200: oklch(.903 .076 319.62);
                     --color-fuchsia-300: oklch(.833 .145 321.434);
                     --color-blue-400: oklch(.74 .238 322.16);

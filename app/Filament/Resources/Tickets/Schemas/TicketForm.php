@@ -2429,7 +2429,7 @@ class TicketForm
                             ])
 
                             ->extraAttributes(
-                                ['class' => '[&_.fi-fo-repeater-item-header-label]:text-fuchsia-600']
+                                ['class' => '[&_.fi-fo-repeater-item-header-label]:text-blue-600']
                             )
                             ->minItems(fn(Get $get) => (int) $get('passengers_count'))
                             ->maxItems(fn(Get $get) => (int) $get('passengers_count'))

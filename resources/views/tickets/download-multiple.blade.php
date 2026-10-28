@@ -13,7 +13,7 @@
 
         <div class="text-5xl mb-2 flex items-center justify-center ">
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
-                stroke="currentColor" class="size-12 text-fuchsia-600">
+                stroke="currentColor" class="size-12 text-blue-600">
                 <path stroke-linecap="round" stroke-linejoin="round"
                     d="M16.5 6v.75m0 3v.75m0 3v.75m0 3V18m-9-5.25h5.25M7.5 15h3M3.375 5.25c-.621 0-1.125.504-1.125 1.125v3.026a2.999 2.999 0 0 1 0 5.198v3.026c0 .621.504 1.125 1.125 1.125h17.25c.621 0 1.125-.504 1.125-1.125v-3.026a2.999 2.999 0 0 1 0-5.198V6.375c0-.621-.504-1.125-1.125-1.125H3.375Z" />
             </svg>
@@ -29,7 +29,8 @@
 
         <div class="mt-6 space-y-3">
             @foreach ($downloads as $download)
-                <div class="flex flex-col md:flex-row items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200 gap-4">
+                <div
+                    class="flex flex-col md:flex-row items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200 gap-4">
                     <div class="flex-1 text-left">
                         <div class="text-sm font-medium text-gray-900">
                             {{ $download['filename'] }}
@@ -38,7 +39,7 @@
                     <a href="data:application/pdf;base64,{{ $download['content'] }}"
                         download="{{ $download['filename'] }}"
                         class="inline-flex items-center gap-1 px-3 py-1.5 rounded-md
-                              bg-fuchsia-600 hover:bg-fuchsia-700
+                              bg-blue-600 hover:bg-fuchsia-700
                               text-white text-xs font-semibold transition-colors
                               focus:outline-none focus:ring-2 focus:ring-fuchsia-500 focus:ring-offset-2">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"

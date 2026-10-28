@@ -4,7 +4,7 @@
         <div class="flex flex-col md:flex-row md:justify-between gap-4">
             <div>
                 <h2 class="text-2xl font-bold text-gray-900 dark:text-gray-100">
-                    <span class="text-fuchsia-600">
+                    <span class="text-blue-600">
                         @php
                             $stops = $trip->route->stops()->with('location')->get();
                             $firstStop = $stops->first();
@@ -15,7 +15,7 @@
                         {{ $firstStop?->location->name ?? 'Origen' }}
                     </span>
                     →
-                    <span class="text-fuchsia-600">
+                    <span class="text-blue-600">
                         {{ $lastStop?->location->name ?? 'Destino' }}
                     </span>
                 </h2>
@@ -36,7 +36,7 @@
 
             <div class="text-left md:text-right">
                 <div class="text-sm text-gray-500 dark:text-gray-400 uppercase">Asientos vendidos</div>
-                <div class="text-3xl font-bold text-fuchsia-600 dark:text-fuchsia-400">{{ $trip->occupiedSeatsCount() }}
+                <div class="text-3xl font-bold text-blue-600 dark:text-blue-400">{{ $trip->occupiedSeatsCount() }}
                 </div>
             </div>
         </div>

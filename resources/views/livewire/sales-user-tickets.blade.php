@@ -20,8 +20,8 @@
                         {{ $this->totals['tickets_count'] }}</p>
                 </div>
                 <div class="rounded-lg bg-fuchsia-500/10 p-3">
-                    <p class="text-xs text-fuchsia-700 dark:text-fuchsia-400">Total ventas</p>
-                    <p class="mt-0.5 text-lg font-bold text-fuchsia-700 dark:text-fuchsia-400">
+                    <p class="text-xs text-fuchsia-700 dark:text-blue-400">Total ventas</p>
+                    <p class="mt-0.5 text-lg font-bold text-fuchsia-700 dark:text-blue-400">
                         {{ $this->money($this->totals['ventas_total']) }}</p>
                 </div>
             @endif
@@ -44,7 +44,8 @@
         @php($breakdown = $this->methodBreakdown)
         @if (count($breakdown) > 0)
             <details class="mt-3 rounded-lg border border-gray-200 dark:border-white/10">
-                <summary class="cursor-pointer select-none px-4 py-2.5 text-xs font-medium uppercase tracking-wide text-gray-500 transition hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+                <summary
+                    class="cursor-pointer select-none px-4 py-2.5 text-xs font-medium uppercase tracking-wide text-gray-500 transition hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
                     Desglose por método de pago ({{ count($breakdown) }})
                 </summary>
                 <div class="overflow-x-auto px-4 pb-3">
@@ -64,15 +65,18 @@
                             @foreach ($breakdown as $row)
                                 <tr class="border-t border-gray-100 dark:border-white/5">
                                     <td class="py-1.5">
-                                        <span class="rounded-full px-2 py-0.5 text-[11px] font-semibold {{ \App\Models\PaymentMethod::badgeClasses($row['code']) }}">
+                                        <span
+                                            class="rounded-full px-2 py-0.5 text-[11px] font-semibold {{ \App\Models\PaymentMethod::badgeClasses($row['code']) }}">
                                             {{ $row['label'] }}
                                         </span>
                                     </td>
                                     @if ($this->type !== 'payments')
-                                        <td class="py-1.5 text-right font-medium">{{ $this->money($row['ventas']) }}</td>
+                                        <td class="py-1.5 text-right font-medium">{{ $this->money($row['ventas']) }}
+                                        </td>
                                     @endif
                                     @if ($this->type !== 'tickets')
-                                        <td class="py-1.5 text-right font-medium">{{ $this->money($row['pagos']) }}</td>
+                                        <td class="py-1.5 text-right font-medium">{{ $this->money($row['pagos']) }}
+                                        </td>
                                     @endif
                                 </tr>
                             @endforeach
@@ -220,7 +224,7 @@
 
         <div class="flex items-center gap-2">
             <button type="button" wire:click="exportPdf" wire:loading.attr="disabled"
-                class="inline-flex items-center gap-1.5 rounded-lg bg-fuchsia-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-fuchsia-700 disabled:opacity-50">
+                class="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-fuchsia-700 disabled:opacity-50">
                 <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"
                     aria-hidden="true">
                     <path stroke-linecap="round" stroke-linejoin="round"
@@ -269,7 +273,8 @@
                         {{-- N° --}}
                         <td class="px-3 py-2.5 align-top">
                             @if ($isPayment)
-                                <span class="font-medium text-gray-900 dark:text-white">#{{ $record['model']->id }}</span>
+                                <span
+                                    class="font-medium text-gray-900 dark:text-white">#{{ $record['model']->id }}</span>
                                 <span
                                     class="mt-1 block w-fit rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400">
                                     Pago recibido
@@ -277,7 +282,7 @@
                             @else
                                 <span class="font-medium text-gray-900 dark:text-white">#{{ $record['id'] }}</span>
                                 <span
-                                    class="mt-1 block w-fit rounded-full bg-fuchsia-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-fuchsia-700 dark:text-fuchsia-400">
+                                    class="mt-1 block w-fit rounded-full bg-fuchsia-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-fuchsia-700 dark:text-blue-400">
                                     Venta
                                 </span>
                             @endif
@@ -295,15 +300,18 @@
                             @if ($isPayment)
                                 <span class="text-gray-300 dark:text-gray-600">—</span>
                             @else
-                                <span class="rounded-full bg-gray-500/10 px-2 py-0.5 text-xs font-semibold text-gray-600 dark:text-gray-300">
-                                    {{ $record['tickets_count'] }} {{ $record['tickets_count'] === 1 ? 'boleto' : 'boletos' }}
+                                <span
+                                    class="rounded-full bg-gray-500/10 px-2 py-0.5 text-xs font-semibold text-gray-600 dark:text-gray-300">
+                                    {{ $record['tickets_count'] }}
+                                    {{ $record['tickets_count'] === 1 ? 'boleto' : 'boletos' }}
                                 </span>
                             @endif
                         </td>
                         {{-- Pago --}}
                         <td class="whitespace-nowrap px-3 py-2.5 text-center">
                             @forelse ($record['payment_methods'] as $method)
-                                <span class="rounded-full px-2.5 py-1 text-xs font-semibold {{ $this->paymentBadgeClasses($method) }}">
+                                <span
+                                    class="rounded-full px-2.5 py-1 text-xs font-semibold {{ $this->paymentBadgeClasses($method) }}">
                                     {{ $this->paymentLabel($method) }}
                                 </span>
                             @empty
@@ -317,8 +325,7 @@
                         {{-- Acción: ver detalle --}}
                         <td class="whitespace-nowrap px-3 py-2.5 text-center">
                             @if ($isSale)
-                                <button type="button"
-                                    wire:click="toggleSale({{ $record['id'] }})"
+                                <button type="button" wire:click="toggleSale({{ $record['id'] }})"
                                     class="inline-flex items-center gap-1 rounded-lg border border-gray-300 bg-white px-2.5 py-1 text-xs font-medium text-gray-600 transition hover:bg-gray-100 dark:border-white/10 dark:bg-transparent dark:text-gray-300 dark:hover:bg-white/5">
                                     @if ($saleExpanded)
                                         <span aria-hidden="true">▲</span> Ocultar detalle
@@ -336,9 +343,11 @@
                     @if ($saleExpanded)
                         <tr class="bg-gray-50/60 dark:bg-white/[0.02]">
                             <td colspan="6" class="px-3 pb-4 pt-1">
-                                <div class="ml-4 overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm dark:border-white/10 dark:bg-gray-900">
+                                <div
+                                    class="ml-4 overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm dark:border-white/10 dark:bg-gray-900">
                                     <table class="w-full text-left text-xs">
-                                        <thead class="bg-gray-50 text-[10px] uppercase tracking-wide text-gray-400 dark:bg-white/5 dark:text-gray-500">
+                                        <thead
+                                            class="bg-gray-50 text-[10px] uppercase tracking-wide text-gray-400 dark:bg-white/5 dark:text-gray-500">
                                             <tr>
                                                 <th class="px-3 py-2 font-medium">Pasajero</th>
                                                 <th class="px-3 py-2 text-center font-medium">Asiento</th>
@@ -352,7 +361,8 @@
                                             @foreach ($saleTickets as $ticket)
                                                 <tr class="transition hover:bg-gray-50 dark:hover:bg-white/5">
                                                     <td class="px-3 py-2">
-                                                        <p class="truncate font-medium text-gray-800 dark:text-gray-200">
+                                                        <p
+                                                            class="truncate font-medium text-gray-800 dark:text-gray-200">
                                                             {{ $ticket->passenger?->full_name ?? 'Pasajero no disponible' }}
                                                         </p>
                                                         <p class="text-[11px] text-gray-400 dark:text-gray-500">
@@ -371,33 +381,42 @@
                                                     </td>
                                                     <td class="whitespace-nowrap px-3 py-2 text-center">
                                                         @if ($ticket->seat)
-                                                            <span class="rounded-full bg-fuchsia-500/10 px-2 py-0.5 text-[11px] font-semibold text-fuchsia-700 dark:text-fuchsia-400">
+                                                            <span
+                                                                class="rounded-full bg-fuchsia-500/10 px-2 py-0.5 text-[11px] font-semibold text-fuchsia-700 dark:text-blue-400">
                                                                 {{ $ticket->seat->seat_number }}
                                                             </span>
                                                         @else
                                                             <span class="text-gray-400 dark:text-gray-500">—</span>
                                                         @endif
                                                     </td>
-                                                    <td class="whitespace-nowrap px-3 py-2 text-gray-700 dark:text-gray-300">
+                                                    <td
+                                                        class="whitespace-nowrap px-3 py-2 text-gray-700 dark:text-gray-300">
                                                         @if ($ticket->trip)
                                                             {{ $ticket->trip->trip_date?->format('d/m/Y') }}
-                                                            {{ $ticket->trip->schedule?->departure_time?->format('H:i') }} hs
+                                                            {{ $ticket->trip->schedule?->departure_time?->format('H:i') }}
+                                                            hs
                                                         @else
                                                             —
                                                         @endif
                                                         @if ($ticket->is_round_trip)
-                                                            <span class="ml-1 rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-400">Diferido</span>
+                                                            <span
+                                                                class="ml-1 rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-400">Diferido</span>
                                                         @endif
                                                     </td>
-                                                    <td class="whitespace-nowrap px-3 py-2 text-gray-700 dark:text-gray-300">
-                                                        {{ $ticket->origin?->name ?? '—' }} <span aria-hidden="true" class="text-gray-400">→</span> {{ $ticket->destination?->name ?? '—' }}
+                                                    <td
+                                                        class="whitespace-nowrap px-3 py-2 text-gray-700 dark:text-gray-300">
+                                                        {{ $ticket->origin?->name ?? '—' }} <span aria-hidden="true"
+                                                            class="text-gray-400">→</span>
+                                                        {{ $ticket->destination?->name ?? '—' }}
                                                     </td>
                                                     <td class="whitespace-nowrap px-3 py-2 text-center">
-                                                        <span class="rounded-full px-2 py-0.5 text-[11px] font-semibold {{ $this->paymentBadgeClasses($ticket->payment_method) }}">
+                                                        <span
+                                                            class="rounded-full px-2 py-0.5 text-[11px] font-semibold {{ $this->paymentBadgeClasses($ticket->payment_method) }}">
                                                             {{ $this->paymentLabel($ticket->payment_method) }}
                                                         </span>
                                                     </td>
-                                                    <td class="whitespace-nowrap px-3 py-2 text-right font-semibold text-gray-900 dark:text-white">
+                                                    <td
+                                                        class="whitespace-nowrap px-3 py-2 text-right font-semibold text-gray-900 dark:text-white">
                                                         {{ $this->money((float) $ticket->price) }}
                                                     </td>
                                                 </tr>

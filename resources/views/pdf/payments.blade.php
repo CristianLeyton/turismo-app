@@ -27,7 +27,7 @@
         .title {
             font-size: 14px;
             font-weight: bold;
-            color: #c026d3;
+            color: #155DFC;
         }
 
         .subtitle {
@@ -110,18 +110,44 @@
             margin: 2px 0 0;
         }
 
-        .rb-gray { background: #f9fafb; }
-        .rb-gray .rlabel { color: #6b7280; }
-        .rb-gray .rvalue { color: #111827; }
+        .rb-gray {
+            background: #f9fafb;
+        }
 
-        .rb-emerald { background: #ecfdf5; }
-        .rb-emerald .rlabel, .rb-emerald .rvalue { color: #047857; }
+        .rb-gray .rlabel {
+            color: #6b7280;
+        }
 
-        .rb-sky { background: #e0f2fe; }
-        .rb-sky .rlabel, .rb-sky .rvalue { color: #0369a1; }
+        .rb-gray .rvalue {
+            color: #111827;
+        }
 
-        .rb-amber { background: #fffbeb; }
-        .rb-amber .rlabel, .rb-amber .rvalue { color: #b45309; }
+        .rb-emerald {
+            background: #ecfdf5;
+        }
+
+        .rb-emerald .rlabel,
+        .rb-emerald .rvalue {
+            color: #047857;
+        }
+
+        .rb-sky {
+            background: #e0f2fe;
+        }
+
+        .rb-sky .rlabel,
+        .rb-sky .rvalue {
+            color: #0369a1;
+        }
+
+        .rb-amber {
+            background: #fffbeb;
+        }
+
+        .rb-amber .rlabel,
+        .rb-amber .rvalue {
+            color: #b45309;
+        }
 
         .empty {
             padding: 20px;
@@ -134,7 +160,7 @@
 <body>
 
     @php
-        $fmt = fn ($value) => '$' . number_format((float) $value, 0, ',', '.');
+        $fmt = fn($value) => '$' . number_format((float) $value, 0, ',', '.');
     @endphp
 
     <div style="margin-bottom: 3mm;">

@@ -3,7 +3,9 @@
     $record = $getRecord();
     $sale = $record?->sale;
     $methodLabel = $record ? \App\Models\PaymentMethod::label($record->payment_method) : '—';
-    $methodBadge = $record ? \App\Models\PaymentMethod::badgeClasses($record->payment_method) : 'bg-gray-500/10 text-gray-600 dark:text-gray-300';
+    $methodBadge = $record
+        ? \App\Models\PaymentMethod::badgeClasses($record->payment_method)
+        : 'bg-gray-500/10 text-gray-600 dark:text-gray-300';
     $isReturnLegShared = $record
         ? \App\Filament\Resources\Tickets\Pages\EditTicket::isReturnLegWithSharedPrice($record)
         : false;
@@ -31,7 +33,7 @@
 
         <div>
             <div class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Precio</div>
-            <div class="text-base font-semibold text-fuchsia-600 dark:text-fuchsia-400">
+            <div class="text-base font-semibold text-blue-600 dark:text-blue-400">
                 ${{ number_format($price, 0, ',', '.') }}
             </div>
             @if ($isReturnLegShared)

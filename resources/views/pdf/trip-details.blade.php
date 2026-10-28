@@ -38,7 +38,7 @@
         }
 
         .text-fuchsia {
-            color: #c026d3;
+            color: #155DFC;
         }
 
         .trip-sub {
@@ -64,7 +64,7 @@
         .stats-value {
             font-size: 26px;
             font-weight: bold;
-            color: #c026d3;
+            color: #155DFC;
             line-height: 1;
         }
 

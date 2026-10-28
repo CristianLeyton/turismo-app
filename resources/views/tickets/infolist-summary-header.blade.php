@@ -41,9 +41,9 @@
         <div class="flex flex-col md:flex-row md:justify-between gap-4">
             <div>
                 <h2 class="text-2xl font-bold text-gray-900 dark:text-gray-100">
-                    <span class="text-fuchsia-600">{{ $originLocation?->name ?? 'Origen' }} </span>
+                    <span class="text-blue-600">{{ $originLocation?->name ?? 'Origen' }} </span>
                     →
-                    <span class="text-fuchsia-600">{{ $destinationLocation?->name ?? 'Destino' }}</span>
+                    <span class="text-blue-600">{{ $destinationLocation?->name ?? 'Destino' }}</span>
                 </h2>
 
                 @if ($trip)
@@ -61,15 +61,15 @@
                     </p>
 
                     @if ($bus)
-                    <p class="text-sm text-gray-600 dark:text-gray-400">
-                        <span class="font-semibold">Colectivo:</span>
-                        <span class="text-fuchsia-600 dark:text-fuchsia-400">{{ $bus->name }}</span>
-                    </p>
+                        <p class="text-sm text-gray-600 dark:text-gray-400">
+                            <span class="font-semibold">Colectivo:</span>
+                            <span class="text-blue-600 dark:text-blue-400">{{ $bus->name }}</span>
+                        </p>
                     @endif
 
                     <p class="text-sm text-gray-600 dark:text-gray-400">
                         <span class="font-semibold"> Ruta: </span>
-                        <span class="text-fuchsia-600 dark:text-fuchsia-400">
+                        <span class="text-blue-600 dark:text-blue-400">
                             {{ $route?->name ?? 'No especificada' }}
                         </span>
                     </p>
@@ -77,7 +77,8 @@
                     <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">
                         <strong class="font-semibold"> Ida: </strong>
                         @if ($record->isPendingDate())
-                            <span class="font-semibold text-amber-600 dark:text-amber-400">Fecha y horario a confirmar</span>
+                            <span class="font-semibold text-amber-600 dark:text-amber-400">Fecha y horario a
+                                confirmar</span>
                         @else
                             No hay información del viaje
                         @endif
@@ -88,7 +89,7 @@
                 <div class="text-sm text-gray-500 dark:text-gray-400 uppercase">
                     Asiento ida
                 </div>
-                <div class="text-3xl font-bold text-fuchsia-600 dark:text-fuchsia-400">
+                <div class="text-3xl font-bold text-blue-600 dark:text-blue-400">
                     {{ $record->seat?->seat_number ?? ($record->isPendingDate() ? 'A asignar' : '—') }}
                 </div>
             </div>
@@ -97,7 +98,8 @@
         @if ($record?->is_round_trip)
             @if ($record->return_trip_id && $returnTrip)
                 @php
-                    $vueltaDepartureTime = $record->getBoardingDepartureTime(null, true) ?? $returnSchedule?->departure_time;
+                    $vueltaDepartureTime =
+                        $record->getBoardingDepartureTime(null, true) ?? $returnSchedule?->departure_time;
                     $vueltaArrivalTime = $record->getBoardingArrivalTime(null, true) ?? $returnSchedule?->arrival_time;
                 @endphp
                 <div
@@ -111,13 +113,13 @@
                         {{ $vueltaArrivalTime ? Carbon::parse($vueltaArrivalTime)->format('H:i') : '--:--' }}
 
                         @if ($returnTrip->bus)
-                        <br> <span class="font-semibold">Colectivo:</span>
-                        <span class="text-fuchsia-600 dark:text-fuchsia-400">{{ $returnTrip->bus->name }}</span>
+                            <br> <span class="font-semibold">Colectivo:</span>
+                            <span class="text-blue-600 dark:text-blue-400">{{ $returnTrip->bus->name }}</span>
                         @endif
                         <br>
                         <p class="">
                             <span class="font-semibold ">Ruta:</span>
-                            <span class="text-fuchsia-600 dark:text-fuchsia-400">
+                            <span class="text-blue-600 dark:text-blue-400">
                                 {{ $returnRoute?->name ?? 'No especificada' }}</span>
                         </p>
                     </div>
@@ -126,7 +128,7 @@
                         <div class="text-sm text-gray-500 dark:text-gray-400 uppercase">
                             Asiento vuelta
                         </div>
-                        <div class="text-3xl font-bold text-fuchsia-600 dark:text-fuchsia-400">
+                        <div class="text-3xl font-bold text-blue-600 dark:text-blue-400">
                             {{-- Buscar el asiento asignado a este ticket en el viaje de vuelta --}}
                             @php
                                 $returnSeatNumber = '—';
@@ -157,10 +159,12 @@
                         @if ($record->isReturnLeg())
                             <span class="text-sm">Este ticket es el viaje de vuelta de un pasaje diferido. </span>
                         @else
-                            <span class="text-sm">Este boleto forma parte de un pasaje diferido: su tramo de vuelta todavía no tiene viaje asignado. </span>
+                            <span class="text-sm">Este boleto forma parte de un pasaje diferido: su tramo de vuelta
+                                todavía no tiene viaje asignado. </span>
                         @endif
                         @if ($record->isPendingDate())
-                            <span class="font-semibold text-amber-600 dark:text-amber-400">Fecha y horario a confirmar.</span>
+                            <span class="font-semibold text-amber-600 dark:text-amber-400">Fecha y horario a
+                                confirmar.</span>
                         @endif
                     </div>
                 </div>
@@ -175,7 +179,7 @@
             <div class="flex justify-between gap-3 mb-1 flex-nowrap">
                 <div>
                     <div class="text-lg font-semibold text-gray-900 dark:text-gray-100">
-                        {{ $record->passenger->last_name ?? '' }} {{ $record->passenger->first_name ?? '' }} 
+                        {{ $record->passenger->last_name ?? '' }} {{ $record->passenger->first_name ?? '' }}
                     </div>
 
                     <div class="text-sm text-gray-600 dark:text-gray-400">
@@ -196,7 +200,7 @@
                     class="self-start md:self-center
                                  px-3 py-1 rounded-full text-xs font-medium
                                  bg-gray-100 dark:bg-gray-800
-                                 text-fuchsia-600 dark:text-fuchsia-400">
+                                 text-blue-600 dark:text-blue-400">
                     Adulto
                 </span>
             </div>
@@ -209,13 +213,13 @@
                         class="border-l-4 border-fuchsia-500 pl-4 py-2 my-2
                                 bg-gray-50 dark:bg-gray-800 rounded">
                         <div
-                            class="text-sm font-semibold text-fuchsia-600 dark:text-fuchsia-400 flex flex-row justify-between gap-3 mb-1 flex-nowrap">
+                            class="text-sm font-semibold text-blue-600 dark:text-blue-400 flex flex-row justify-between gap-3 mb-1 flex-nowrap">
                             <span> Acompañante </span>
                             <span
                                 class="self-start md:self-center
                                  px-3 py-1 rounded-full text-xs font-medium
                                  bg-gray-100 dark:bg-gray-900
-                                 text-fuchsia-600 dark:text-fuchsia-400 mr-3">
+                                 text-blue-600 dark:text-blue-400 mr-3">
                                 Menor
                             </span>
                         </div>

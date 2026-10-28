@@ -28,6 +28,7 @@ use Filament\Navigation\NavigationItem;
 use Filament\View\PanelsRenderHook;
 use App\Filament\Widgets\Panel as PanelWidget;
 use App\Filament\Widgets\UserAccount;
+use Illuminate\Support\Facades\Auth;
 
 class AdminPanelProvider extends PanelProvider
 {
@@ -43,7 +44,7 @@ class AdminPanelProvider extends PanelProvider
             ->spa(hasPrefetching: true)
             /*             ->sidebarCollapsibleOnDesktop() */
             ->default()
-            ->brandLogo(fn () => view('filament.admin.logo'))
+            ->brandLogo(fn() => view('filament.admin.logo'))
             ->topNavigation()
             ->navigationItems([
                 NavigationItem::make('Vender')
@@ -60,7 +61,7 @@ class AdminPanelProvider extends PanelProvider
             ->globalSearch(false)
             ->viteTheme('resources/css/filament/admin/theme.css')
             ->colors([
-                'primary' => Color::Fuchsia,
+                'primary' => Color::Blue,
             ])
             ->defaultThemeMode(ThemeMode::Light)
             ->discoverClusters(in: app_path('Filament/Clusters'), for: 'App\Filament\Clusters')
@@ -96,13 +97,13 @@ class AdminPanelProvider extends PanelProvider
                nombre completo y los roles asignados, arriba de "Perfil". */
             ->renderHook(
                 PanelsRenderHook::USER_MENU_PROFILE_BEFORE,
-                fn () => auth()->user()
-                    ? view('filament.admin.user-menu-info', ['user' => auth()->user()])->render()
+                fn() => Auth::user()
+                    ? view('filament.admin.user-menu-info', ['user' => Auth::user()])->render()
                     : '',
             )
             ->renderHook(
                 PanelsRenderHook::BODY_END,
-                fn () => <<<'HTML'
+                fn() => <<<'HTML'
                     <script>
                         document.addEventListener('wheel', (event) => {
                             const el = event.target instanceof Element
@@ -121,7 +122,7 @@ class AdminPanelProvider extends PanelProvider
                'clientes', que incluye el ingreso por DNI). Sólo en el login
                del panel de administración: PanelsRenderHook sólo se
                aplica en la página Login de este panel. */
-/*             ->renderHook(
+            /*             ->renderHook(
                 PanelsRenderHook::AUTH_LOGIN_FORM_AFTER,
                 fn () => <<<'HTML'
                     <style>
@@ -145,7 +146,7 @@ class AdminPanelProvider extends PanelProvider
                         }
 
                         .clientes-login-shortcut a {
-                            color: #c026d3;
+                            color: #155DFC;
                             font-weight: 600;
                             text-decoration: none;
                             white-space: nowrap;

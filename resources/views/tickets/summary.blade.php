@@ -18,8 +18,18 @@
 
     // Cálculo centralizado (compartido con el header de pasos intermedios del wizard)
     $timesService = app(\App\Services\TripTimesService::class);
-    $idaTimes = $timesService->getLegTimes($trip, $schedule, $get('origin_location_id'), $get('destination_location_id'));
-    $vueltaTimes = $timesService->getLegTimes($returnTrip, $returnSchedule, $get('destination_location_id'), $get('origin_location_id'));
+    $idaTimes = $timesService->getLegTimes(
+        $trip,
+        $schedule,
+        $get('origin_location_id'),
+        $get('destination_location_id'),
+    );
+    $vueltaTimes = $timesService->getLegTimes(
+        $returnTrip,
+        $returnSchedule,
+        $get('destination_location_id'),
+        $get('origin_location_id'),
+    );
 
     $idaBoardingDeparture = $idaTimes['departure'];
     $idaBoardingArrival = $idaTimes['arrival'];
@@ -57,9 +67,9 @@
         <div class="flex flex-col md:flex-row md:justify-between gap-4">
             <div>
                 <h2 class="text-2xl font-bold text-gray-900 dark:text-gray-100">
-                    <span class="text-fuchsia-600">{{ $originLocation?->name ?? 'Origen' }} </span>
+                    <span class="text-blue-600">{{ $originLocation?->name ?? 'Origen' }} </span>
                     →
-                    <span class="text-fuchsia-600">{{ $destinationLocation?->name ?? 'Destino' }}</span>
+                    <span class="text-blue-600">{{ $destinationLocation?->name ?? 'Destino' }}</span>
                 </h2>
 
 
@@ -83,13 +93,13 @@
                 @if ($busName)
                     <p class="text-sm text-gray-600 dark:text-gray-400">
                         <strong class="font-semibold">Colectivo:</strong>
-                        <span class="text-fuchsia-600 dark:text-fuchsia-400">{{ $busName }}</span>
+                        <span class="text-blue-600 dark:text-blue-400">{{ $busName }}</span>
                     </p>
                 @endif
 
                 <p class="text-sm text-gray-600 dark:text-gray-400">
                     <span class="font-semibold"> Ruta: </span>
-                    <span class="text-fuchsia-600 dark:text-fuchsia-400">
+                    <span class="text-blue-600 dark:text-blue-400">
                         {{ $route?->name ?? 'No especificada' }}
                     </span>
                 </p>
@@ -99,7 +109,7 @@
                 <div class="text-sm text-gray-500 dark:text-gray-400 uppercase">
                     Pasajeros
                 </div>
-                <div class="text-3xl font-bold text-fuchsia-600 dark:text-fuchsia-400">
+                <div class="text-3xl font-bold text-blue-600 dark:text-blue-400">
                     {{ $get('passengers_count') }}
                 </div>
             </div>
@@ -121,10 +131,10 @@
 
                 @if ($returnTrip?->bus)
                     <br> <span class="font-semibold">Colectivo:</span>
-                    <span class="text-fuchsia-600 dark:text-fuchsia-400">{{ $returnTrip->bus->name }}</span>
+                    <span class="text-blue-600 dark:text-blue-400">{{ $returnTrip->bus->name }}</span>
                 @endif
                 <br> <span class="font-semibold">Ruta:</span>
-                <span class="text-fuchsia-600 dark:text-fuchsia-400">
+                <span class="text-blue-600 dark:text-blue-400">
                     {{ $returnRoute?->name ?? 'No especificada' }}</span>
             </div>
         @endif
@@ -203,7 +213,7 @@
                         class="self-start md:self-center
                                  px-3 py-1 rounded-full text-xs font-medium
                                  bg-gray-100 dark:bg-gray-800
-                                 text-fuchsia-600 dark:text-fuchsia-400">
+                                 text-blue-600 dark:text-blue-400">
                         Adulto
                     </span>
                 </div>
@@ -214,13 +224,13 @@
                         class="border-l-4 border-fuchsia-500 pl-4 py-2 my-2
                                 bg-gray-50 dark:bg-gray-800 rounded">
                         <div
-                            class="text-sm font-semibold text-fuchsia-600 dark:text-fuchsia-400 flex flex-row justify-between gap-3 mb-1 flex-nowrap">
+                            class="text-sm font-semibold text-blue-600 dark:text-blue-400 flex flex-row justify-between gap-3 mb-1 flex-nowrap">
                             <span> Acompañante </span>
                             <span
                                 class="self-start md:self-center
                                  px-3 py-1 rounded-full text-xs font-medium
                                  bg-gray-100 dark:bg-gray-900
-                                 text-fuchsia-600 dark:text-fuchsia-400 mr-3">
+                                 text-blue-600 dark:text-blue-400 mr-3">
                                 Menor
                             </span>
                         </div>
@@ -280,7 +290,7 @@
                             Ida
                         </span>
                         <span class="text-lg font-bold text-gray-900 dark:text-gray-100">
-                            {{ $get('sell_without_date_ida') ? 'A asignar' : ($seatNumber ?? '—') }}
+                            {{ $get('sell_without_date_ida') ? 'A asignar' : $seatNumber ?? '—' }}
                         </span>
                     </div>
 
@@ -293,7 +303,7 @@
                                 Vuelta
                             </span>
                             <span class="text-lg font-bold text-gray-900 dark:text-gray-100">
-                                {{ $get('sell_without_date_vuelta') ? 'A asignar' : ($returnSeatNumber ?? '—') }}
+                                {{ $get('sell_without_date_vuelta') ? 'A asignar' : $returnSeatNumber ?? '—' }}
                             </span>
                         </div>
                     @endif
@@ -306,7 +316,7 @@
                             <div class="text-sm text-gray-500 dark:text-gray-400 mb-1">
                                 Precio
                             </div>
-                            <div class="text-lg font-semibold text-fuchsia-600 dark:text-fuchsia-400">
+                            <div class="text-lg font-semibold text-blue-600 dark:text-blue-400">
                                 ${{ isset($passenger['price']) && is_numeric($passenger['price'])
                                     ? number_format($passenger['price'], 2, ',', '.')
                                     : 'No especificado' }}

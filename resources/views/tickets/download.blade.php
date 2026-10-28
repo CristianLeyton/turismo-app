@@ -13,7 +13,7 @@
 
         <div class="text-5xl mb-2 flex items-center justify-center ">
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
-                stroke="currentColor" class="size-12 text-fuchsia-600">
+                stroke="currentColor" class="size-12 text-blue-600">
                 <path stroke-linecap="round" stroke-linejoin="round"
                     d="M16.5 6v.75m0 3v.75m0 3v.75m0 3V18m-9-5.25h5.25M7.5 15h3M3.375 5.25c-.621 0-1.125.504-1.125 1.125v3.026a2.999 2.999 0 0 1 0 5.198v3.026c0 .621.504 1.125 1.125 1.125h17.25c.621 0 1.125-.504 1.125-1.125v-3.026a2.999 2.999 0 0 1 0-5.198V6.375c0-.621-.504-1.125-1.125-1.125H3.375Z" />
             </svg>
@@ -25,7 +25,7 @@
 
         <p class="mt-2 text-sm text-gray-600">
             El boleto
-            <span class="text-fuchsia-600 font-semibold">
+            <span class="text-blue-600 font-semibold">
                 {{ $filename }}
             </span>
             se descargará automáticamente.
@@ -50,7 +50,7 @@
 
         <a href="data:application/pdf;base64,{{ $pdfContent }}" download="{{ $filename }}"
             class="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-lg
-                  bg-fuchsia-600 hover:bg-fuchsia-700
+                  bg-blue-600 hover:bg-fuchsia-700
                   text-white text-sm font-semibold transition-colors
                   focus:outline-none focus:ring-2 focus:ring-fuchsia-500 focus:ring-offset-2">
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"

@@ -12,7 +12,7 @@
      * El record llega por $getRecord() cuando se renderiza dentro de un
      * schema (modal o infolist) o por $ticket en render directo (tests).
      */
-    $record = (isset($getRecord) && $getRecord()) ? $getRecord() : ($ticket ?? null);
+    $record = isset($getRecord) && $getRecord() ? $getRecord() : $ticket ?? null;
 
     $passenger = $record?->passenger;
     $seat = $record?->seat;
@@ -26,11 +26,13 @@
     $isRescheduled = $changes->isNotEmpty();
     $isEdited = $edits->isNotEmpty();
 
-    $estadoPartes = array_values(array_filter([
-        $isDeleted ? 'Eliminado' : null,
-        $isRescheduled ? 'Reprogramado' : null,
-        $isEdited ? 'Editado' : null,
-    ]));
+    $estadoPartes = array_values(
+        array_filter([
+            $isDeleted ? 'Eliminado' : null,
+            $isRescheduled ? 'Reprogramado' : null,
+            $isEdited ? 'Editado' : null,
+        ]),
+    );
 
     $estadoLabel = $estadoPartes === [] ? '—' : implode(' + ', $estadoPartes);
 
@@ -43,7 +45,7 @@
             : 'bg-sky-100 dark:bg-sky-900/30 text-sky-800 dark:text-sky-300');
 
     $tripLabel = function (?object $t): string {
-        if (! $t) {
+        if (!$t) {
             return '—';
         }
 
@@ -76,15 +78,15 @@
         <div class="flex flex-col md:flex-row md:justify-between gap-4">
             <div>
                 <h2 class="text-2xl font-bold text-gray-900 dark:text-gray-100">
-                    <span class="text-fuchsia-600">{{ $record?->origin?->name ?? 'Origen' }}</span>
+                    <span class="text-blue-600">{{ $record?->origin?->name ?? 'Origen' }}</span>
                     →
-                    <span class="text-fuchsia-600">{{ $record?->destination?->name ?? 'Destino' }}</span>
+                    <span class="text-blue-600">{{ $record?->destination?->name ?? 'Destino' }}</span>
                 </h2>
 
                 <div class="mt-2 space-y-1">
                     <div class="text-sm text-gray-600 dark:text-gray-400">
                         <strong class="font-semibold">Pasajero:</strong>
-                        {{ $passenger ? ($passenger->last_name . ' ' . $passenger->first_name) : '—' }}
+                        {{ $passenger ? $passenger->last_name . ' ' . $passenger->first_name : '—' }}
                         <span class="mx-2">•</span>
                         DNI {{ $passenger?->dni ?? '—' }}
                     </div>
@@ -104,14 +106,16 @@
                     </span>
 
                     @if ($isRescheduled)
-                        <span class="inline-block px-2.5 py-1 text-xs font-semibold rounded-full
+                        <span
+                            class="inline-block px-2.5 py-1 text-xs font-semibold rounded-full
                                     bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300">
                             {{ $changes->count() }} reprogramacion{{ $changes->count() === 1 ? '' : 'es' }}
                         </span>
                     @endif
 
                     @if ($isEdited)
-                        <span class="inline-block px-2.5 py-1 text-xs font-semibold rounded-full
+                        <span
+                            class="inline-block px-2.5 py-1 text-xs font-semibold rounded-full
                                     bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300">
                             {{ \App\Support\TicketEditHistory::summary($edits) }}
                         </span>
@@ -121,11 +125,11 @@
 
             <div class="text-left md:text-right">
                 <div class="text-sm text-gray-500 dark:text-gray-400 uppercase">Asiento actual</div>
-                <div class="text-3xl font-bold text-fuchsia-600 dark:text-fuchsia-400">
+                <div class="text-3xl font-bold text-blue-600 dark:text-blue-400">
                     {{ $seat?->seat_number ?? '—' }}
                 </div>
                 <div class="mt-2 text-sm text-gray-600 dark:text-gray-400">
-                    <span class="font-semibold text-fuchsia-600 dark:text-fuchsia-400">
+                    <span class="font-semibold text-blue-600 dark:text-blue-400">
                         ${{ number_format((float) ($record?->display_price ?? 0), 0, ',', '.') }}
                     </span>
                     <span class="mx-1">•</span>
@@ -136,7 +140,8 @@
     </div>
 
     {{-- ================== DATOS DE LA VENTA ================== --}}
-    <div class="flex flex-wrap gap-x-8 gap-y-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 p-4">
+    <div
+        class="flex flex-wrap gap-x-8 gap-y-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 p-4">
         <div>
             <div class="text-xs uppercase text-gray-500 dark:text-gray-400">Fecha de venta</div>
             <div class="font-semibold text-gray-900 dark:text-gray-100">
@@ -168,11 +173,13 @@
 
     {{-- ================== ELIMINACIÓN ================== --}}
     @if ($isDeleted)
-        <div class="rounded-lg border border-red-300 bg-red-50 dark:bg-red-900/20 dark:border-red-700 px-4 py-3 text-red-800 dark:text-red-200">
+        <div
+            class="rounded-lg border border-red-300 bg-red-50 dark:bg-red-900/20 dark:border-red-700 px-4 py-3 text-red-800 dark:text-red-200">
             <div class="text-sm font-semibold">
                 ⚠ Este boleto fue ELIMINADO el {{ $record->deleted_at?->format('d/m/Y H:i') ?? '—' }}
                 @if ($record->deletedBy)
-                    por {{ $record->deletedBy->name }}{{ $record->deletedBy->username ? ' (' . $record->deletedBy->username . ')' : '' }}
+                    por
+                    {{ $record->deletedBy->name }}{{ $record->deletedBy->username ? ' (' . $record->deletedBy->username . ')' : '' }}
                 @endif
             </div>
             <div class="mt-1 text-sm font-semibold">
@@ -193,20 +200,23 @@
     <div class="bg-white dark:bg-gray-900 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
         <div class="px-6 py-2 border-b border-gray-200 dark:border-gray-700 flex justify-between">
             <h3 class="text-lg font-semibold text-gray-900 dark:text-gray-100">Historial de reprogramaciones</h3>
-            <div class="text-lg font-semibold text-gray-900 dark:text-gray-100 text-right">({{ $changes->count() }})</div>
+            <div class="text-lg font-semibold text-gray-900 dark:text-gray-100 text-right">({{ $changes->count() }})
+            </div>
         </div>
 
         @forelse ($changes as $change)
             <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 last:border-b-0">
                 <div class="flex flex-col sm:flex-row sm:justify-between gap-2">
-                    <span class="self-start inline-block px-2.5 py-1 text-xs font-semibold rounded-lg
+                    <span
+                        class="self-start inline-block px-2.5 py-1 text-xs font-semibold rounded-lg
                                 bg-sky-100 dark:bg-sky-900/30 text-sky-800 dark:text-sky-300">
                         {{ $change->leg === \App\Models\TicketDateChange::LEG_RETURN ? 'Vuelta' : 'Ida' }}
                     </span>
 
                     <div class="text-sm text-gray-600 dark:text-gray-400 sm:text-right">
                         <span class="font-semibold text-gray-900 dark:text-gray-100">
-                            Realizado por: {{ $change->user?->name ?? 'Usuario eliminado del sistema' }}{{ $change->user?->username ? ' (' . $change->user->username . ')' : '' }}
+                            Realizado por:
+                            {{ $change->user?->name ?? 'Usuario eliminado del sistema' }}{{ $change->user?->username ? ' (' . $change->user->username . ')' : '' }}
                         </span>
                         <span class="mx-1">•</span>
                         {{ $change->created_at?->format('d/m/Y H:i') ?? '—' }}
@@ -228,7 +238,8 @@
 
                     <div class="hidden sm:block text-gray-400 dark:text-gray-500 text-lg">→</div>
 
-                    <div class="rounded-lg border border-green-200 bg-green-50 dark:bg-green-900/20 dark:border-green-800 p-3">
+                    <div
+                        class="rounded-lg border border-green-200 bg-green-50 dark:bg-green-900/20 dark:border-green-800 p-3">
                         <div class="text-xs uppercase text-green-700 dark:text-green-400">Después</div>
                         <div class="font-semibold text-gray-900 dark:text-gray-100">
                             {{ $changeLabel($change, 'to') }}
@@ -252,7 +263,8 @@
     <div class="bg-white dark:bg-gray-900 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
         <div class="px-6 py-2 border-b border-gray-200 dark:border-gray-700 flex justify-between">
             <h3 class="text-lg font-semibold text-gray-900 dark:text-gray-100">Historial de ediciones</h3>
-            <div class="text-lg font-semibold text-gray-900 dark:text-gray-100 text-right">({{ $edits->count() }})</div>
+            <div class="text-lg font-semibold text-gray-900 dark:text-gray-100 text-right">({{ $edits->count() }})
+            </div>
         </div>
 
         @include('tickets.partials.edit-history', ['edits' => $edits])

@@ -12,27 +12,32 @@
     $isReturnLegTicket = $record?->isReturnLeg() ?? false;
     $isPendingDate = $record?->isPendingDate() ?? false;
 
-    $idaDeparture = $record && ! $isReturnLegTicket
-        ? ($record->getBoardingDepartureTime() ?? $trip?->schedule?->departure_time)
-        : null;
-    $idaArrival = $record && ! $isReturnLegTicket
-        ? ($record->getBoardingArrivalTime() ?? $trip?->schedule?->arrival_time)
-        : null;
+    $idaDeparture =
+        $record && !$isReturnLegTicket
+            ? $record->getBoardingDepartureTime() ?? $trip?->schedule?->departure_time
+            : null;
+    $idaArrival =
+        $record && !$isReturnLegTicket ? $record->getBoardingArrivalTime() ?? $trip?->schedule?->arrival_time : null;
 
     $vueltaDeparture = $isReturnLegTicket
-        ? ($record->getBoardingDepartureTime(null, true) ?? $trip?->schedule?->departure_time)
-        : ($record?->is_round_trip ? ($record->getBoardingDepartureTime(null, true) ?? $returnTrip?->schedule?->departure_time) : null);
+        ? $record->getBoardingDepartureTime(null, true) ?? $trip?->schedule?->departure_time
+        : ($record?->is_round_trip
+            ? $record->getBoardingDepartureTime(null, true) ?? $returnTrip?->schedule?->departure_time
+            : null);
     $vueltaArrival = $isReturnLegTicket
-        ? ($record->getBoardingArrivalTime(null, true) ?? $trip?->schedule?->arrival_time)
-        : ($record?->is_round_trip ? ($record->getBoardingArrivalTime(null, true) ?? $returnTrip?->schedule?->arrival_time) : null);
+        ? $record->getBoardingArrivalTime(null, true) ?? $trip?->schedule?->arrival_time
+        : ($record?->is_round_trip
+            ? $record->getBoardingArrivalTime(null, true) ?? $returnTrip?->schedule?->arrival_time
+            : null);
 @endphp
 
 <div class="space-y-2 text-sm">
-    <div class="flex flex-wrap gap-x-8 gap-y-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 p-4">
+    <div
+        class="flex flex-wrap gap-x-8 gap-y-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 p-4">
         <div>
             <div class="text-xs uppercase text-gray-500 dark:text-gray-400">Pasajero</div>
             <div class="font-semibold text-gray-900 dark:text-gray-100">
-                {{ $passenger ? ($passenger->last_name . ' ' . $passenger->first_name) : '—' }}
+                {{ $passenger ? $passenger->last_name . ' ' . $passenger->first_name : '—' }}
             </div>
             <div class="text-xs text-gray-500 dark:text-gray-400">DNI {{ $passenger?->dni ?? '—' }}</div>
         </div>
@@ -67,7 +72,7 @@
             </div>
         </div>
 
-        @if ($record?->is_round_trip && ! $isReturnLegTicket && $returnTrip)
+        @if ($record?->is_round_trip && !$isReturnLegTicket && $returnTrip)
             <div>
                 <div class="text-xs uppercase text-gray-500 dark:text-gray-400">Vuelta actual</div>
                 <div class="font-semibold text-gray-900 dark:text-gray-100">
@@ -82,14 +87,15 @@
 
         <div class="text-right">
             <div class="text-xs uppercase text-gray-500 dark:text-gray-400">Asiento actual</div>
-            <div class="text-2xl font-bold text-fuchsia-600 dark:text-fuchsia-400">
+            <div class="text-2xl font-bold text-blue-600 dark:text-blue-400">
                 {{ $seat?->seat_number ?? ($isPendingDate ? 'A asignar' : '—') }}
             </div>
         </div>
     </div>
 
     @if ($record?->wasRescheduled())
-        <div class="rounded-lg border border-orange-300 bg-orange-50 dark:bg-orange-900/20 dark:border-orange-700 px-4 py-2 text-orange-800 dark:text-orange-200 text-xs font-semibold">
+        <div
+            class="rounded-lg border border-orange-300 bg-orange-50 dark:bg-orange-900/20 dark:border-orange-700 px-4 py-2 text-orange-800 dark:text-orange-200 text-xs font-semibold">
             ⚠ Este boleto fue reprogramado anteriormente
             ({{ $record->dateChanges()->count() }} cambio(s) registrados).
         </div>

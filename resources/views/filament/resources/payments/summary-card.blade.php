@@ -20,12 +20,13 @@
         {{-- grilla 2x2. --}}
         <div class="grid grid-cols-2 gap-2">
             <div class="rounded-lg bg-fuchsia-50 p-2.5 dark:bg-fuchsia-900/50">
-                <p class="text-[11px] text-fuchsia-500 dark:text-fuchsia-400">Pagos recibidos</p>
-                <p class="text-base font-bold text-fuchsia-600 dark:text-fuchsia-500">{{ $totals['count'] }}</p>
+                <p class="text-[11px] text-fuchsia-500 dark:text-blue-400">Pagos recibidos</p>
+                <p class="text-base font-bold text-blue-600 dark:text-fuchsia-500">{{ $totals['count'] }}</p>
             </div>
             <div class="rounded-lg bg-amber-500/10 p-2.5">
                 <p class="text-[11px] text-amber-700 dark:text-amber-400">Total cobrado</p>
-                <p class="text-base font-bold text-amber-700 dark:text-amber-400">{{ PaymentResource::formatMoneyPublic($totals['total']) }}</p>
+                <p class="text-base font-bold text-amber-700 dark:text-amber-400">
+                    {{ PaymentResource::formatMoneyPublic($totals['total']) }}</p>
             </div>
             <div class="mt-2 text-center text-[11px] text-gray-400 dark:text-gray-500 sm:text-right col-span-2">
                 <p class="text-[11px] text-gray-400 dark:text-gray-500 sm:text-right">

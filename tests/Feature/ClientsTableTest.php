@@ -72,7 +72,11 @@ class ClientsTableTest extends TestCase
 
         Livewire::test(ManageClients::class)
             ->assertTableColumnStateSet('boletos_historicos', 2, $cliente)
-            ->assertTableColumnStateSet('boletos_historicos', 0, $sinCompras);
+            ->assertTableColumnStateSet('boletos_historicos', 0, $sinCompras)
+            ->sortTable('boletos_historicos')
+            ->assertCanSeeTableRecords([$sinCompras, $cliente], inOrder: true)
+            ->sortTable('boletos_historicos', 'desc')
+            ->assertCanSeeTableRecords([$cliente, $sinCompras], inOrder: true);
 
         // La relación del modelo es la fuente del contador.
         $this->assertSame(2, $cliente->tickets()->count());

@@ -86,6 +86,8 @@ class PaymentMethodResource extends Resource
                     ->alignCenter()
                     ->toggleable(), */
             ])
+            ->recordAction(null)
+            ->recordUrl(null)
             ->filters([
                 /* TernaryFilter::make('is_active')
                     ->label('Estado')
@@ -96,13 +98,13 @@ class PaymentMethodResource extends Resource
             ])
             ->recordActions([
                 ActionGroup::make([
-                    EditAction::make()->button()->hiddenLabel()->extraAttributes(['title' => 'Editar']),
+                    EditAction::make()->button()->extraAttributes(['title' => 'Editar']),
                     DeleteAction::make()
                         ->modalHeading('Eliminar método de pago')
                         ->modalDescription('El método quedará oculto pero los boletos y pagos históricos seguirán mostrando su nombre. Podrás restaurarlo desde el filtro "eliminados".')
                         ->modalSubmitActionLabel('Eliminar')
-                        ->button()->hiddenLabel()->extraAttributes(['title' => 'Eliminar']),
-                    RestoreAction::make()->button()->hiddenLabel()->extraAttributes(['title' => 'Restaurar']),
+                        ->button()->extraAttributes(['title' => 'Eliminar']),
+                    RestoreAction::make()->button()->extraAttributes(['title' => 'Restaurar']),
                 ])->icon('heroicon-m-ellipsis-vertical')
                     ->hiddenLabel()
                     ->size('sm')

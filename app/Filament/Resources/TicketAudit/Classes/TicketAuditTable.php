@@ -52,6 +52,7 @@ class TicketAuditTable
                 TextColumn::make('passenger.last_name')
                     ->label('Pasajero')
                     ->limit(24)
+                    ->visibleFrom('md')
                     ->tooltip(fn($state, $record) => $record->passenger?->last_name . ' ' . $record->passenger?->first_name)
                     ->formatStateUsing(
                         fn($state, $record) => ($record->passenger?->last_name ?? '') . ' ' . ($record->passenger?->first_name ?? ''),
@@ -115,8 +116,12 @@ class TicketAuditTable
             ->recordActions([
                 Action::make('ver')
                     ->label('Ver')
+                    ->hiddenLabel()
                     ->icon('heroicon-m-eye')
                     ->button()
+                    ->extraAttributes([
+                        'title' => 'Ver detalles'
+                    ])
                     ->color('gray')
                     ->modalHeading(fn(Ticket $record): string => "Boleto N°{$record->id}")
                     ->modalWidth(Width::FiveExtraLarge)

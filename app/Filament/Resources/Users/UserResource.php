@@ -123,6 +123,7 @@ class UserResource extends Resource
             ->columns([
                 TextColumn::make('username')
                     ->label('Usuario')
+                    ->visibleFrom('md')
                     ->searchable(),
                 TextColumn::make('name')
                     ->label('Nombre')
@@ -137,6 +138,8 @@ class UserResource extends Resource
                         default => 'info',
                     }),
             ])
+            ->recordAction(null)
+            ->recordUrl(null)
             ->filters([
                 TrashedFilter::make(),
                 SelectFilter::make('roles')
@@ -164,12 +167,12 @@ class UserResource extends Resource
                 // su label para que el menú abierto muestre el texto.
                 ActionGroup::make([
                     EditAction::make()
-                        ->disabled(fn (User $record): bool => $record->id === 2)
+                        ->disabled(fn (User $record): bool => $record->id === 2)->button()
                         ->after(fn (User $record) => $record->syncIsAdminFlag()),
-                    static::resetPasswordAction(),
-                    DeleteAction::make()->disabled(fn (User $record): bool => $record->id === 2),
-                    ForceDeleteAction::make()->disabled(fn (User $record): bool => $record->id === 2),
-                    RestoreAction::make()->disabled(fn (User $record): bool => $record->id === 2),
+                    static::resetPasswordAction()->button(),
+                    DeleteAction::make()->button()->disabled(fn (User $record): bool => $record->id === 2),
+                    ForceDeleteAction::make()->button()->disabled(fn (User $record): bool => $record->id === 2),
+                    RestoreAction::make()->button()->disabled(fn (User $record): bool => $record->id === 2),
                 ])->icon('heroicon-m-ellipsis-vertical')
                     ->hiddenLabel()
                     ->size('sm')

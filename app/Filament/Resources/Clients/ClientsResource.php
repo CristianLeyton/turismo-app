@@ -151,16 +151,25 @@ class ClientsResource extends Resource
             ->columns([
                 TextColumn::make('dni')
                     ->label('DNI')
-                    ->searchable(),
-                TextColumn::make('nombre')
-                    ->label('Nombre')
+                    ->sortable()
+                    ->tooltip(fn($state, $record) => $record->apellido . " " . $record->nombre)
                     ->searchable(),
                 TextColumn::make('apellido')
                     ->label('Apellido')
+                    ->limit(22)
                     ->sortable()
+                    ->visibleFrom('md')
+                    ->tooltip(fn($state, $record) => $record->apellido)
+                    ->searchable(),
+                TextColumn::make('nombre')
+                    ->limit(22)
+                    ->tooltip(fn($state, $record) => $record->nombre)
+                    ->label('Nombre')
+                    ->visibleFrom('md')
                     ->searchable(),
                 TextColumn::make('telefono')
                     ->label('Teléfono')
+                    ->visibleFrom('md')
                     ->searchable(),
                 TextColumn::make('can_buy')
                     ->label('Estado')
@@ -171,9 +180,14 @@ class ClientsResource extends Resource
                     ->alignCenter()
                     ->badge()
                     ->color('info')
-                    ->label('Boletos históricos')
+                    ->label('Boletos')
+                    ->tooltip('Total de boletos vendidos')
                     ->state(fn(Clients $record): int => $record->tickets()->count())
-                    ->sortable(query: fn(Builder $query, string $direction): Builder => $query->orderBy('boletos_historicos', $direction))
+                    ->sortable(query: function (Builder $query, string $direction): Builder {
+                        return $query
+                            ->withCount('tickets')
+                            ->orderBy('tickets_count', $direction);
+                    })
                     ->numeric(),
             ])
             ->recordUrl(null)
@@ -197,12 +211,12 @@ class ClientsResource extends Resource
                 // Menú de tres puntitos (construido desde los builders,
                 // con visibilidad duplicada para las acciones): sólo celular.
                 ActionGroup::make([
-                    static::toggleBanAction(),
-                    static::resetPasswordAction(),
-                    EditAction::make(),
-                    DeleteAction::make()->visible(fn() => (bool) Auth::user()?->can('clients.delete')),
-                    ForceDeleteAction::make(),
-                    RestoreAction::make(),
+                    static::toggleBanAction()->button(),
+                    static::resetPasswordAction()->button(),
+                    EditAction::make()->button(),
+                    DeleteAction::make()->button()->visible(fn() => (bool) Auth::user()?->can('clients.delete')),
+                    ForceDeleteAction::make()->button(),
+                    RestoreAction::make()->button(),
                 ])->icon('heroicon-m-ellipsis-vertical')
                     ->hiddenLabel()
                     ->size('sm')
@@ -265,16 +279,20 @@ class ClientsResource extends Resource
                     ->hiddenLabel()
                     ->extraAttributes(['title' => 'Resetear contraseña', 'class' => 'hidden md:inline-flex']),
                 EditAction::make()->button()->hiddenLabel()->extraAttributes([
-                    'title' => 'Editar', 'class' => 'hidden md:inline-flex',
+                    'title' => 'Editar',
+                    'class' => 'hidden md:inline-flex',
                 ]),
                 DeleteAction::make()->button()->hiddenLabel()->extraAttributes([
-                    'title' => 'Eliminar', 'class' => 'hidden md:inline-flex',
+                    'title' => 'Eliminar',
+                    'class' => 'hidden md:inline-flex',
                 ])->visible(fn() => (bool) Auth::user()?->can('clients.delete')),
                 ForceDeleteAction::make()->button()->hiddenLabel()->extraAttributes([
-                    'title' => 'Eliminar permanentemente', 'class' => 'hidden md:inline-flex',
+                    'title' => 'Eliminar permanentemente',
+                    'class' => 'hidden md:inline-flex',
                 ]),
                 RestoreAction::make()->button()->hiddenLabel()->extraAttributes([
-                    'title' => 'Restaurar', 'class' => 'hidden md:inline-flex',
+                    'title' => 'Restaurar',
+                    'class' => 'hidden md:inline-flex',
                 ]),
             ])
             ->toolbarActions([

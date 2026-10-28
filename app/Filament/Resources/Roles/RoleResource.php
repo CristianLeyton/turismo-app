@@ -164,15 +164,14 @@ class RoleResource extends Resource
             ])
             ->recordActions([
                 ActionGroup::make([
-                    static::editRoleAction()->extraAttributes(['title' => 'Editar']),
-                    static::deleteRoleAction()->extraAttributes(['title' => 'Eliminar']),
+                    static::editRoleAction()->button()->extraAttributes(['title' => 'Editar']),
+                    static::deleteRoleAction()->button()->extraAttributes(['title' => 'Eliminar']),
                 ])->icon('heroicon-m-ellipsis-vertical')
-                    ->hiddenLabel()
                     ->size('sm')
                     ->extraAttributes(['class' => 'md:hidden']),
 
-                static::editRoleAction()->extraAttributes(['title' => 'Editar', 'class' => 'hidden md:inline-flex']),
-                static::deleteRoleAction()->extraAttributes(['title' => 'Eliminar', 'class' => 'hidden md:inline-flex']),
+                static::editRoleAction()->hiddenLabel()->extraAttributes(['title' => 'Editar', 'class' => 'hidden md:inline-flex']),
+                static::deleteRoleAction()->hiddenLabel()->extraAttributes(['title' => 'Eliminar', 'class' => 'hidden md:inline-flex']),
             ]);
     }
 
@@ -185,7 +184,6 @@ class RoleResource extends Resource
     {
         return EditAction::make()
             ->button()
-            ->hiddenLabel()
             ->fillForm(fn (Role $record): array => [
                 // fillForm REEMPLAZA el fill por defecto del EditAction
                 // (que era attributesToArray), así que hay que incluir
@@ -210,7 +208,6 @@ class RoleResource extends Resource
     {
         return DeleteAction::make()
             ->button()
-            ->hiddenLabel()
             ->modalDescription(function (Role $record): string {
                 $usersCount = $record->users()->count();
 

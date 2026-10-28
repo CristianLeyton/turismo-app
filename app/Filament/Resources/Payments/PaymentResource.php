@@ -195,6 +195,7 @@ class PaymentResource extends Resource
                 TextColumn::make('payment_method')
                     ->label('Método')
                     ->badge()
+                    ->visibleFrom('md')
                     ->color(fn (string $state): string => PaymentMethod::color($state))
                     ->formatStateUsing(fn (string $state): string => PaymentMethod::label($state))
                     ->sortable()
@@ -307,16 +308,16 @@ class PaymentResource extends Resource
             ])
             ->recordActions([
                 ActionGroup::make([
-                    EditAction::make()->button()->hiddenLabel()->extraAttributes([
+                    EditAction::make()->button()->extraAttributes([
                         'title' => 'Editar',
                     ]),
-                    DeleteAction::make()->button()->hiddenLabel()->extraAttributes([
+                    DeleteAction::make()->button()->extraAttributes([
                         'title' => 'Eliminar',
                     ]),
-                    ForceDeleteAction::make()->button()->hiddenLabel()->extraAttributes([
+                    ForceDeleteAction::make()->button()->extraAttributes([
                         'title' => 'Eliminar permanentemente',
                     ]),
-                    RestoreAction::make()->button()->hiddenLabel()->extraAttributes([
+                    RestoreAction::make()->button()->extraAttributes([
                         'title' => 'Restaurar',
                     ]),
                 ])->icon('heroicon-m-ellipsis-vertical')

@@ -2,37 +2,33 @@
 
 namespace App\Providers\Filament;
 
+use App\Filament\Pages\Auth\EditProfile;
+use App\Filament\Pages\CustomDashboard;
+use App\Filament\Resources\Tickets\TicketResource;
 use App\Filament\Resources\Users\Pages\Auth\CustomLogin;
+use App\Filament\Widgets\Panel as PanelWidget;
+use App\Filament\Widgets\UserAccount;
+use Filament\Enums\ThemeMode;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
+use Filament\Navigation\NavigationItem;
 use Filament\Notifications\Notification;
-use Filament\Pages\Dashboard;
-use App\Filament\Pages\CustomDashboard;
 use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\Support\Colors\Color;
-use Filament\Widgets\AccountWidget;
-use Filament\Widgets\FilamentInfoWidget;
+use Filament\View\PanelsRenderHook;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
 use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Session\Middleware\StartSession;
-use Illuminate\View\Middleware\ShareErrorsFromSession;
-use App\Filament\Pages\Auth\EditProfile;
-use App\Filament\Resources\Tickets\TicketResource;
-use Filament\Enums\ThemeMode;
-use Filament\Navigation\NavigationItem;
-use Filament\View\PanelsRenderHook;
-use App\Filament\Widgets\Panel as PanelWidget;
-use App\Filament\Widgets\UserAccount;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\View\Middleware\ShareErrorsFromSession;
 
 class AdminPanelProvider extends PanelProvider
 {
-
     public function panel(Panel $panel): Panel
     {
         return $panel
@@ -48,10 +44,10 @@ class AdminPanelProvider extends PanelProvider
             ->topNavigation()
             ->navigationItems([
                 NavigationItem::make('Vender')
-                    ->url(fn() => TicketResource::getUrl('create'))
+                    ->url(fn () => TicketResource::getUrl('create'))
                     ->label('Vender')
                     ->icon('heroicon-m-banknotes')
-                    ->isActiveWhen(fn() => request()->routeIs('filament.admin.tickets.resources.tickets.create'))
+                    ->isActiveWhen(fn () => request()->routeIs('filament.admin.tickets.resources.tickets.create'))
                     ->sort(0),
             ])
             ->unsavedChangesAlerts()
@@ -116,6 +112,11 @@ class AdminPanelProvider extends PanelProvider
                         }, { passive: false });                    </script>
                 HTML,
             )
+            /* "Copiar link" de la notification de emisión por link. */
+            ->renderHook(
+                PanelsRenderHook::BODY_END,
+                fn (): string => \App\Support\ShareLinkNotification::copyListenerScript(),
+            )
             /* Atajo para clientes: un pasajero puede llegar por error al login
                del panel de administración; desde ahí lo mando al panel
                público de clientes ("Mis boletos", PanelProvider con path
@@ -158,7 +159,7 @@ class AdminPanelProvider extends PanelProvider
                     </style>
                     <div class="clientes-login-shortcut">
                         <p>¿Sos pasajero? Tus boletos están en el <a href="/clientes">panel de Clientes.</a></p>
-                        
+
                     </div>
                 HTML,
             ) */;

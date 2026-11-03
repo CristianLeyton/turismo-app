@@ -18,7 +18,6 @@ use App\Models\Ticket;
 use App\Models\Trip;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Hash;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -159,6 +158,71 @@ class TicketSettingsTest extends TestCase
         // Un valor negativo se normaliza a 0 (nunca habilita "al revés").
         Setting::set(Setting::VENTA_LIMITE_HORAS, '-3');
         $this->assertSame(0, Setting::ventaLimiteHoras());
+    }
+
+    // ====================== Días de servicio ======================
+
+    public function test_la_pagina_carga_los_dias_de_servicio_actuales(): void
+    {
+        $this->actingAs($this->admin);
+
+        Livewire::test(TicketSettings::class)
+            ->assertSee('Días de servicio')
+            ->assertSet('data.service_weekdays', ['1', '2', '3', '4', '5', '6'])
+            ->assertSet('data.service_exceptions', fn (array $items): bool => array_values($items) === [
+                ['date' => '2026-09-13', 'has_service' => '1', 'reason' => null],
+            ]);
+    }
+
+    public function test_guardar_un_feriado_deja_la_fecha_sin_servicio(): void
+    {
+        $this->actingAs($this->admin);
+
+        $this->assertTrue(\App\Support\ServiceDays::hasService('2026-12-25'));
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.service_exceptions', [
+                'a' => ['date' => '2026-09-13', 'has_service' => '1', 'reason' => null],
+                'b' => ['date' => '2026-12-25', 'has_service' => '0', 'reason' => 'Navidad'],
+            ])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        Setting::flushCache();
+
+        $this->assertFalse(\App\Support\ServiceDays::hasService('2026-12-25'));
+        $this->assertSame('Navidad', \App\Support\ServiceDays::exceptionFor('2026-12-25')['reason']);
+        $this->assertTrue(\App\Support\ServiceDays::hasService('2026-09-13'));
+        $this->assertSame([1, 2, 3, 4, 5, 6], Setting::serviceWeekdays());
+    }
+
+    public function test_guardar_los_dias_de_la_semana(): void
+    {
+        $this->actingAs($this->admin);
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.service_weekdays', ['1', '7'])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        Setting::flushCache();
+
+        $this->assertSame([1, 7], Setting::serviceWeekdays());
+    }
+
+    public function test_una_fecha_repetida_se_rechaza_sin_cambiar_la_configuracion(): void
+    {
+        $this->actingAs($this->admin);
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.service_exceptions', [
+                'a' => ['date' => '2026-12-25', 'has_service' => '0', 'reason' => null],
+                'b' => ['date' => '2026-12-25', 'has_service' => '1', 'reason' => null],
+            ])
+            ->call('save')
+            ->assertHasFormErrors();
+
+        $this->assertDatabaseMissing('settings', ['key' => Setting::SERVICE_EXCEPTIONS]);
     }
 
     // ====================== Setting API ======================

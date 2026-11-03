@@ -6,7 +6,6 @@ use App\Filament\Client\Schemas\ClientTicketAssignForm;
 use App\Models\Ticket;
 use App\Models\Trip;
 use App\Services\ClientTicketAssignmentService;
-use App\Support\ClientSession;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
 use Filament\Notifications\Notification;
@@ -24,7 +23,7 @@ use Throwable;
 /**
  * Dashboard del panel de clientes ("/" del panel).
  *
- * Sólo se llega acá identificado (middleware EnsureClientIdentified), y en
+ * Sólo se llega acá identificado (login del guard client), y en
  * cada query/action se re-verifica el DNI de la sesión: el panel nunca confía
  * en IDs que vengan por la URL o el form.
  */
@@ -44,23 +43,6 @@ class MyTickets extends BaseDashboard implements HasTable
     public function getTitle(): string
     {
         return 'Mis boletos';
-    }
-
-    protected function getHeaderActions(): array
-    {
-        return [
-            Action::make('salir')
-                ->label('Salir')
-                ->icon('heroicon-m-arrow-left-on-rectangle')
-                ->color('gray')
-                ->action(function () {
-                    // Borra sólo la identidad del cliente; la sesión del panel
-                    // de admin es otra cosa y no se toca.
-                    ClientSession::logout();
-
-                    $this->redirect(ClientAccess::getUrl(panel: 'clientes'));
-                }),
-        ];
     }
 
     public function table(Table $table): Table
@@ -87,7 +69,7 @@ class MyTickets extends BaseDashboard implements HasTable
                 TextColumn::make('tramo')
                     ->label('Tramo')
                     ->state(fn (Ticket $record) => trim(
-                        ($record->origin?->name ?? '?') . ' → ' . ($record->destination?->name ?? '?')
+                        ($record->origin?->name ?? '?').' → '.($record->destination?->name ?? '?')
                     )),
 
                 // Identidad clara del tramo: "Ida" para la ida del diferido y
@@ -97,7 +79,7 @@ class MyTickets extends BaseDashboard implements HasTable
                 BadgeColumn::make('tipo')
                     ->state(fn (Ticket $record) => match (true) {
                         $record->isReturnLeg() => ($outbound = $record->roundTripOutboundTicket())
-                            ? 'Vuelta de N°' . $outbound->id
+                            ? 'Vuelta de N°'.$outbound->id
                             : 'Vuelta',
                         $record->isPartOfRoundTrip() || (bool) $record->is_round_trip => 'Ida',
                         default => 'Solo ida',
@@ -117,7 +99,7 @@ class MyTickets extends BaseDashboard implements HasTable
                     ->state(fn (Ticket $record) => $record->isPendingDate()
                         ? null
                         : trim(($record->trip?->trip_date?->format('d/m/Y') ?? '')
-                            . ($record->trip?->schedule?->departure_time?->format(' H:i') ?? '')))
+                            .($record->trip?->schedule?->departure_time?->format(' H:i') ?? '')))
                     ->placeholder('Sin fecha')
                     // Ordena por la fecha real del viaje (subquery): la columna
                     // computada "viaje" no existe en la base de datos.
@@ -136,7 +118,7 @@ class MyTickets extends BaseDashboard implements HasTable
                     ->label('Precio')
                     ->state(fn (Ticket $record) => $record->isReturnLeg()
                         ? '—'
-                        : '$' . number_format((float) $record->price, 2, ',', '.'))
+                        : '$'.number_format((float) $record->price, 2, ',', '.'))
                     // Mobile: no hay espacio para las tintas del importe.
                     ->visibleFrom('sm'),
             ])
@@ -152,7 +134,7 @@ class MyTickets extends BaseDashboard implements HasTable
                         ->color('gray')
                         ->button()
                         ->size('sm')
-                        ->url(fn (Ticket $record) => route('clientes.boletos.pdf', ['ticket' => $record->id]))
+                        ->url(fn (Ticket $record) => route('clientes.boletos.show', ['ticket' => $record->id]))
                         ->openUrlInNewTab(),
                 ]),
             ]);
@@ -207,7 +189,7 @@ class MyTickets extends BaseDashboard implements HasTable
 
                     Notification::make()
                         ->title('No se pudo asignar la fecha')
-                        ->body('Ocurrió un problema: ' . $e->getMessage() . '. Volvé a intentar en unos minutos o consultá en boletería.')
+                        ->body('Ocurrió un problema: '.$e->getMessage().'. Volvé a intentar en unos minutos o consultá en boletería.')
                         ->danger()
                         ->persistent()
                         ->send();
@@ -219,16 +201,16 @@ class MyTickets extends BaseDashboard implements HasTable
 
                 Notification::make()
                     ->title('¡Boleto asignado!')
-                    ->body('Tu boleto N°' . $fresh->id . ': '
-                        . ($fresh->trip?->trip_date?->format('d/m/Y') ?? '')
-                        . ($fresh->trip?->schedule?->departure_time?->format(' H:i') ?? '')
-                        . ($fresh->seat?->seat_number !== null ? ' — asiento ' . $fresh->seat->seat_number : ''))
+                    ->body('Tu boleto N°'.$fresh->id.': '
+                        .($fresh->trip?->trip_date?->format('d/m/Y') ?? '')
+                        .($fresh->trip?->schedule?->departure_time?->format(' H:i') ?? '')
+                        .($fresh->seat?->seat_number !== null ? ' — asiento '.$fresh->seat->seat_number : ''))
                     ->success()
                     ->actions([
                         Action::make('descargar')
                             ->label('Ver boleto')
                             ->icon('heroicon-m-document-arrow-down')
-                            ->url(route('clientes.boletos.pdf', ['ticket' => $fresh->id]), shouldOpenInNewTab: true)
+                            ->url(route('clientes.boletos.show', ['ticket' => $fresh->id]), shouldOpenInNewTab: true)
                             ->button(),
                     ])
                     ->send();

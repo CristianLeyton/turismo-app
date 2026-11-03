@@ -2,7 +2,7 @@
 
 namespace Tests\Feature;
 
-use App\Filament\Client\Pages\ClientAccess;
+use App\Filament\Client\Pages\Auth\ClientLogin;
 use App\Filament\Client\Pages\MyTickets;
 use App\Models\Bus;
 use App\Models\Clients;
@@ -13,12 +13,14 @@ use App\Models\RouteStop;
 use App\Models\Sale;
 use App\Models\Schedule;
 use App\Models\Seat;
+use App\Models\Setting;
 use App\Models\Ticket;
 use App\Models\TicketDateChange;
 use App\Models\Trip;
 use App\Models\User;
 use App\Services\ClientTicketAssignmentService;
-use App\Support\ClientSession;
+use Filament\Actions\Testing\TestAction;
+use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Validation\ValidationException;
@@ -27,7 +29,7 @@ use Tests\TestCase;
 
 /**
  * Panel público de clientes (/clientes):
- * - ingreso por DNI (plan A) con rate limit,
+ * - ingreso con DNI y contraseña (login de Filament, guard client),
  * - boletos delimitados por DNI (sólo los propios),
  * - asignación de primera fecha/horario/asiento a boletos pendientes,
  * - bloqueo tras asignar (sólo el personal reprograma),
@@ -67,10 +69,10 @@ class ClientPanelTicketsTest extends TestCase
     {
         // Locations, bus y rutas tienen nombre/plate únicos: un test puede
         // crear dos clientes y sus fixtures no deben chocar entre sí.
-        $tartagal = Location::firstOrCreate(['name' => 'Tartagal ' . $dni], ['is_active' => true]);
-        $urundel = Location::firstOrCreate(['name' => 'Urundel ' . $dni], ['is_active' => true]);
+        $tartagal = Location::firstOrCreate(['name' => 'Tartagal '.$dni], ['is_active' => true]);
+        $urundel = Location::firstOrCreate(['name' => 'Urundel '.$dni], ['is_active' => true]);
 
-        $bus = Bus::create(['name' => "Linea SF {$dni}-{$n}", 'plate' => 'SF' . abs(crc32($dni . $n)), 'seat_count' => 4, 'floors' => 1]);
+        $bus = Bus::create(['name' => "Linea SF {$dni}-{$n}", 'plate' => 'SF'.abs(crc32($dni.$n)), 'seat_count' => 4, 'floors' => 1]);
 
         $route = BusRoute::create(['name' => "Ruta {$dni}-{$n}", 'bus_id' => $bus->id, 'is_active' => true]);
         RouteStop::create(['route_id' => $route->id, 'location_id' => $tartagal->id, 'stop_order' => 1]);
@@ -132,85 +134,103 @@ class ClientPanelTicketsTest extends TestCase
 
     private function identify(string $dni): void
     {
-        session([ClientSession::SESSION_KEY => $dni]);
+        $this->actingAs(Clients::query()->where('dni', $dni)->firstOrFail(), 'client');
     }
 
     // ------------------------------------------------------------------
-    // Identificación (plan A)
+    // Ingreso (login de Filament, guard client)
     // ------------------------------------------------------------------
 
     public function test_sin_sesion_el_panel_redirige_al_ingreso(): void
     {
-        $this->get('/clientes')->assertRedirect('/clientes/ingresar');
-        $this->get('/clientes/ingresar')->assertOk();
+        $this->get('/clientes')->assertRedirect('/clientes/login');
+        $this->get('/clientes/login')->assertOk()->assertSeeText('DNI');
     }
 
-    public function test_un_dni_del_padron_identifica_y_redirige_a_mis_boletos(): void
+    public function test_la_direccion_anterior_redirige_al_login(): void
     {
-        $this->createClient('11223344');
+        $this->get('/clientes/ingresar')->assertRedirect('/clientes/login');
+    }
 
-        Livewire::test(ClientAccess::class)
-            ->set('dni', '11.223.344') // normaliza puntos
-            ->set('password', 'clave-prueba')
-            ->call('buscar')
+    public function test_dni_y_contraseña_correctos_inician_sesion_y_van_a_mis_boletos(): void
+    {
+        $client = $this->createClient('11223344');
+
+        $this->clientLogin()
+            ->fillForm(['dni' => '11.223.344', 'password' => 'clave-prueba']) // normaliza puntos
+            ->call('authenticate')
+            ->assertHasNoFormErrors()
             ->assertRedirect(MyTickets::getUrl(panel: 'clientes'));
 
-        $this->assertSame('11223344', session(ClientSession::SESSION_KEY));
+        $this->assertAuthenticatedAs($client, 'client');
+        $this->assertGuest('web');
     }
 
-    public function test_un_dni_desconocido_no_identifica(): void
+    public function test_dni_desconocido_y_contraseña_incorrecta_dan_el_mismo_error(): void
     {
         $this->createClient('11223344');
 
-        Livewire::test(ClientAccess::class)
-            ->set('dni', '99999999')
-            ->call('buscar');
+        $this->clientLogin()
+            ->fillForm(['dni' => '99999999', 'password' => 'clave-prueba'])
+            ->call('authenticate')
+            ->assertHasFormErrors(['dni' => 'El DNI o la contraseña son incorrectos.']);
 
-        $this->assertNull(session(ClientSession::SESSION_KEY));
+        $this->clientLogin()
+            ->fillForm(['dni' => '11223344', 'password' => 'otra-clave'])
+            ->call('authenticate')
+            ->assertHasFormErrors(['dni' => 'El DNI o la contraseña son incorrectos.']);
+
+        $this->assertGuest('client');
     }
 
-    public function test_un_dni_del_padron_sin_su_contraseña_no_identifica(): void
+    public function test_sin_contraseña_no_inicia_sesion(): void
     {
         $this->createClient('11223344');
 
-        Livewire::test(ClientAccess::class)
-            ->set('dni', '11223344')
-            ->call('buscar');
+        $this->clientLogin()
+            ->fillForm(['dni' => '11223344', 'password' => ''])
+            ->call('authenticate')
+            ->assertHasFormErrors(['password' => 'required']);
 
-        $this->assertNull(session(ClientSession::SESSION_KEY));
-
-        // Y con contraseña errónea tampoco.
-        Livewire::test(ClientAccess::class)
-            ->set('dni', '11223344')
-            ->set('password', 'otra-clave')
-            ->call('buscar');
-
-        $this->assertNull(session(ClientSession::SESSION_KEY));
+        $this->assertGuest('client');
     }
 
-    public function test_un_cliente_con_contraseña_sigue_el_rate_limit(): void
+    public function test_el_limite_de_intentos_bloquea_incluso_la_contraseña_correcta(): void
     {
         $this->createClient('11223344');
 
-        // 8 intentos fallidos desde la misma IP alcanzan el límite.
-        for ($i = 0; $i < 8; $i++) {
-            Livewire::test(ClientAccess::class)
-                ->set('dni', '11223344')
-                ->set('password', 'clave-errada-' . $i)
-                ->call('buscar');
-
-            $this->assertNull(session(ClientSession::SESSION_KEY));
+        for ($i = 0; $i < 5; $i++) {
+            $this->clientLogin()
+                ->fillForm(['dni' => '11223344', 'password' => 'clave-errada-'.$i])
+                ->call('authenticate');
         }
 
-        // Incluso la contraseña correcta queda bloqueada.
-        Livewire::test(ClientAccess::class)
-            ->set('dni', '11223344')
-            ->set('password', 'clave-prueba')
-            ->call('buscar');
+        $this->clientLogin()
+            ->fillForm(['dni' => '11223344', 'password' => 'clave-prueba'])
+            ->call('authenticate')
+            ->assertNotified();
 
-        $this->assertNull(session(ClientSession::SESSION_KEY));
+        $this->assertGuest('client');
     }
 
+    public function test_un_cliente_dado_de_baja_no_inicia_sesion(): void
+    {
+        $this->createClient('11223344')->delete();
+
+        $this->clientLogin()
+            ->fillForm(['dni' => '11223344', 'password' => 'clave-prueba'])
+            ->call('authenticate')
+            ->assertHasFormErrors(['dni']);
+
+        $this->assertGuest('client');
+    }
+
+    private function clientLogin(): \Livewire\Features\SupportTesting\Testable
+    {
+        Filament::setCurrentPanel('clientes');
+
+        return Livewire::test(ClientLogin::class);
+    }
 
     // Scoping por DNI
     // ------------------------------------------------------------------
@@ -310,6 +330,45 @@ class ClientPanelTicketsTest extends TestCase
             'schedule_id' => $b['schedule']->id,
             'seat_id' => Seat::where('bus_id', $b['bus']->id)->first()->id,
         ]);
+    }
+
+    public function test_no_se_permite_un_dia_sin_servicio_aunque_haya_un_superadmin_logueado(): void
+    {
+        $f = $this->createPendingTicket('11223344');
+
+        $this->identify($f['client']->dni);
+
+        // Un superadmin del panel de administración en el mismo navegador:
+        // su permiso no aplica en el panel de clientes.
+        $this->actingAs(\App\Models\User::factory()->superAdmin()->create(), 'web');
+        $this->assertTrue(\App\Support\ServiceDays::userCanBypass());
+
+        try {
+            // Domingo 04/10/2026: sin servicio con la configuración inicial.
+            app(ClientTicketAssignmentService::class)->assign($f['ticket'], [
+                'date' => '2026-10-04',
+                'schedule_id' => $f['schedule']->id,
+                'seat_id' => Seat::where('bus_id', $f['bus']->id)->first()->id,
+            ]);
+            $this->fail('Debió rechazar el día sin servicio.');
+        } catch (ValidationException $e) {
+            $this->assertStringContainsString('04/10/2026 es un día sin servicio', $e->errors()['date'][0]);
+        }
+
+        $this->assertNull($f['ticket']->fresh()->trip_id);
+    }
+
+    public function test_el_calendario_del_cliente_siempre_deshabilita_los_dias_sin_servicio(): void
+    {
+        $f = $this->createPendingTicket('11223344');
+        $this->actingAs(\App\Models\User::factory()->superAdmin()->create());
+
+        $disabled = collect(\App\Filament\Client\Schemas\ClientTicketAssignForm::make($f['ticket']))
+            ->first(fn ($component) => $component->getName() === 'date')
+            ->getDisabledDates();
+
+        $this->assertContains('2026-10-04', $disabled);
+        $this->assertNotContains('2026-10-05', $disabled);
     }
 
     public function test_no_se_permite_fecha_pasada(): void
@@ -461,7 +520,7 @@ class ClientPanelTicketsTest extends TestCase
         // La ida: badge "Ida". La vuelta: "Vuelta de N°X" con el boleto de ida.
         Livewire::test(MyTickets::class)
             ->assertSeeText('Ida')
-            ->assertSeeText('Vuelta de N°' . $f['outbound']->id);
+            ->assertSeeText('Vuelta de N°'.$f['outbound']->id);
     }
 
     public function test_bajo_el_precio_de_la_vuelta_no_hay_aclaracion(): void
@@ -495,11 +554,11 @@ class ClientPanelTicketsTest extends TestCase
         $a = $this->createPendingTicket('11223344');
 
         // Sin sesión: prohibido.
-        $this->get('/clientes/boletos/' . $a['ticket']->id . '/pdf')->assertForbidden();
+        $this->get('/clientes/boletos/'.$a['ticket']->id.'/pdf')->assertForbidden();
 
         // Propio: PDF válido.
         $this->identify($a['client']->dni);
-        $response = $this->get('/clientes/boletos/' . $a['ticket']->id . '/pdf');
+        $response = $this->get('/clientes/boletos/'.$a['ticket']->id.'/pdf');
 
         $response->assertOk();
         $this->assertSame('application/pdf', $response->headers->get('Content-Type'));
@@ -508,7 +567,74 @@ class ClientPanelTicketsTest extends TestCase
         // Ajeno: 404, infalible para otro cliente.
         $b = $this->createPendingTicket('55667788');
         $this->identify($b['client']->dni);
-        $this->get('/clientes/boletos/' . $a['ticket']->id . '/pdf')->assertNotFound();
+        $this->get('/clientes/boletos/'.$a['ticket']->id.'/pdf')->assertNotFound();
+    }
+
+    // ------------------------------------------------------------------
+    // "Ver boleto": link compartible o PDF según DESCARGA_AUTOMATICA_PDF
+    // ------------------------------------------------------------------
+
+    public function test_ver_boleto_con_el_parametro_desactivado_abre_el_link(): void
+    {
+        Setting::set(Setting::DESCARGA_AUTOMATICA_PDF, '0');
+        $a = $this->createPendingTicket('11223344');
+        $this->identify($a['client']->dni);
+
+        $response = $this->get(route('clientes.boletos.show', ['ticket' => $a['ticket']->id]));
+
+        $shareUrl = $a['ticket']->fresh()->shareUrl();
+        $response->assertRedirect($shareUrl);
+        $this->assertStringContainsString('/boletos/t_', $shareUrl);
+    }
+
+    public function test_ver_boleto_con_el_parametro_activado_abre_el_pdf(): void
+    {
+        Setting::set(Setting::DESCARGA_AUTOMATICA_PDF, '1');
+        $a = $this->createPendingTicket('11223344');
+        $this->identify($a['client']->dni);
+
+        $this->get(route('clientes.boletos.show', ['ticket' => $a['ticket']->id]))
+            ->assertRedirect(route('clientes.boletos.pdf', ['ticket' => $a['ticket']->id]));
+
+        $this->assertNull($a['ticket']->fresh()->share_token, 'Con PDF no hace falta generar el token.');
+    }
+
+    public function test_ver_boleto_con_el_parametro_sin_configurar_abre_el_pdf(): void
+    {
+        $a = $this->createPendingTicket('11223344');
+        $this->identify($a['client']->dni);
+
+        $this->get(route('clientes.boletos.show', ['ticket' => $a['ticket']->id]))
+            ->assertRedirect(route('clientes.boletos.pdf', ['ticket' => $a['ticket']->id]));
+    }
+
+    public function test_ver_boleto_ajeno_o_sin_sesion_no_muestra_nada(): void
+    {
+        Setting::set(Setting::DESCARGA_AUTOMATICA_PDF, '0');
+        $a = $this->createPendingTicket('11223344');
+        $b = $this->createPendingTicket('55667788');
+
+        $this->get(route('clientes.boletos.show', ['ticket' => $a['ticket']->id]))->assertForbidden();
+
+        $this->identify($b['client']->dni);
+        $this->get(route('clientes.boletos.show', ['ticket' => $a['ticket']->id]))->assertNotFound();
+
+        $this->assertNull($a['ticket']->fresh()->share_token, 'Ni sin sesión ni con un boleto ajeno se genera el link.');
+    }
+
+    public function test_ver_boleto_de_la_tabla_usa_la_ruta_del_panel_sin_generar_tokens(): void
+    {
+        Setting::set(Setting::DESCARGA_AUTOMATICA_PDF, '0');
+        $a = $this->createPendingTicket('11223344');
+        $this->identify($a['client']->dni);
+
+        Livewire::test(MyTickets::class)
+            ->assertActionHasUrl(
+                TestAction::make('boleto_pdf')->table($a['ticket']),
+                route('clientes.boletos.show', ['ticket' => $a['ticket']->id]),
+            );
+
+        $this->assertFalse(Ticket::query()->whereNotNull('share_token')->exists(), 'Listar no genera links.');
     }
 
     public function test_por_defecto_ve_solo_pendientes_y_el_switch_incluye_fechados(): void
@@ -542,15 +668,38 @@ class ClientPanelTicketsTest extends TestCase
             ->assertSeeText('Pendiente');
     }
 
-    public function test_salir_borra_identificacion(): void
+    public function test_mis_boletos_no_tiene_un_salir_propio(): void
     {
         $f = $this->createPendingTicket('11223344');
         $this->identify($f['client']->dni);
 
-        Livewire::test(MyTickets::class)
-            ->callAction('salir')
-            ->assertRedirect(ClientAccess::getUrl(panel: 'clientes'));
+        // "Salir" vive sólo en el menú de usuario.
+        Livewire::test(MyTickets::class)->assertActionDoesNotExist('salir');
+    }
 
-        $this->assertNull(session(ClientSession::SESSION_KEY));
+    public function test_el_salir_del_menu_de_usuario_cierra_solo_la_sesion_del_cliente(): void
+    {
+        $f = $this->createPendingTicket('11223344');
+        $admin = User::factory()->create();
+        $this->actingAs($admin, 'web');
+        $this->identify($f['client']->dni);
+
+        $this->post('/clientes/salir')->assertRedirect('/clientes/login');
+
+        $this->assertGuest('client');
+        $this->assertAuthenticatedAs($admin, 'web');
+    }
+
+    public function test_el_menu_de_usuario_muestra_el_nombre_el_perfil_y_salir(): void
+    {
+        $f = $this->createPendingTicket('11223344');
+        $this->identify($f['client']->dni);
+
+        $this->get('/clientes')
+            ->assertOk()
+            ->assertSee('Ana García')
+            ->assertSee(route('clientes.logout'), false)
+            ->assertDontSee(route('filament.clientes.auth.logout'), false)
+            ->assertSee('/clientes/perfil', false);
     }
 }

@@ -198,5 +198,4 @@ class PaymentMethod extends Model
         Cache::forget('payment_methods.options');
         Cache::forget('payment_methods.all');
     }
-
 }

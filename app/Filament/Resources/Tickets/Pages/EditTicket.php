@@ -303,9 +303,7 @@ class EditTicket extends ResourcePage
      */
     public static function isReturnLegWithSharedPrice(Ticket $ticket): bool
     {
-        return $ticket->isPartOfRoundTrip()
-            && is_null($ticket->return_trip_id)
-            && (float) $ticket->price === 0.0;
+        return $ticket->isReturnLeg();
     }
 
     /**

@@ -2,17 +2,18 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\HasShareToken;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Validation\ValidationException;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Facades\Auth;
-
+use Illuminate\Validation\ValidationException;
 
 class Ticket extends Model
 {
+    use HasShareToken;
     use SoftDeletes;
 
     protected $fillable = [
@@ -34,6 +35,7 @@ class Ticket extends Model
         'destination_location_id',
         'deleted_by',
         'deletion_reason',
+        'share_token',
     ];
 
     protected $casts = [
@@ -50,7 +52,8 @@ class Ticket extends Model
         } elseif ($this->travels_with_pets) {
             return 'Mascota';
         }
-        return "No";
+
+        return 'No';
     }
 
     protected static function boot()
@@ -67,14 +70,14 @@ class Ticket extends Model
 
     protected static function booted(): void
     {
-        // Normaliza la marca del tramo de vuelta para ventas nuevas usando la
-        // convención histórica (diferido + sin viaje de vuelta + precio 0).
-        // A partir de la venta sin fecha, la identificación explícita
-        // (`is_return_leg`) es la fuente de verdad; acá se autocompleta para
-        // que toda la lógica existente pueda confiar en la columna.
+        // `is_return_leg` es la única fuente de verdad del tramo de vuelta.
+        // Si quien crea el boleto no la indicó, se completa con la convención
+        // histórica (diferido + sin viaje de vuelta + precio 0). Una marca
+        // explícita (también `false`) nunca se pisa: una ida a precio 0 sigue
+        // siendo ida.
         static::creating(function (Ticket $ticket): void {
             if (
-                ! $ticket->is_return_leg
+                ! array_key_exists('is_return_leg', $ticket->getAttributes())
                 && (bool) $ticket->is_round_trip
                 && is_null($ticket->return_trip_id)
                 && (float) ($ticket->price ?? 0) === 0.0
@@ -126,27 +129,21 @@ class Ticket extends Model
 
     /**
      * ¿Este boleto representa el tramo de vuelta de un diferido?
-     * Desde la migración de `is_return_leg` la marca es explícita; la
-     * convención anterior (is_round_trip + return_trip_id NULL + price 0)
-     * queda como fallback para datos anteriores al backfill.
+     * Solo la marca explícita lo decide: el precio no interviene (una ida a
+     * precio 0 sigue siendo ida).
      */
     public function isReturnLeg(): bool
     {
-        return $this->is_return_leg || ((bool) $this->is_round_trip && is_null($this->return_trip_id) && (float) $this->price === 0.0);
+        return (bool) $this->is_return_leg;
     }
 
     /**
      * ¿Este boleto pertenece a una venta diferida (ida y vuelta)?
-     * Usa la marca explícita cuando existe (cubre también la venta mixta con
-     * vuelta pendiente); si no, la convención original del diferido.
+     * La venta solo de ida guarda `is_round_trip = false`.
      */
     public function isPartOfRoundTrip(): bool
     {
-        if ((bool) $this->is_return_leg) {
-            return true;
-        }
-
-        return (bool) $this->is_round_trip && (filled($this->return_trip_id) || (float) $this->price === 0.0);
+        return (bool) $this->is_round_trip || (bool) $this->is_return_leg;
     }
 
     /**
@@ -154,7 +151,7 @@ class Ticket extends Model
      */
     public function occupiesSeat(): bool
     {
-        return !is_null($this->seat_id);
+        return ! is_null($this->seat_id);
     }
 
     public function origin(): BelongsTo
@@ -220,7 +217,7 @@ class Ticket extends Model
     {
         return TicketDateChange::query()
             ->where('leg', TicketDateChange::LEG_RETURN)
-            ->whereHas('ticket', fn($q) => $q
+            ->whereHas('ticket', fn ($q) => $q
                 ->where('sale_id', $this->sale_id)
                 ->where('passenger_id', $this->passenger_id))
             ->exists();
@@ -243,18 +240,36 @@ class Ticket extends Model
     }
 
     /**
+     * Boleto de vuelta hermano de este boleto de ida (misma venta y pasajero).
+     * Es la fuente de verdad de la vuelta: refleja su viaje y asiento actuales
+     * aunque se haya reprogramado después de la venta. Null si este boleto ya
+     * es la vuelta, no es diferido o la vuelta fue borrada.
+     */
+    public function roundTripReturnTicket(): ?self
+    {
+        if ($this->isReturnLeg()) {
+            return null;
+        }
+
+        return self::query()
+            ->where('sale_id', $this->sale_id)
+            ->where('passenger_id', $this->passenger_id)
+            ->where('is_return_leg', true)
+            ->whereKeyNot($this->getKey())
+            ->first();
+    }
+
+    /**
      * Precio para mostrar en PDF y panel.
-     * Para tickets de vuelta (is_round_trip=true, return_trip_id=null),
-     * busca el precio del boleto de ida asociado (mismo pasajero, misma venta).
+     * El tramo de vuelta muestra el precio del boleto de ida asociado (mismo
+     * pasajero, misma venta), porque el precio del diferido vive en la ida.
      */
     public function getDisplayPriceAttribute(): float
     {
-        // Si no es ticket de vuelta, devolver precio propio
-        if (!($this->isPartOfRoundTrip() && is_null($this->return_trip_id))) {
+        if (! $this->isReturnLeg()) {
             return (float) $this->price;
         }
 
-        // Es ticket de vuelta: buscar el boleto de ida asociado
         $outbound = self::where('sale_id', $this->sale_id)
             ->where('passenger_id', $this->passenger_id)
             ->where('is_round_trip', true)
@@ -275,12 +290,12 @@ class Ticket extends Model
     public function getBoardingDepartureTime(?Trip $tripOverride = null, bool $forReturnTrip = false): ?Carbon
     {
         $trip = $tripOverride ?? ($forReturnTrip ? $this->returnTrip : $this->trip);
-        if (!$trip?->route || !$trip->schedule) {
+        if (! $trip?->route || ! $trip->schedule) {
             return null;
         }
 
         $boardingLocationId = $forReturnTrip ? $this->destination_location_id : $this->origin_location_id;
-        if (!$boardingLocationId) {
+        if (! $boardingLocationId) {
             return $trip->schedule->departure_time;
         }
 
@@ -298,12 +313,12 @@ class Ticket extends Model
     public function getBoardingArrivalTime(?Trip $tripOverride = null, bool $forReturnTrip = false): ?Carbon
     {
         $trip = $tripOverride ?? ($forReturnTrip ? $this->returnTrip : $this->trip);
-        if (!$trip?->route || !$trip->schedule) {
+        if (! $trip?->route || ! $trip->schedule) {
             return null;
         }
 
         $alightingLocationId = $forReturnTrip ? $this->origin_location_id : $this->destination_location_id;
-        if (!$alightingLocationId) {
+        if (! $alightingLocationId) {
             return $trip->schedule->arrival_time;
         }
 
@@ -315,7 +330,7 @@ class Ticket extends Model
         $trip = Trip::findOrFail($data['trip_id']);
 
         // Validar que origen y destino sean válidos para la ruta
-        if (!$trip->route->isValidSegment($data['origin_location_id'], $data['destination_location_id'])) {
+        if (! $trip->route->isValidSegment($data['origin_location_id'], $data['destination_location_id'])) {
             throw ValidationException::withMessages([
                 'origin_location_id' => 'El origen y destino no son válidos para esta ruta.',
             ]);
@@ -346,9 +361,9 @@ class Ticket extends Model
                 ->toArray();
 
             $unavailableSeatIds = array_merge($occupiedSeatIds, $reservedByOthersSeatIds);
-            $isSeatAvailable = !in_array($data['seat_id'], $unavailableSeatIds);
+            $isSeatAvailable = ! in_array($data['seat_id'], $unavailableSeatIds);
 
-            if (!$isSeatAvailable) {
+            if (! $isSeatAvailable) {
                 throw ValidationException::withMessages([
                     'seat_id' => 'El asiento no está disponible.',
                 ]);

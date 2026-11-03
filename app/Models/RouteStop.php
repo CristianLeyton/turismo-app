@@ -35,7 +35,7 @@ class RouteStop extends Model
      */
     public function getDepartureTimeForSchedule(Schedule $schedule): ?Carbon
     {
-        if (!$schedule || !$schedule->departure_time) {
+        if (! $schedule || ! $schedule->departure_time) {
             return null;
         }
 
@@ -51,7 +51,7 @@ class RouteStop extends Model
      */
     public function getArrivalTimeForSchedule(Schedule $schedule): ?Carbon
     {
-        if (!$schedule) {
+        if (! $schedule) {
             return null;
         }
 

@@ -61,6 +61,18 @@
             text-transform: uppercase;
         }
 
+        .leg-label {
+            display: inline-block;
+            margin-top: 1mm;
+            padding: 0.5mm 2mm;
+            border: 1px solid #d946ef;
+            border-radius: 3px;
+            color: #d946ef;
+            font-size: 10px;
+            font-weight: bold;
+            letter-spacing: 1px;
+        }
+
         .section-title {
             font-size: 11px;
             font-weight: bold;
@@ -218,10 +230,22 @@
 
 <body>
 
-    @foreach ($tickets->chunk(2) as $pair)
+    @foreach (\App\Services\TicketPdfService::sheets($tickets) as $pair)
         <div class='sheet'>
 
             @foreach ($pair as $index => $ticket)
+                @php
+                    /* Tramo del boleto según su marca: "IDA" para la ida de un
+                       diferido, "VUELTA de N°X" para la vuelta (X = su ida),
+                       sin etiqueta para un boleto sólo de ida. */
+                    $legLabel = null;
+                    if ($ticket->isReturnLeg()) {
+                        $outboundTicket = $ticket->roundTripOutboundTicket();
+                        $legLabel = $outboundTicket ? "VUELTA de N°{$outboundTicket->id}" : 'VUELTA';
+                    } elseif ($ticket->is_round_trip) {
+                        $legLabel = 'IDA';
+                    }
+                @endphp
                 <div class='ticket'>
 
                     <table width='100%' cellspacing='0' cellpadding='0'>
@@ -240,6 +264,9 @@
                                             <div class='route-title'>
                                                 {{ $ticket->origin->name }} > {{ $ticket->destination->name }}
                                             </div>
+                                            @if ($legLabel)
+                                                <div class='leg-label'>{{ $legLabel }}</div>
+                                            @endif
                                         </td>
                                     </tr>
                                 </table>

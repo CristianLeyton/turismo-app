@@ -723,4 +723,52 @@ class TicketEditTest extends TestCase
             'field' => 'price',
         ]);
     }
+
+    public function test_la_ida_a_precio_0_permite_editar_el_precio(): void
+    {
+        $this->seller->givePermissionTo('tickets.edit');
+
+        $passenger = Passenger::create([
+            'first_name' => 'Pedro',
+            'last_name' => 'Gomez',
+            'dni' => '30000111',
+            'phone_number' => '3875550001',
+            'passenger_type' => 'adult',
+        ]);
+        $sale = Sale::create(['user_id' => $this->seller->id, 'sale_date' => now()]);
+
+        // Venta mixta de cortesía: ida sin viaje de vuelta y a precio 0.
+        $ida = Ticket::create([
+            'sale_id' => $sale->id,
+            'passenger_id' => $passenger->id,
+            'price' => 0,
+            'payment_method' => $this->method->code,
+            'is_round_trip' => true,
+            'is_return_leg' => false,
+            'origin_location_id' => $this->oran->id,
+            'destination_location_id' => $this->salta->id,
+        ]);
+        $vuelta = Ticket::create([
+            'sale_id' => $sale->id,
+            'passenger_id' => $passenger->id,
+            'price' => 0,
+            'payment_method' => $this->method->code,
+            'is_round_trip' => true,
+            'is_return_leg' => true,
+            'origin_location_id' => $this->salta->id,
+            'destination_location_id' => $this->oran->id,
+        ]);
+
+        $this->assertFalse(EditTicket::isReturnLegWithSharedPrice($ida));
+        $this->assertTrue(EditTicket::isReturnLegWithSharedPrice($vuelta));
+
+        Livewire::actingAs($this->seller)
+            ->test(EditTicket::class, ['record' => $ida->getKey()])
+            ->set('data.price', '8000')
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertSame(8000.0, (float) $ida->fresh()->price);
+        $this->assertSame(0.0, (float) $vuelta->fresh()->price);
+    }
 }

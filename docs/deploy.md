@@ -37,6 +37,7 @@ mysqldump ... > backup_antes_de_deploy.sql
 git pull                # o subir los archivos por SFTP si no hay git
 
 # 3.3 Migraciones (imprescindible si el diff incluye database/migrations)
+#     Antes, leer la sección 7 (avisos pendientes para el próximo deploy).
 
 php artisan migrate --force
 
@@ -91,6 +92,169 @@ Si no cambió nada de la tabla, ese paso se puede saltear.
 - Base de datos: `php artisan migrate:rollback --step=N` si la migración lo
   permite; si no, restaurar el backup del paso 3.1.
 - Cachés: `php artisan optimize:clear` después de cualquier cambio de código.
+
+## 7. Avisos pendientes para el próximo deploy
+
+> Borrar cada aviso una vez que ese deploy se hizo y salió bien.
+
+### Emisión atómica: un solo boleto vigente por asiento (2026-11-03)
+
+La migración `2026_11_02_194728_add_active_seat_guard_to_tickets_table` hace
+que la base rechace dos boletos vigentes en el mismo viaje y asiento. Antes de
+cambiar nada, la migración busca los duplicados que ya existan en producción:
+
+- **Si no hay duplicados**, migra normalmente. No hay que hacer nada más.
+- **Si hay duplicados**, `migrate` falla **sin modificar la tabla** y muestra un
+  mensaje como este:
+
+  ```
+  No se puede agregar la restricción de un solo boleto vigente por asiento:
+  hay boletos vigentes duplicados. ... Conflictos: viaje 704, asiento (seat_id) 304: boletos 27270, 27280; ...
+  ```
+
+  Qué hacer:
+  1. Copiar la lista de conflictos de la salida de `migrate`.
+  2. En el panel, para cada grupo, dar de baja o reprogramar uno de los
+     boletos. El `seat_id` es el id interno del asiento, no el número que se
+     ve en pantalla. Para ubicarlo, abrir los boletos por su número.
+  3. Volver a correr `php artisan migrate --force`.
+
+- **Mientras la migración no pase, la app funciona igual.** La venta ya es todo
+  o nada con el código nuevo. Lo único que falta es la restricción en la base.
+- **Rollback:** `php artisan migrate:rollback --step=1` vuelve al índice
+  anterior.
+
+### Ciclo de vida de las reservas (2026-11-03)
+
+Cambia el selector de asientos (`resources/views/tickets/seat-selector.blade.php`)
+y la API de reservas. No tiene migraciones.
+
+- **Obligatorio:** `npm ci && npm run build` (paso 3.5). Sin recompilar, el
+  navegador sigue con el selector viejo y la renovación por actividad no
+  funciona.
+- Se borraron `app/Console/Kernel.php` y `config/schedule.php`, que Laravel 12
+  no cargaba. **El cron del servidor que corre
+  `app:cleanup-expired-reservations` sigue igual**: no hay que tocarlo.
+- Qué probar después: abrir "Vender" en dos pestañas con ventas en viajes
+  distintos; cancelar una no debe borrar los asientos de la otra.
+
+### Marca del tramo de vuelta (2026-11-03)
+
+Una venta de ida y vuelta a precio 0 (cortesía o canje) podía dejar la ida
+marcada como vuelta. El código nuevo identifica la vuelta solo por la marca
+`is_return_leg`, y la migración
+`2026_11_03_015112_fix_return_leg_marks_on_tickets_table` corrige los datos:
+
+1. Marca como vuelta los boletos **dados de baja** con la convención vieja
+   (ida y vuelta, sin viaje de vuelta y precio 0). La migración anterior solo
+   marcó los vigentes.
+2. En las ventas donde un pasajero tiene **exactamente dos** boletos de ida y
+   vuelta, los dos marcados como vuelta, el creado primero vuelve a ser la ida.
+
+**Antes de migrar** (después del backup del paso 3.1), correr estas consultas
+en la base de producción y guardar el resultado:
+
+```sql
+-- A. Boletos con la convención vieja, sin marca y sin vuelta hermana
+--    (no son idas a precio 0: la migración los marca como vuelta)
+SELECT COUNT(*) FROM tickets t
+WHERE t.is_round_trip = 1 AND t.return_trip_id IS NULL AND t.price = 0
+  AND t.is_return_leg = 0
+  AND NOT EXISTS (
+    SELECT 1 FROM tickets v
+    WHERE v.sale_id = t.sale_id AND v.passenger_id = t.passenger_id
+      AND v.id <> t.id AND v.is_return_leg = 1
+  );
+
+-- B. Ventas/pasajeros de ida y vuelta sin ninguna ida vigente
+SELECT sale_id, passenger_id, COUNT(*) AS boletos,
+       GROUP_CONCAT(id ORDER BY id) AS ids
+FROM tickets
+WHERE is_round_trip = 1 AND deleted_at IS NULL
+GROUP BY sale_id, passenger_id
+HAVING SUM(is_return_leg = 0) = 0 AND COUNT(*) >= 2;
+```
+
+**Después de migrar**, repetirlas:
+
+- **A** tiene que dar 0.
+- **B** tiene que quedar vacía. Si quedan filas, la migración no las tocó
+  porque el pasajero tiene más de dos boletos en la venta (o boletos de baja
+  en el grupo). Revisarlas a mano: abrir los boletos por su número y, en la
+  base, poner `is_return_leg = 0` en el que es la ida (el de origen y destino
+  de la venta original).
+
+- **Sin `npm run build`**: no cambian vistas ni clases de Tailwind.
+- **Qué probar después:** vender una ida y vuelta a precio 0 con la vuelta sin
+  fecha; en el detalle, la ida tiene que figurar como "Ida" y su precio tiene
+  que ser editable.
+- **Rollback:** revertir el código sin revertir la migración (`down()` no
+  cambia datos). Con el código viejo, las idas a precio 0 se vuelven a mostrar
+  como vuelta, que es el comportamiento anterior.
+
+### Login de clientes con Filament (2026-11-03)
+
+El panel de clientes (`/clientes`) pasa a usar el login de Filament con un
+guard propio (`client`) sobre la tabla `clients`. El de administración no
+cambia.
+
+- **Obligatorio:**
+  - `php artisan migrate --force`. Corre dos migraciones:
+    - `2026_11_03_021547_add_remember_token_to_clients_table`: columna para
+      "Recordarme".
+    - `2026_11_03_021634_set_initial_password_for_clients_without_password`:
+      los clientes sin contraseña (alta rápida desde la venta) reciben la
+      inicial, que es su DNI, y tienen que cambiarla al entrar. Antes no podían
+      ingresar.
+  - `npm ci && npm run build` (paso 3.5): la página de login es nueva.
+  - Cachés (paso 3.6): cambia `config/auth.php` y hay rutas nuevas.
+- **Avisar a los clientes:**
+  - La dirección de ingreso pasa a ser `/clientes/login`. `/clientes/ingresar`
+    redirige sola, así que los links viejos siguen andando.
+  - Los clientes que tenían la sesión abierta tienen que volver a ingresar, con
+    el mismo DNI y la misma contraseña.
+- **Qué probar después:**
+  - Un cliente entra con DNI y contraseña. Con una contraseña errónea ve "El DNI
+    o la contraseña son incorrectos."
+  - Un cliente con la contraseña inicial es llevado a elegir una nueva.
+  - En "Mis boletos", elegir fecha y asiento muestra el selector. Bajar el PDF
+    funciona.
+  - El panel muestra el menú de usuario (arriba a la derecha) con "Mi perfil",
+    el tema y "Salir". En "Mi perfil" (`/clientes/perfil`, ahora el perfil de
+    Filament) se editan nombre, apellido, teléfono y contraseña; el DNI no.
+  - Con un vendedor logueado en `/admin` en otra pestaña, "Salir" del cliente
+    no cierra la sesión del vendedor. Al revés sí: cerrar sesión en `/admin`
+    cierra también la del cliente en ese navegador.
+- **Va junto con "API de reservas segura"** (aviso siguiente): esa API ahora
+  exige la sesión de cliente que crea este cambio.
+- **Rollback:** revertir el código y correr
+  `php artisan migrate:rollback --step=2`. Esto elimina `remember_token`; la
+  migración de contraseñas no revierte datos, que siguen siendo válidos para el
+  ingreso anterior.
+
+### API de reservas segura (2026-11-03)
+
+La API del selector de asientos (`/api/seat-reservations/*`) exige estar
+logueado como vendedor (`/admin`) o como cliente (`/clientes`), y opera solo
+sobre la sesión de quien hace el pedido. Se eliminó el endpoint `cleanup`: la
+limpieza de reservas vencidas sigue a cargo del cron con
+`app:cleanup-expired-reservations`, que no cambia.
+
+- **Desplegar junto con "Login de clientes con Filament"** (aviso anterior).
+  Sin ese cambio, los clientes no tienen sesión y su selector de asientos
+  dejaría de funcionar.
+- **Sin migraciones ni `npm run build`**: el JavaScript del selector está en el
+  blade. Alcanza con limpiar cachés (paso 3.6), que incluye las rutas.
+- **Pestañas abiertas durante el deploy:** siguen funcionando, porque el
+  servidor ignora el identificador de sesión que mandaba el JavaScript viejo.
+  Recargar la página evita cualquier caso raro.
+- **Qué probar después:**
+  - Sin login, `POST /api/seat-reservations/status` responde 401.
+  - En "Vender", elegir, cambiar y deseleccionar asientos crea y libera las
+    reservas, sin errores en la consola del navegador.
+  - En el panel de clientes, "Elegir fecha" de un boleto sin fecha muestra el
+    selector y reserva el asiento.
+- **Rollback:** revertir el código y limpiar cachés.
 
 ---
 

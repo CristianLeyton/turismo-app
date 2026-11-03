@@ -144,7 +144,8 @@ class TicketSaleDniValidationTest extends TestCase
         );
     }
 
-    public function test_la_venta_sin_fecha_admite_un_dni_del_padron(): void    {
+    public function test_la_venta_sin_fecha_admite_un_dni_del_padron(): void
+    {
         \App\Support\Permissions::syncToDatabase();
         Role::findByName(\App\Support\Permissions::ROLE_SELLER)->givePermissionTo('tickets.vender_sin_fecha');
         \App\Support\Permissions::forgetFeatureFlagCache();

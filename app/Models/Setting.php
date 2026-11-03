@@ -43,6 +43,48 @@ class Setting extends Model
 
     public const VENTA_LIMITE_HORAS_DEFAULT = 5;
 
+    /**
+     * Permitir vender boletos con acompañante (menor y/o mascota). Es un
+     * parámetro visual: si está desactivado, el paso Pasajeros no muestra
+     * los switches "¿Viaja con un menor?" / "¿Viaja con mascotas?".
+     */
+    public const PERMITIR_ACOMPANANTES = 'tickets.permitir_acompanantes';
+
+    /**
+     * Emisión de boletos al finalizar la venta. Activado (default): la venta
+     * descarga el PDF automáticamente como siempre. Desactivado: NO hay
+     * auto-descarga; la venta abre/presenta la página de previsualización del
+     * PDF con link compartible (botón WhatsApp y descarga).
+     */
+    public const DESCARGA_AUTOMATICA_PDF = 'tickets.descarga_automatica_pdf';
+
+    /**
+     * Texto del mensaje de WhatsApp al compartir el link del boleto.
+     * Placeholders disponibles: {link} (y cae bien el nombre de la venta).
+     */
+    public const WHATSAPP_MENSAJE = 'tickets.whatsapp_mensaje';
+
+    public const WHATSAPP_MENSAJE_DEFAULT = 'Tu boleto: {link}';
+
+    /**
+     * Días de la semana con servicio (JSON con enteros ISO 1 = lunes … 7 = domingo).
+     */
+    public const SERVICE_WEEKDAYS = 'service_days.weekdays';
+
+    /** @var list<int> */
+    public const SERVICE_WEEKDAYS_DEFAULT = [1, 2, 3, 4, 5, 6];
+
+    /**
+     * Excepciones por fecha a los días de servicio (JSON con una lista de
+     * {date: Y-m-d, has_service: bool, reason: ?string}).
+     */
+    public const SERVICE_EXCEPTIONS = 'service_days.exceptions';
+
+    /** @var list<array{date: string, has_service: bool, reason: ?string}> */
+    public const SERVICE_EXCEPTIONS_DEFAULT = [
+        ['date' => '2026-09-13', 'has_service' => true, 'reason' => null],
+    ];
+
     protected $fillable = ['key', 'value'];
 
     /**
@@ -91,6 +133,108 @@ class Setting extends Model
     public static function ventaLimiteHoras(): int
     {
         return max(0, self::getInt(self::VENTA_LIMITE_HORAS, self::VENTA_LIMITE_HORAS_DEFAULT));
+    }
+
+    /**
+     * ¿Se puede vender con acompañante (menor/mascota)? Activado por defecto
+     * para conservar el comportamiento actual cuando la clave no existe.
+     */
+    public static function permiteAcompanantes(): bool
+    {
+        return self::getBool(self::PERMITIR_ACOMPANANTES, true);
+    }
+
+    /**
+     * ¿La venta descarga el PDF automáticamente al finalizar? Activado por
+     * defecto: si la clave no existe, sigue el comportamiento histórico.
+     * Desactivado = emisión por link (preview compartible, sin auto-descarga).
+     */
+    public static function descargaAutomaticaPdf(): bool
+    {
+        return self::getBool(self::DESCARGA_AUTOMATICA_PDF, true);
+    }
+
+    /**
+     * Texto del mensaje de WhatsApp al compartir el link del boleto.
+     */
+    public static function whatsappMensaje(): string
+    {
+        $value = self::raw(self::WHATSAPP_MENSAJE);
+
+        return filled($value) ? $value : self::WHATSAPP_MENSAJE_DEFAULT;
+    }
+
+    /**
+     * Días de la semana con servicio (ISO 1-7). Sin configuración guardada,
+     * lunes a sábado.
+     *
+     * @return list<int>
+     */
+    public static function serviceWeekdays(): array
+    {
+        $decoded = self::decodeJson(self::SERVICE_WEEKDAYS);
+
+        if ($decoded === null) {
+            return self::SERVICE_WEEKDAYS_DEFAULT;
+        }
+
+        $weekdays = array_values(array_unique(array_filter(
+            array_map('intval', $decoded),
+            fn (int $day): bool => $day >= 1 && $day <= 7,
+        )));
+        sort($weekdays);
+
+        return $weekdays;
+    }
+
+    /**
+     * Excepciones por fecha a los días de servicio. Sin configuración
+     * guardada, el domingo 13/09/2026 con servicio.
+     *
+     * @return list<array{date: string, has_service: bool, reason: ?string}>
+     */
+    public static function serviceExceptions(): array
+    {
+        $decoded = self::decodeJson(self::SERVICE_EXCEPTIONS);
+
+        if ($decoded === null) {
+            return self::SERVICE_EXCEPTIONS_DEFAULT;
+        }
+
+        $exceptions = [];
+
+        foreach ($decoded as $exception) {
+            if (! is_array($exception) || blank($exception['date'] ?? null)) {
+                continue;
+            }
+
+            $exceptions[] = [
+                'date' => (string) $exception['date'],
+                'has_service' => (bool) ($exception['has_service'] ?? false),
+                'reason' => filled($exception['reason'] ?? null) ? (string) $exception['reason'] : null,
+            ];
+        }
+
+        return $exceptions;
+    }
+
+    /**
+     * Lista decodificada de una clave JSON, o null si la clave no existe o no
+     * contiene una lista válida.
+     *
+     * @return array<int, mixed>|null
+     */
+    private static function decodeJson(string $key): ?array
+    {
+        $value = static::raw($key);
+
+        if ($value === null) {
+            return null;
+        }
+
+        $decoded = json_decode($value, true);
+
+        return is_array($decoded) ? $decoded : null;
     }
 
     /**

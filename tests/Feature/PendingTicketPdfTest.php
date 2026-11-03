@@ -131,11 +131,144 @@ class PendingTicketPdfTest extends TestCase
         $this->assertStringContainsString('Fecha del viaje:', $html);
     }
 
+    public function test_el_pdf_de_un_diferido_sin_fecha_rotula_ida_y_vuelta(): void
+    {
+        $ida = $this->createPendingTicket();
+        $ida->update(['is_round_trip' => true]);
+        $vuelta = $this->createPendingReturnFor($ida);
+
+        $html = $this->renderPdfHtmlFor(collect([$ida->fresh(), $vuelta]));
+
+        $this->assertSame(1, preg_match_all("/class='leg-label'>IDA</", $html));
+        $this->assertStringContainsString("VUELTA de N°{$ida->id}", $html);
+        $this->assertSame(2, substr_count($html, "class='leg-label'"));
+    }
+
+    public function test_el_pdf_de_la_venta_rotula_cada_vuelta_con_la_ida_de_su_pasajero(): void
+    {
+        $idaUno = $this->createPendingTicket();
+        $idaUno->update(['is_round_trip' => true]);
+
+        $otroPasajero = Passenger::create([
+            'first_name' => 'Otro',
+            'last_name' => 'Pasajero',
+            'dni' => '55667788',
+            'passenger_type' => 'adult',
+        ]);
+        $idaDos = $idaUno->replicate(['share_token']);
+        $idaDos->passenger_id = $otroPasajero->id;
+        $idaDos->save();
+
+        $vueltaUno = $this->createPendingReturnFor($idaUno);
+        $vueltaDos = $this->createPendingReturnFor($idaDos);
+
+        $html = $this->renderPdfHtmlFor(collect([$idaUno->fresh(), $idaDos, $vueltaUno, $vueltaDos]));
+
+        $this->assertSame(2, preg_match_all("/class='leg-label'>IDA</", $html));
+        $this->assertSame(1, substr_count($html, "VUELTA de N°{$idaUno->id}"));
+        $this->assertSame(1, substr_count($html, "VUELTA de N°{$idaDos->id}"));
+    }
+
+    public function test_el_pdf_de_un_boleto_solo_de_ida_no_lleva_etiqueta(): void
+    {
+        $html = $this->renderPdfHtml($this->createPendingTicket());
+
+        $this->assertStringNotContainsString("class='leg-label'", $html);
+    }
+
+    public function test_cada_ida_va_en_la_misma_hoja_que_su_vuelta(): void
+    {
+        // Orden de emisión real: ida 1, ida 2, vuelta 1, vuelta 2.
+        $idaUno = $this->createPendingTicket();
+        $idaUno->update(['is_round_trip' => true]);
+
+        $otroPasajero = Passenger::create([
+            'first_name' => 'Otro',
+            'last_name' => 'Pasajero',
+            'dni' => '55667788',
+            'passenger_type' => 'adult',
+        ]);
+        $idaDos = $idaUno->replicate(['share_token']);
+        $idaDos->passenger_id = $otroPasajero->id;
+        $idaDos->save();
+
+        $vueltaUno = $this->createPendingReturnFor($idaUno);
+        $vueltaDos = $this->createPendingReturnFor($idaDos);
+
+        $sheets = TicketPdfService::sheets(collect([$idaUno->fresh(), $idaDos, $vueltaUno, $vueltaDos]));
+
+        $this->assertSame(
+            [[$idaUno->id, $vueltaUno->id], [$idaDos->id, $vueltaDos->id]],
+            $sheets->map(fn ($sheet) => $sheet->pluck('id')->all())->all(),
+        );
+
+        // En el HTML: la vuelta 1 aparece antes que la ida 2.
+        $html = $this->renderPdfHtmlFor(collect([$idaUno->fresh(), $idaDos, $vueltaUno, $vueltaDos]));
+        $this->assertLessThan(
+            strpos($html, "VUELTA de N°{$idaDos->id}"),
+            strpos($html, "VUELTA de N°{$idaUno->id}"),
+        );
+        $this->assertSame(2, substr_count($html, "<div class='sheet'>"));
+    }
+
+    public function test_una_venta_solo_de_ida_sigue_de_a_dos_por_hoja(): void
+    {
+        $first = $this->createPendingTicket();
+        $tickets = collect([$first]);
+
+        foreach (['22000001', '22000002', '22000003'] as $dni) {
+            $copy = $first->replicate(['share_token']);
+            $copy->passenger_id = Passenger::create([
+                'first_name' => 'Solo',
+                'last_name' => 'Ida',
+                'dni' => $dni,
+                'passenger_type' => 'adult',
+            ])->id;
+            $copy->save();
+            $tickets->push($copy);
+        }
+
+        $sheets = TicketPdfService::sheets($tickets);
+
+        $this->assertSame(
+            [$tickets->take(2)->pluck('id')->all(), $tickets->slice(2)->pluck('id')->values()->all()],
+            $sheets->map(fn ($sheet) => $sheet->pluck('id')->all())->all(),
+        );
+    }
+
+    /** Vuelta pendiente de un diferido, como la emite la venta sin fecha. */
+    private function createPendingReturnFor(Ticket $ida): Ticket
+    {
+        return Ticket::create([
+            'sale_id' => $ida->sale_id,
+            'trip_id' => null,
+            'seat_id' => null,
+            'return_trip_id' => null,
+            'bus_id' => $ida->bus_id,
+            'passenger_id' => $ida->passenger_id,
+            'is_round_trip' => true,
+            'is_return_leg' => true,
+            'origin_location_id' => $ida->destination_location_id,
+            'destination_location_id' => $ida->origin_location_id,
+            'price' => 0,
+        ]);
+    }
+
+    private function renderPdfHtmlFor(\Illuminate\Support\Collection $tickets): string
+    {
+        return view('tickets.pdf.passenger-tickets', [
+            'sale' => $tickets->first()->sale,
+            'tickets' => $tickets,
+            'passenger' => $tickets->first()->passenger,
+            'hasChild' => false,
+        ])->render();
+    }
+
     public function test_el_servicio_genera_el_pdf_del_boleto_sin_fecha(): void
     {
         $ticket = $this->createPendingTicket();
 
-        $pdf = (new TicketPdfService())->generatePassengerTickets(
+        $pdf = (new TicketPdfService)->generatePassengerTickets(
             $ticket->sale,
             collect([$ticket]),
         );

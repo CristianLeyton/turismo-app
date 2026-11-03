@@ -2,12 +2,12 @@
 
 namespace Tests\Feature;
 
-use App\Filament\Client\Pages\ClientProfile;
+use App\Filament\Client\Pages\Auth\ClientEditProfile;
+use App\Filament\Client\Pages\Auth\ClientLogin;
 use App\Filament\Client\Pages\MyTickets;
-use App\Filament\Client\Pages\ClientAccess;
 use App\Filament\Client\Pages\SetPassword;
 use App\Models\Clients;
-use App\Support\ClientSession;
+use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Hash;
@@ -16,7 +16,7 @@ use Tests\TestCase;
 
 /**
  * Contraseña del cliente (panel público /clientes):
- * - la inicial es el DNI: entra con DNI solo hasta elegir una propia,
+ * - la inicial es el DNI: entra con DNI + su DNI como contraseña,
  * - el primer ingreso obliga a definirla (nada del panel antes),
  * - después el ingreso exige DNI + contraseña,
  * - Mi perfil permite datos personales y cambio de contraseña (pidiendo la actual),
@@ -59,22 +59,17 @@ class ClientPanelProfileTest extends TestCase
 
         // La contraseña es SIEMPRE obligatoria: DNI solo no identifica ni en
         // el primer ingreso (la inicial, el DNI, va también en la contraseña).
-        Livewire::test(ClientAccess::class)
-            ->set('dni', '33445566')
-            ->call('buscar');
+        $this->clientLogin('33445566', '');
 
-        $this->assertNull(session(ClientSession::SESSION_KEY));
+        $this->assertGuest('client');
 
         // Con el DNI repetido como contraseña (la inicial) sí entra.
-        session()->forget(ClientSession::SESSION_KEY);
+        auth('client')->logout();
 
-        Livewire::test(ClientAccess::class)
-            ->set('dni', '33445566')
-            ->set('password', '33445566')
-            ->call('buscar')
+        $this->clientLogin('33445566', '33445566')
             ->assertRedirect(MyTickets::getUrl(panel: 'clientes'));
 
-        $this->assertSame('33445566', session(ClientSession::SESSION_KEY));
+        $this->assertSame('33445566', auth('client')->user()?->dni);
 
         // Y queda en cartel de clave de primer ingreso.
         $this->get('/clientes')->assertRedirect('/clientes/clave');
@@ -88,19 +83,16 @@ class ClientPanelProfileTest extends TestCase
     {
         $this->createInitialClient('34455667');
 
-        Livewire::test(ClientAccess::class)
-            ->set('dni', '34455667')
-            ->set('password', 'no-es-su-clave')
-            ->call('buscar');
+        $this->clientLogin('34455667', 'no-es-su-clave');
 
-        $this->assertNull(session(ClientSession::SESSION_KEY));
+        $this->assertGuest('client');
     }
 
     public function test_elegir_la_clave_guarda_el_hash_y_habilita_el_panel(): void
     {
         $client = $this->createInitialClient();
 
-        session([ClientSession::SESSION_KEY => $client->dni]);
+        $this->actingAs($client, 'client');
 
         Livewire::test(SetPassword::class)
             ->set('nuevaClave', 'mi-clave-secreta')
@@ -118,11 +110,20 @@ class ClientPanelProfileTest extends TestCase
         $this->get('/clientes')->assertOk();
     }
 
+    public function test_el_primer_ingreso_saluda_con_el_nombre_de_la_app_y_del_cliente(): void
+    {
+        config(['app.name' => 'Expresso Sofia']);
+        $this->actingAs($this->createInitialClient(), 'client');
+
+        Livewire::test(SetPassword::class)
+            ->assertSeeText('¡Bienvenido a Expresso Sofia, Beto!');
+    }
+
     public function test_elegir_la_clave_valida_largo_y_coincidencia(): void
     {
         $client = $this->createInitialClient();
 
-        session([ClientSession::SESSION_KEY => $client->dni]);
+        $this->actingAs($client, 'client');
 
         // Demasiado corta: no guarda nada (la inicial, el DNI, queda igual).
         Livewire::test(SetPassword::class)
@@ -147,10 +148,7 @@ class ClientPanelProfileTest extends TestCase
         $client = $this->createInitialClient();
 
         // Primer ingreso: DNI + su DNI como contraseña (la inicial) y elige clave.
-        Livewire::test(ClientAccess::class)
-            ->set('dni', $client->dni)
-            ->set('password', $client->dni)
-            ->call('buscar');
+        $this->clientLogin($client->dni, $client->dni);
 
         Livewire::test(SetPassword::class)
             ->set('nuevaClave', 'mi-clave-secreta')
@@ -158,22 +156,27 @@ class ClientPanelProfileTest extends TestCase
             ->call('guardar');
 
         // Salió (simulado): DNI solo ya NO alcanza.
-        session()->forget(ClientSession::SESSION_KEY);
+        auth('client')->logout();
 
-        Livewire::test(ClientAccess::class)
-            ->set('dni', $client->dni)
-            ->call('buscar');
+        $this->clientLogin($client->dni, '');
 
-        $this->assertNull(session(ClientSession::SESSION_KEY));
+        $this->assertGuest('client');
 
         // DNI + la clave que eligió: sí.
-        Livewire::test(ClientAccess::class)
-            ->set('dni', $client->dni)
-            ->set('password', 'mi-clave-secreta')
-            ->call('buscar')
+        $this->clientLogin($client->dni, 'mi-clave-secreta')
             ->assertRedirect(MyTickets::getUrl(panel: 'clientes'));
 
-        $this->assertSame($client->dni, session(ClientSession::SESSION_KEY));
+        $this->assertSame($client->dni, auth('client')->user()?->dni);
+    }
+
+    /** Ingreso por el login de Filament del panel de clientes. */
+    private function clientLogin(string $dni, string $password): \Livewire\Features\SupportTesting\Testable
+    {
+        Filament::setCurrentPanel('clientes');
+
+        return Livewire::test(ClientLogin::class)
+            ->fillForm(['dni' => $dni, 'password' => $password])
+            ->call('authenticate');
     }
 
     // ------------------------------------------------------------------
@@ -191,16 +194,60 @@ class ClientPanelProfileTest extends TestCase
             'must_change_password' => false, // ya eligió su propia clave
         ]);
 
-        session([ClientSession::SESSION_KEY => $dni]);
+        $this->actingAs($client, 'client');
 
         return $client;
+    }
+
+    /** Perfil de Filament del panel de clientes, con el panel actual fijado. */
+    private function profile(): \Livewire\Features\SupportTesting\Testable
+    {
+        Filament::setCurrentPanel('clientes');
+
+        return Livewire::test(ClientEditProfile::class);
+    }
+
+    public function test_cambiar_la_contraseña_desde_el_perfil_levanta_el_cambio_obligatorio(): void
+    {
+        $client = $this->identifyClientWithPassword('55667799');
+        $client->forceFill(['must_change_password' => true])->saveQuietly();
+
+        $this->profile()
+            ->set('data.currentPassword', 'clave-secreta')
+            ->set('data.password', 'nueva-clave')
+            ->set('data.passwordConfirmation', 'nueva-clave')
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $fresh = $client->fresh();
+        $this->assertTrue(Hash::check('nueva-clave', $fresh->password));
+        $this->assertFalse($fresh->must_change_password);
+    }
+
+    public function test_un_telefono_invalido_no_se_guarda(): void
+    {
+        $client = $this->identifyClientWithPassword('55667799');
+
+        $this->profile()
+            ->set('data.telefono', '12ab')
+            ->call('save')
+            ->assertHasErrors(['data.telefono']);
+
+        $this->assertSame('3813333333', $client->fresh()->telefono);
+    }
+
+    public function test_el_perfil_queda_en_la_direccion_de_siempre(): void
+    {
+        $this->identifyClientWithPassword('55667799');
+
+        $this->get('/clientes/perfil')->assertOk()->assertSee('DNI');
     }
 
     public function test_el_cliente_actualiza_sus_datos_personales(): void
     {
         $client = $this->identifyClientWithPassword('55667799');
 
-        Livewire::test(ClientProfile::class)
+        $this->profile()
             ->set('data.nombre', 'Carla Belén')
             ->set('data.apellido', 'Díaz Ríos')
             ->set('data.telefono', '3814444444')
@@ -221,12 +268,12 @@ class ClientPanelProfileTest extends TestCase
         // "Enviar" por la bolsa un DNI inventado y una password no afecta:
         // el form del perfil nunca toca esas columnas (y el teléfono inválido
         // corta el guardado por validación).
-        Livewire::test(ClientProfile::class)
+        $this->profile()
             ->set('data.dni', '99999999')
             ->set('data.telefono', 'no-un-telefono')
-            ->set('data.nuevaClave', 'intento-de-cambio')
-            ->set('data.nuevaClaveConfirmacion', 'intento-de-cambio')
-            ->set('data.claveActual', 'clave-secreta')
+            ->set('data.password', 'intento-de-cambio')
+            ->set('data.passwordConfirmation', 'intento-de-cambio')
+            ->set('data.currentPassword', 'clave-secreta')
             ->call('save');
 
         $fresh = $client->fresh();
@@ -239,7 +286,7 @@ class ClientPanelProfileTest extends TestCase
         $this->identifyClientWithPassword('55667799');
 
         // Apellido vacío: error debajo del campo y sin guardar nada.
-        $component = Livewire::test(ClientProfile::class)
+        $component = $this->profile()
             ->set('data.nombre', 'Ceci')
             ->set('data.apellido', '')
             ->set('data.telefono', '3812222222')
@@ -260,20 +307,20 @@ class ClientPanelProfileTest extends TestCase
         $client = $this->identifyClientWithPassword('66778800');
 
         // Actual errónea: error del formulario y no cambia.
-        Livewire::test(ClientProfile::class)
-            ->set('data.claveActual', 'wrong-password')
-            ->set('data.nuevaClave', 'nueva-clave-larga')
-            ->set('data.nuevaClaveConfirmacion', 'nueva-clave-larga')
+        $this->profile()
+            ->set('data.currentPassword', 'wrong-password')
+            ->set('data.password', 'nueva-clave-larga')
+            ->set('data.passwordConfirmation', 'nueva-clave-larga')
             ->call('save')
-            ->assertHasErrors(['data.claveActual']);
+            ->assertHasErrors(['data.currentPassword']);
 
         $this->assertTrue(Hash::check('clave-secreta', $client->fresh()->password));
 
         // Actual correcta: cambia.
-        Livewire::test(ClientProfile::class)
-            ->set('data.claveActual', 'clave-secreta')
-            ->set('data.nuevaClave', 'nueva-clave-larga')
-            ->set('data.nuevaClaveConfirmacion', 'nueva-clave-larga')
+        $this->profile()
+            ->set('data.currentPassword', 'clave-secreta')
+            ->set('data.password', 'nueva-clave-larga')
+            ->set('data.passwordConfirmation', 'nueva-clave-larga')
             ->call('save');
 
         $fresh = $client->fresh();
@@ -286,22 +333,22 @@ class ClientPanelProfileTest extends TestCase
         $client = $this->identifyClientWithPassword('66778800', password: 'clave-secreta');
 
         // Demasiado corta: error debajo del campo y sin cambios.
-        Livewire::test(ClientProfile::class)
-            ->set('data.claveActual', 'clave-secreta')
-            ->set('data.nuevaClave', 'corta')
-            ->set('data.nuevaClaveConfirmacion', 'corta')
+        $this->profile()
+            ->set('data.currentPassword', 'clave-secreta')
+            ->set('data.password', 'corta')
+            ->set('data.passwordConfirmation', 'corta')
             ->call('save')
-            ->assertHasErrors(['data.nuevaClave']);
+            ->assertHasErrors(['data.password']);
 
         $this->assertTrue(Hash::check('clave-secreta', $client->fresh()->password));
 
         // No coincide: lo mismo.
-        Livewire::test(ClientProfile::class)
-            ->set('data.claveActual', 'clave-secreta')
-            ->set('data.nuevaClave', 'larga-suficiente')
-            ->set('data.nuevaClaveConfirmacion', 'otra-cosa-larga')
+        $this->profile()
+            ->set('data.currentPassword', 'clave-secreta')
+            ->set('data.password', 'larga-suficiente')
+            ->set('data.passwordConfirmation', 'otra-cosa-larga')
             ->call('save')
-            ->assertHasErrors(['data.nuevaClave']);
+            ->assertHasErrors(['data.password']);
 
         $this->assertTrue(Hash::check('clave-secreta', $client->fresh()->password));
     }
@@ -327,12 +374,9 @@ class ClientPanelProfileTest extends TestCase
         $this->assertTrue(Hash::check($fresh->dni, $fresh->password));
 
         // La contraseña inicial otra vez el DNI: DNI + su DNI identifica.
-        session()->forget(ClientSession::SESSION_KEY);
+        auth('client')->logout();
 
-        Livewire::test(ClientAccess::class)
-            ->set('dni', $client->dni)
-            ->set('password', $client->dni)
-            ->call('buscar')
+        $this->clientLogin($client->dni, $client->dni)
             ->assertRedirect(MyTickets::getUrl(panel: 'clientes'));
 
         // Y vuelve a tener que elegir una contraseña nueva.

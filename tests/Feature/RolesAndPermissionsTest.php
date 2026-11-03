@@ -194,6 +194,20 @@ class RolesAndPermissionsTest extends TestCase
         );
     }
 
+    public function test_permiso_de_dias_sin_servicio_se_registra_sin_asignarse_a_ningun_rol(): void
+    {
+        Artisan::call('permissions:sync');
+
+        $this->assertDatabaseHas('permissions', ['name' => 'tickets.vender_dia_sin_servicio']);
+
+        $this->assertFalse(Role::findByName(Permissions::ROLE_ADMIN)->hasPermissionTo('tickets.vender_dia_sin_servicio'));
+        $this->assertFalse(Role::findByName(Permissions::ROLE_SELLER)->hasPermissionTo('tickets.vender_dia_sin_servicio'));
+
+        $this->assertFalse(User::factory()->admin()->create()->can('tickets.vender_dia_sin_servicio'));
+        $this->assertFalse(User::factory()->vendedor()->create()->can('tickets.vender_dia_sin_servicio'));
+        $this->assertTrue(User::factory()->superAdmin()->create()->can('tickets.vender_dia_sin_servicio'));
+    }
+
     public function test_comando_permissions_sync_funciona(): void
     {
         // Borrar un permiso y verificar que el comando lo recrea.

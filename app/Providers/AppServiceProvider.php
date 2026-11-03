@@ -52,5 +52,15 @@ class AppServiceProvider extends ServiceProvider
             \Filament\Tables\View\TablesRenderHook::TOOLBAR_AFTER,
             fn (): string => (new \App\View\Components\TableSummaryCard)->render()->render(),
         );
+
+        // Botón "mes siguiente" en el encabezado del date-picker de Filament.
+        // El panel del picker es wire:ignore, así que el botón inyectado en el
+        // DOM no entra en conflicto con el morph de Livewire; el click muta
+        // focusedMonth del componente Alpine y el propio picker recalcula
+        // focusedDate (incluyendo el paso de diciembre a enero).
+        \Filament\Support\Facades\FilamentView::registerRenderHook(
+            \Filament\View\PanelsRenderHook::SCRIPTS_AFTER,
+            fn (): \Illuminate\Contracts\View\View => view('filament.date-picker-next-month'),
+        );
     }
 }

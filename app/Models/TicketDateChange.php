@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class TicketDateChange extends Model
 {
     public const LEG_OUTBOUND = 'outbound';
+
     public const LEG_RETURN = 'return';
 
     protected $fillable = [

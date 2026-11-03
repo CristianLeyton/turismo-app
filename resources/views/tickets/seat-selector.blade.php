@@ -1,7 +1,9 @@
 @php
     $tripId = $trip_id ?? null;
     $requiredSeats = (int) ($passengers_count ?? 0);
-    $sessionId = $session_id ?? session()->getId();
+    // Sólo para calcular "reservado por mí" en el servidor: nunca se escribe
+    // en el HTML ni viaja en los pedidos (la API usa la sesión del pedido).
+    $sessionId = session()->getId();
     $enableReservation = $enable_reservation ?? false;
     $reservationTimeout = $reservation_timeout ?? 5;
 
@@ -20,10 +22,10 @@
     selected: @entangle($seatSelectorStatePath ?? ('data.' . $fieldId)),
     required: {{ (int) $passengers_count }},
     tripId: {{ $tripId ?? 'null' }},
-    sessionId: '{{ $sessionId }}',
     enableReservation: {{ $enableReservation ? 'true' : 'false' }},
     reservationTimeout: {{ $reservationTimeout }},
-    keepAliveInterval: null,
+    activityHandler: null,
+    windowHandlers: null,
     reservationExpiresAt: null,
     countdownInterval: null,
     currentTime: new Date(),
@@ -52,41 +54,46 @@
             this.syncReservationStatus();
         }
 
-        // Limpiar reservas al salir de la página (solo si el usuario confirma)
+        // Listeners de window y document de ESTE componente. Se quitan en
+        // destroy(): si quedaran vivos tras un re-render, un selector ya
+        // destruido liberaría su viaje viejo (que puede ser de otra venta).
         let isPageUnloading = false;
 
-        window.addEventListener('beforeunload', (event) => {
-            // Marcar que la página se está descargando
-            isPageUnloading = true;
-
-            // No liberar reservas aquí, esperar a 'unload'
-            // Filament manejará la confirmación con unsavedChangesAlerts()
-        });
-
-        // Liberar reservas solo cuando la página realmente se descarga
-        window.addEventListener('unload', () => {
-            if (isPageUnloading) {
+        this.windowHandlers = {
+            // Marca la salida; Filament pide confirmación con unsavedChangesAlerts()
+            beforeunload: () => {
+                isPageUnloading = true;
+            },
+            // Liberar solo cuando la página realmente se descarga.
+            // 'pagehide' y no 'unload': Chrome ya no ejecuta los listeners de unload.
+            pagehide: () => {
+                if (isPageUnloading) {
+                    this.releaseReservations();
+                }
+            },
+            // Expiración global: limpia la selección y libera solo el viaje de este selector
+            seatReservationExpired: () => {
+                this.selected = [];
+                this.reservationExpiresAt = null;
+                this.timerText = null;
                 this.releaseReservations();
-            }
+            },
+            // Refresco de asientos por conflictos
+            'refresh-seats': () => {
+                this.$nextTick(() => {
+                    this.syncReservationStatus();
+                });
+            },
+        };
+
+        Object.entries(this.windowHandlers).forEach(([eventName, handler]) => {
+            window.addEventListener(eventName, handler);
         });
 
-        // Escuchar evento global de expiración de reservas
-        window.addEventListener('seatReservationExpired', (event) => {
-            // Limpiar asientos seleccionados en este componente
-            this.selected = [];
-
-            // Limpiar tiempo de expiración local
-            this.reservationExpiresAt = null;
-            this.timerText = null;
-        });
-
-        // Escuchar evento de refresco de asientos por conflictos
-        window.addEventListener('refresh-seats', () => {
-            // Forzar recarga del componente para actualizar estado de asientos
-            this.$nextTick(() => {
-                // Actualizar el estado de los asientos basados en los datos del formulario
-                this.syncReservationStatus();
-            });
+        // Renovar las reservas mientras el vendedor trabaja en la página
+        this.activityHandler = () => this.renewOnActivity();
+        ['input', 'change', 'click', 'keydown'].forEach((eventName) => {
+            document.addEventListener(eventName, this.activityHandler, true);
         });
     },
 
@@ -94,7 +101,20 @@
 
         // Limpiar todos los intervalos al destruir el componente
         this.stopCountdown();
-        this.stopKeepAlive();
+
+        if (this.activityHandler) {
+            ['input', 'change', 'click', 'keydown'].forEach((eventName) => {
+                document.removeEventListener(eventName, this.activityHandler, true);
+            });
+            this.activityHandler = null;
+        }
+
+        if (this.windowHandlers) {
+            Object.entries(this.windowHandlers).forEach(([eventName, handler]) => {
+                window.removeEventListener(eventName, handler);
+            });
+            this.windowHandlers = null;
+        }
 
         // Si no hay asientos seleccionados, detener timer global
         if (!this.selected || this.selected.length === 0) {
@@ -146,16 +166,10 @@
         // Esperar 10 segundos antes de limpiar
         setTimeout(async () => {
             // Notificar a todos los componentes que limpien sus asientos
+            // y liberen las reservas de su viaje
             window.dispatchEvent(new CustomEvent('seatReservationExpired', {
                 detail: { source: '{{ $fieldId }}' }
             }));
-
-            // Liberar reservas en el backend
-            try {
-                await this.releaseReservations();
-            } catch (error) {
-                console.error('Error al liberar reservas expiradas:', error);
-            }
 
             // Llamar al método Livewire para mostrar notificación de Filament
             this.$wire.call('notifyReservationExpired').then(() => {
@@ -357,12 +371,12 @@
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
+                    'Accept': 'application/json',
                     'X-CSRF-TOKEN': this.csrfToken
                 },
                 body: JSON.stringify({
                     trip_id: this.tripId,
-                    seat_ids: this.selected,
-                    session_id: this.sessionId
+                    seat_ids: this.selected
                 })
             });
 
@@ -442,17 +456,20 @@
     },
 
     async releaseReservations() {
-        if (!this.enableReservation || !this.sessionId) return;
+        if (!this.enableReservation || !this.tripId) return;
 
         try {
+            // keepalive: el pedido sobrevive al cierre de la página
             await fetch('/api/seat-reservations/release', {
                 method: 'POST',
+                keepalive: true,
                 headers: {
                     'Content-Type': 'application/json',
+                    'Accept': 'application/json',
                     'X-CSRF-TOKEN': this.csrfToken
                 },
                 body: JSON.stringify({
-                    session_id: this.sessionId
+                    trip_ids: [this.tripId]
                 })
             });
         } catch (error) {
@@ -460,37 +477,41 @@
         }
     },
 
-    startKeepAlive() {
-        // Enviar keep-alive cada 2 minutos (antes de que expiren las reservas de 5 minutos)
-        this.keepAliveInterval = setInterval(async () => {
-            try {
-                const response = await fetch('/api/seat-reservations/keep-alive', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRF-TOKEN': this.csrfToken
-                    },
-                    body: JSON.stringify({
-                        session_id: this.sessionId
-                    })
-                });
+    // Renueva las reservas de este viaje ante actividad del vendedor, como
+    // mucho una vez por minuto por viaje, y corrige la cuenta regresiva.
+    async renewOnActivity() {
+        if (!this.enableReservation || !this.tripId || !Array.isArray(this.selected) || this.selected.length === 0) {
+            return;
+        }
 
-                if (response.ok) {
-                    const result = await response.json();
-                    if (result.success && result.expires_at) {
-                        this.updateReservationTime(result.expires_at);
-                    }
+        window.seatReservationLastKeepAlive = window.seatReservationLastKeepAlive || {};
+        const lastRenewal = window.seatReservationLastKeepAlive[this.tripId] || 0;
+        if (Date.now() - lastRenewal < 60000) {
+            return;
+        }
+        window.seatReservationLastKeepAlive[this.tripId] = Date.now();
+
+        try {
+            const response = await fetch('/api/seat-reservations/keep-alive', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'X-CSRF-TOKEN': this.csrfToken
+                },
+                body: JSON.stringify({
+                    trip_ids: [this.tripId]
+                })
+            });
+
+            if (response.ok) {
+                const result = await response.json();
+                if (result.success && result.expires_at) {
+                    this.updateReservationTime(result.expires_at);
                 }
-            } catch (error) {
-                console.error('Error en keep-alive:', error);
             }
-        }, 120000); // 2 minutos
-    },
-
-    stopKeepAlive() {
-        if (this.keepAliveInterval) {
-            clearInterval(this.keepAliveInterval);
-            this.keepAliveInterval = null;
+        } catch (error) {
+            console.error('Error al renovar reservas:', error);
         }
     },
 
@@ -500,11 +521,11 @@
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
+                    'Accept': 'application/json',
                     'X-CSRF-TOKEN': this.csrfToken
                 },
                 body: JSON.stringify({
-                    trip_id: this.tripId,
-                    session_id: this.sessionId
+                    trip_id: this.tripId
                 })
             });
 

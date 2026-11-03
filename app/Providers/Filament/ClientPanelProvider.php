@@ -2,18 +2,20 @@
 
 namespace App\Providers\Filament;
 
-use App\Filament\Client\Pages\ClientAccess;
-use App\Filament\Client\Pages\ClientProfile;
+use App\Filament\Client\Pages\Auth\ClientEditProfile;
+use App\Filament\Client\Pages\Auth\ClientLogin;
 use App\Filament\Client\Pages\MyTickets;
 use App\Filament\Client\Pages\SetPassword;
-use App\Http\Middleware\EnsureClientIdentified;
+use App\Http\Middleware\EnsureClientPasswordIsSet;
+use Filament\Actions\Action;
 use Filament\Enums\ThemeMode;
-use Filament\View\PanelsRenderHook;
+use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
 use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\Support\Colors\Color;
+use Filament\View\PanelsRenderHook;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
@@ -22,14 +24,12 @@ use Illuminate\Session\Middleware\StartSession;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
 
 /**
- * Panel público para clientes: identifica por DNI y permite asignar fecha
+ * Panel público para clientes: ingresan con DNI y contraseña (login de
+ * Filament sobre el guard `client`, tabla clients) y pueden asignar fecha
  * (y asiento) a sus boletos vendidos sin fecha.
  *
- * Sin login y sin authMiddleware: el delimitado no depende de Filament Auth
- * sino de la sesión de identificación (App\Support\ClientSession), que
- * EnsureClientIdentified exige en todas las páginas menos el ingreso.
- *
- * El panel de admin queda intacto (paths y providers separados).
+ * El guard es distinto del `web` del panel de administración: un vendedor y
+ * un cliente pueden tener sesión a la vez en el mismo navegador.
  */
 class ClientPanelProvider extends PanelProvider
 {
@@ -38,6 +38,14 @@ class ClientPanelProvider extends PanelProvider
         return $panel
             ->id('clientes')
             ->path('clientes')
+            ->authGuard('client')
+            ->login(ClientLogin::class)
+            ->profile(ClientEditProfile::class, isSimple: false)
+            // El "Salir" del menú no usa el logout de Filament, que invalida
+            // toda la sesión y cerraría también la de administración.
+            ->userMenuItems([
+                'logout' => fn (Action $action): Action => $action->url(fn (): string => route('clientes.logout')),
+            ])
             ->brandName('Mis boletos')
             // Estética idéntica al panel principal: mismo tema compilado,
             // mismo logo y mismo color primario.
@@ -50,9 +58,7 @@ class ClientPanelProvider extends PanelProvider
             ->topNavigation()
             ->pages([
                 MyTickets::class,       // Dashboard: "/" del panel
-                ClientAccess::class,    // Ingreso por DNI (+ contraseña opcional)
                 SetPassword::class,     // Primera vez: cambia la clave inicial (DNI)
-                ClientProfile::class,   // Mi perfil: datos y cambio de contraseña
             ])
             ->middleware([
                 EncryptCookies::class,
@@ -63,7 +69,10 @@ class ClientPanelProvider extends PanelProvider
                 SubstituteBindings::class,
                 DisableBladeIconComponents::class,
                 DispatchServingFilamentEvent::class,
-                EnsureClientIdentified::class,
+            ])
+            ->authMiddleware([
+                Authenticate::class,
+                EnsureClientPasswordIsSet::class,
             ])
             /* Igual que en el panel admin: la ruedita no cambia el valor de
                los inputs numéricos enfocados. */

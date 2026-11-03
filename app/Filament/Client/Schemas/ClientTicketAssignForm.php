@@ -6,6 +6,7 @@ use App\Models\Seat;
 use App\Models\SeatReservation;
 use App\Models\Ticket;
 use App\Models\Trip;
+use App\Support\ServiceDays;
 use Carbon\Carbon;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Hidden;
@@ -34,10 +35,15 @@ class ClientTicketAssignForm
 
         return [
             DatePicker::make('date')
-                ->label('Nueva fecha de ' . $legLabel)
+                ->label('Nueva fecha de '.$legLabel)
                 ->required()
                 ->minDate(self::minDate($ticket))
                 ->maxDate(self::maxDate($ticket))
+                ->native(false)
+                ->displayFormat('d/m/Y')
+                ->closeOnDateSelection()
+                // Días de servicio: siempre filtrado, sin excepción por permiso.
+                ->disabledDates(fn (): array => ServiceDays::disabledTravelDates())
                 ->live()
                 ->afterStateUpdated(function (Set $set) {
                     $set('trip_id', null);
@@ -50,7 +56,7 @@ class ClientTicketAssignForm
                 ]),
 
             Select::make('schedule_id')
-                ->label('Horario de ' . $legLabel)
+                ->label('Horario de '.$legLabel)
                 ->required()
                 ->live()
                 ->disabled(fn (Get $get) => blank($get('date')))
@@ -111,7 +117,7 @@ class ClientTicketAssignForm
                         return 'Atención: este viaje ya no tiene asientos disponibles. Elegí otro horario.';
                     }
 
-                    return 'Viaje disponible (' . $trip->bus?->name . '). Asientos disponibles: ' . $available;
+                    return 'Viaje disponible ('.$trip->bus?->name.'). Asientos disponibles: '.$available;
                 })
                 ->validationMessages([
                     'required' => 'Elegí un horario.',
@@ -148,7 +154,7 @@ class ClientTicketAssignForm
 
                     return [
                         'seatSelectorStatePath' => filled($containerStatePath)
-                            ? $containerStatePath . '.seat_ids'
+                            ? $containerStatePath.'.seat_ids'
                             : 'data.seat_ids',
                         'trip_id' => $trip?->id,
                         'trip' => $trip,

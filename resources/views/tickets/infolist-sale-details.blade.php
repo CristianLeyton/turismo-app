@@ -1,6 +1,12 @@
 {{-- Tarjeta "Detalles de venta" del infolist del boleto --}}
 @php
-    $record = $getRecord();
+    /* Mismo criterio que infolist-summary-header: $record inyectado al incluir
+       la vista fuera del infolist; fallback al ViewEntry con $getRecord(). */
+    $record = $record ?? null;
+    if (! $record && isset($getRecord) && is_callable($getRecord)) {
+        $record = $getRecord();
+    }
+
     $sale = $record?->sale;
     $methodLabel = $record ? \App\Models\PaymentMethod::label($record->payment_method) : '—';
     $methodBadge = $record ? \App\Models\PaymentMethod::badgeClasses($record->payment_method) : 'bg-gray-500/10 text-gray-600 dark:text-gray-300';

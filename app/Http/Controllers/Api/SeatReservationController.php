@@ -5,8 +5,8 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\SeatReservation;
 use App\Models\Trip;
-use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
 class SeatReservationController extends Controller
 {
@@ -19,20 +19,18 @@ class SeatReservationController extends Controller
             \Log::info('Reserve endpoint called', [
                 'trip_id' => $request->input('trip_id'),
                 'seat_ids' => $request->input('seat_ids'),
-                'session_id' => $request->input('session_id'),
                 'seat_ids_type' => gettype($request->input('seat_ids')),
-                'seat_ids_empty' => empty($request->input('seat_ids'))
+                'seat_ids_empty' => empty($request->input('seat_ids')),
             ]);
 
             $request->validate([
                 'trip_id' => 'required|integer|exists:trips,id',
                 'seat_ids' => 'present|array', // Cambiado de 'required' a 'present'
-                'session_id' => 'required|string',
             ]);
 
             $tripId = $request->input('trip_id');
             $seatIds = $request->input('seat_ids');
-            $sessionId = $request->input('session_id');
+            $sessionId = $this->sessionId($request);
 
             // No limpiar reservas expiradas aquí para evitar eliminar reservas recién creadas
             // SeatReservation::cleanupExpired();
@@ -48,7 +46,7 @@ class SeatReservationController extends Controller
                 $response = [
                     'success' => true,
                     'message' => 'Todas las reservas liberadas',
-                    'reserved_seats' => []
+                    'reserved_seats' => [],
                 ];
 
                 \Log::info('Returning empty response', $response);
@@ -68,10 +66,10 @@ class SeatReservationController extends Controller
 
             // Verificar que el viaje exista y tenga asientos disponibles
             $trip = Trip::find($tripId);
-            if (!$trip) {
+            if (! $trip) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Viaje no encontrado'
+                    'message' => 'Viaje no encontrado',
                 ], 404);
             }
 
@@ -99,21 +97,21 @@ class SeatReservationController extends Controller
             $occupiedSeats = array_intersect($seatIds, $occupiedSeatIds);
             $reservedSeats = array_intersect($seatIds, $reservedByOthersSeatIds);
 
-            if (!empty($invalidSeats)) {
+            if (! empty($invalidSeats)) {
                 $message = 'Algunos asientos ya no están disponibles. ';
 
-                if (!empty($occupiedSeats)) {
+                if (! empty($occupiedSeats)) {
                     $occupiedSeatNumbers = \App\Models\Seat::whereIn('id', $occupiedSeats)
                         ->pluck('seat_number')
                         ->toArray();
-                    $message .= 'Asientos vendidos: ' . implode(', ', $occupiedSeatNumbers) . '. ';
+                    $message .= 'Asientos vendidos: '.implode(', ', $occupiedSeatNumbers).'. ';
                 }
 
-                if (!empty($reservedSeats)) {
+                if (! empty($reservedSeats)) {
                     $reservedSeatNumbers = \App\Models\Seat::whereIn('id', $reservedSeats)
                         ->pluck('seat_number')
                         ->toArray();
-                    $message .= 'Los siguientes asientos están reservados por otros usuarios: ' . implode(', ', $reservedSeatNumbers);
+                    $message .= 'Los siguientes asientos están reservados por otros usuarios: '.implode(', ', $reservedSeatNumbers);
                 }
 
                 return response()->json([
@@ -121,7 +119,7 @@ class SeatReservationController extends Controller
                     'message' => trim($message),
                     'invalid_seats' => $invalidSeats,
                     'occupied_seats' => $occupiedSeats,
-                    'reserved_by_others' => $reservedSeats
+                    'reserved_by_others' => $reservedSeats,
                 ], 409);
             }
 
@@ -133,12 +131,12 @@ class SeatReservationController extends Controller
                     'success' => true,
                     'message' => 'Asientos reservados exitosamente',
                     'expires_at' => $result['expires_at']->toISOString(),
-                    'reserved_seats' => $seatIds
+                    'reserved_seats' => $seatIds,
                 ]);
             } else {
                 return response()->json([
                     'success' => false,
-                    'message' => $result['message']
+                    'message' => $result['message'],
                 ], 409);
             }
         } catch (\Exception $e) {
@@ -146,12 +144,12 @@ class SeatReservationController extends Controller
                 'message' => $e->getMessage(),
                 'file' => $e->getFile(),
                 'line' => $e->getLine(),
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
             ]);
 
             return response()->json([
                 'success' => false,
-                'message' => 'Error interno del servidor: ' . $e->getMessage()
+                'message' => 'No se pudo reservar los asientos. Intentá de nuevo.',
             ], 500);
         }
     }
@@ -162,15 +160,16 @@ class SeatReservationController extends Controller
     public function release(Request $request): JsonResponse
     {
         $request->validate([
-            'session_id' => 'required|string',
+            'trip_ids' => 'sometimes|array',
+            'trip_ids.*' => 'integer',
         ]);
 
-        $sessionId = $request->input('session_id');
-        SeatReservation::releaseBySession($sessionId);
+        $sessionId = $this->sessionId($request);
+        SeatReservation::releaseBySession($sessionId, $this->tripIdsFrom($request));
 
         return response()->json([
             'success' => true,
-            'message' => 'Reservas liberadas exitosamente'
+            'message' => 'Reservas liberadas exitosamente',
         ]);
     }
 
@@ -180,24 +179,21 @@ class SeatReservationController extends Controller
     public function keepAlive(Request $request): JsonResponse
     {
         $request->validate([
-            'session_id' => 'required|string',
+            'trip_ids' => 'sometimes|array',
+            'trip_ids.*' => 'integer',
         ]);
 
-        $sessionId = $request->input('session_id');
+        $sessionId = $this->sessionId($request);
+        $tripIds = $this->tripIdsFrom($request);
 
-        // Obtener la fecha de expiración más lejana antes de extender
-        $latestReservation = SeatReservation::where('user_session_id', $sessionId)
-            ->where('expires_at', '>', now())
-            ->orderBy('expires_at', 'desc')
-            ->first();
-
-        $extendedCount = SeatReservation::extendReservationTime($sessionId, 5);
+        $extendedCount = SeatReservation::extendReservationTime($sessionId, 5, $tripIds);
 
         // Obtener la nueva fecha de expiración
         $newExpiresAt = null;
         if ($extendedCount > 0) {
             $newReservation = SeatReservation::where('user_session_id', $sessionId)
                 ->where('expires_at', '>', now())
+                ->when($tripIds !== null, fn ($query) => $query->whereIn('trip_id', $tripIds))
                 ->orderBy('expires_at', 'desc')
                 ->first();
 
@@ -210,7 +206,7 @@ class SeatReservationController extends Controller
             'success' => true,
             'message' => 'Tiempo de reservas extendido',
             'extended_reservations' => $extendedCount,
-            'expires_at' => $newExpiresAt ? $newExpiresAt->toISOString() : null
+            'expires_at' => $newExpiresAt ? $newExpiresAt->toISOString() : null,
         ]);
     }
 
@@ -220,11 +216,10 @@ class SeatReservationController extends Controller
     public function status(Request $request): JsonResponse
     {
         $request->validate([
-            'session_id' => 'required|string',
             'trip_id' => 'required|integer|exists:trips,id',
         ]);
 
-        $sessionId = $request->input('session_id');
+        $sessionId = $this->sessionId($request);
         $tripId = $request->input('trip_id');
 
         // No limpiar reservas expiradas aquí para evitar eliminar reservas recién creadas
@@ -235,7 +230,7 @@ class SeatReservationController extends Controller
 
         // Obtener fecha de expiración más lejana
         $expiresAt = null;
-        if (!empty($reservedSeats)) {
+        if (! empty($reservedSeats)) {
             $latestReservation = SeatReservation::where('user_session_id', $sessionId)
                 ->where('trip_id', $tripId)
                 ->orderBy('expires_at', 'desc')
@@ -250,21 +245,32 @@ class SeatReservationController extends Controller
             'success' => true,
             'reserved_seats' => $reservedSeats,
             'reservation_count' => count($reservedSeats),
-            'expires_at' => $expiresAt
+            'expires_at' => $expiresAt,
         ]);
     }
 
     /**
-     * Limpiar reservas expiradas (endpoint para mantenimiento)
+     * Viajes a los que se acota la operación, o null si el pedido no los indica
+     * (compatibilidad: actúa sobre todas las reservas de la sesión).
+     *
+     * @return array<int>|null
      */
-    public function cleanup(): JsonResponse
+    private function tripIdsFrom(Request $request): ?array
     {
-        $deletedCount = SeatReservation::cleanupExpired();
+        if (! $request->has('trip_ids')) {
+            return null;
+        }
 
-        return response()->json([
-            'success' => true,
-            'message' => "Se eliminaron {$deletedCount} reservas expiradas",
-            'deleted_count' => $deletedCount
-        ]);
+        return array_map('intval', (array) $request->input('trip_ids'));
+    }
+
+    /**
+     * Sesión sobre la que opera el pedido: siempre la del propio pedido (su
+     * cookie). Un `session_id` enviado en el cuerpo se ignora, para que nadie
+     * pueda liberar o renovar las reservas de otra sesión.
+     */
+    private function sessionId(Request $request): string
+    {
+        return $request->session()->getId();
     }
 }

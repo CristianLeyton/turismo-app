@@ -5,6 +5,7 @@ namespace App\Filament\Resources\Tickets\Pages;
 use App\Filament\Resources\Tickets\Schemas\TicketRescheduleForm;
 use App\Filament\Resources\Tickets\TicketResource;
 use App\Models\SeatReservation;
+use App\Models\Setting;
 use App\Models\Ticket;
 use App\Models\Trip;
 use App\Services\TicketPdfService;
@@ -208,8 +209,32 @@ class RescheduleTicket extends ResourcePage
             return; // Conservar el estado del form
         }
 
-        // Éxito: generar PDF y ofrecer descarga (patrón de CreateTicket).
+        // Éxito: entregar el boleto según el parámetro de emisión.
         $freshTicket = $ticket->fresh()->load(['sale', 'passenger', 'trip', 'returnTrip', 'seat']);
+
+        // Flujo "emisión por link": sin PDF en sesión ni descarga; se abre la
+        // página de previsualización compartible (PDF al vuelo) y queda el
+        // acceso a la vista del boleto.
+        if (! Setting::descargaAutomaticaPdf()) {
+            $sharePageUrl = $freshTicket->shareUrl();
+
+            Notification::make()
+                ->title('Boleto reprogramado')
+                ->body("Boleto N°{$freshTicket->id}. El link se abrió en otra pestaña.")
+                ->success()
+                ->actions(\App\Support\ShareLinkNotification::actionsFor(
+                    $freshTicket->sale,
+                    $sharePageUrl,
+                    $freshTicket->sharePdfUrl('attachment'),
+                ))
+                ->send();
+
+            $this->js("window.open('{$sharePageUrl}', '_blank');");
+
+            $this->redirect(TicketResource::getUrl('view', ['record' => $freshTicket->id]));
+
+            return;
+        }
 
         $sale = $freshTicket->sale;
         $pdfService = new TicketPdfService;
@@ -257,6 +282,7 @@ class RescheduleTicket extends ResourcePage
      */
     public function handleSeatReservationConflict($data): void
     {
+
         $message = $data['message'] ?? 'Conflicto de reservación detectado';
 
         Notification::make()

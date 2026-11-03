@@ -13,7 +13,7 @@
 ## 2. Cierre
 
 - [x] 2.1 Ejecutar `vendor/bin/pint --dirty --format agent` y los tests de `TripListEmptyTripsTest` y `ServiceDaysTripFormTest`. Todos tienen que pasar.
-- [ ] 2.2 Prueba manual: abrir Viajes, confirmar que los vacíos no aparecen, encender el switch, ver los vacíos en gris, salir y volver a la lista con el switch como se dejó.
+- [x] 2.2 Prueba manual: abrir Viajes, confirmar que los vacíos no aparecen, encender el switch, ver los vacíos en gris, salir y volver a la lista con el switch como se dejó.
 
 ## Workflow follow-up
 

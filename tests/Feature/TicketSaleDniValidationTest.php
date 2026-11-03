@@ -232,24 +232,213 @@ class TicketSaleDniValidationTest extends TestCase
             ]);
     }
 
-    /** Avanza el wizard hasta el paso "Pasajeros" con 1 pasajero y 1 asiento. */
-    protected function mountPassengersStep(Schedule $schedule, string $date): Testable
+    public function test_dos_adultos_con_el_mismo_dni_marcan_el_segundo(): void
     {
-        $seat = Seat::where('bus_id', $this->bus->id)->orderBy('seat_number')->first();
+        $schedule = $this->makeSchedule();
+        $date = '2027-01-07';
+        Trip::findOrCreateForBooking($schedule->id, $date, $this->oran->id, $this->salta->id);
 
+        $this->actingAs(User::factory()->vendedor()->create());
+
+        $page = $this->mountPassengersStep($schedule, $date, passengers: 2);
+
+        $page->set('data.passengers.0.dni', '30123456')
+            ->set('data.passengers.1.dni', '30123456')
+            ->assertHasErrors(['data.passengers.1.dni'])
+            ->assertHasNoErrors(['data.passengers.0.dni']);
+
+        $this->assertSame(
+            'Este DNI ya está cargado en otro pasajero de la venta.',
+            (string) $page->errors()->first('data.passengers.1.dni'),
+        );
+    }
+
+    public function test_el_menor_con_el_dni_de_otro_adulto_de_la_venta_marca_error(): void
+    {
+        $schedule = $this->makeSchedule();
+        $date = '2027-01-07';
+        Trip::findOrCreateForBooking($schedule->id, $date, $this->oran->id, $this->salta->id);
+
+        $this->actingAs(User::factory()->vendedor()->create());
+
+        $page = $this->mountPassengersStep($schedule, $date, passengers: 2);
+
+        $page->set('data.passengers.0.dni', '30123456')
+            ->set('data.passengers.0.last_name', 'Perez')
+            ->set('data.passengers.0.first_name', 'Ana')
+            ->set('data.passengers.1.dni', '45123456')
+            ->set('data.passengers.0.travels_with_child', true)
+            ->set('data.passengers.0.child_data.dni', '45123456')
+            ->assertHasErrors(['data.passengers.0.child_data.dni']);
+
+        $this->assertSame(
+            'Este DNI ya está cargado en otro pasajero de la venta.',
+            (string) $page->errors()->first('data.passengers.0.child_data.dni'),
+        );
+    }
+
+    public function test_dni_distintos_en_la_venta_no_marcan_error(): void
+    {
+        $schedule = $this->makeSchedule();
+        $date = '2027-01-07';
+        Trip::findOrCreateForBooking($schedule->id, $date, $this->oran->id, $this->salta->id);
+
+        $this->actingAs(User::factory()->vendedor()->create());
+
+        $page = $this->mountPassengersStep($schedule, $date, passengers: 2);
+
+        $page->set('data.passengers.0.dni', '30123456')
+            ->set('data.passengers.1.dni', '30123457')
+            ->assertHasNoErrors(['data.passengers.0.dni', 'data.passengers.1.dni']);
+    }
+
+    public function test_el_campo_dni_no_marca_error_si_la_persona_ya_viaja(): void
+    {
+        $schedule = $this->makeSchedule();
+        $date = '2027-01-07';
+        $trip = Trip::findOrCreateForBooking($schedule->id, $date, $this->oran->id, $this->salta->id)['trip'];
+
+        $this->actingAs(User::factory()->vendedor()->create());
+
+        $this->createExistingTicket($trip, '30123456');
+
+        // El duplicado se avisa al presionar "Siguiente", no en el campo.
+        $this->mountPassengersStep($schedule, $date)
+            ->set('data.passengers.0.dni', '30123456')
+            ->assertHasNoErrors(['data.passengers.0.dni']);
+    }
+
+    public function test_siguiente_con_un_dni_que_ya_viaja_abre_el_modal_de_duplicado(): void
+    {
+        $schedule = $this->makeSchedule();
+        $date = '2027-01-07';
+        $trip = Trip::findOrCreateForBooking($schedule->id, $date, $this->oran->id, $this->salta->id)['trip'];
+
+        $this->actingAs(User::factory()->vendedor()->create());
+
+        $existing = $this->createExistingTicket($trip, '30123456');
+
+        $page = $this->fillPassenger($this->mountPassengersStep($schedule, $date), '30123456');
+
+        $page->call('callSchemaComponentMethod', 'form.data::wizard', 'nextStep', ['currentStepIndex' => 2])
+            ->assertActionMounted(CreateTicket::DUPLICATE_PASSENGER_ACTION)
+            ->assertMountedActionModalSee([
+                \App\Support\DuplicateTicketNotification::TITLE,
+                \App\Support\DuplicateTicketNotification::HINT,
+                'Ana Perez',
+                'DNI 30123456',
+                "N°{$existing->id}",
+                'Ver boleto',
+                'Volver a pasajeros',
+            ])
+            ->assertMountedActionModalSeeHtml(\App\Filament\Resources\Tickets\TicketResource::getUrl('view', ['record' => $existing->id]))
+            ->assertMountedActionModalSeeHtml('target="_blank"');
+    }
+
+    public function test_siguiente_sin_duplicados_no_abre_el_modal(): void
+    {
+        $schedule = $this->makeSchedule();
+        $date = '2027-01-07';
+        $trip = Trip::findOrCreateForBooking($schedule->id, $date, $this->oran->id, $this->salta->id)['trip'];
+
+        $this->actingAs(User::factory()->vendedor()->create());
+
+        $this->createExistingTicket($trip, '40999888');
+
+        $this->fillPassenger($this->mountPassengersStep($schedule, $date), '30123456')
+            ->call('callSchemaComponentMethod', 'form.data::wizard', 'nextStep', ['currentStepIndex' => 2])
+            ->assertActionNotMounted(CreateTicket::DUPLICATE_PASSENGER_ACTION);
+    }
+
+    protected function fillPassenger(Testable $page, string $dni): Testable
+    {
+        return $page
+            ->set('data.passengers.0.dni', $dni)
+            ->set('data.passengers.0.last_name', 'Perez')
+            ->set('data.passengers.0.first_name', 'Ana')
+            ->set('data.passengers.0.price', 15000)
+            ->set('data.passengers.0.payment_method', 'efectivo');
+    }
+
+    public function test_sin_viaje_elegido_no_avisa_duplicado(): void
+    {
+        \App\Support\Permissions::syncToDatabase();
+        Role::findByName(\App\Support\Permissions::ROLE_SELLER)->givePermissionTo('tickets.vender_sin_fecha');
+        \App\Support\Permissions::forgetFeatureFlagCache();
+
+        $schedule = $this->makeSchedule();
+        $date = '2027-01-07';
+        $trip = Trip::findOrCreateForBooking($schedule->id, $date, $this->oran->id, $this->salta->id)['trip'];
+
+        $this->actingAs(User::factory()->vendedor()->create());
+
+        Clients::create(['dni' => '30123456', 'nombre' => 'Ana', 'apellido' => 'Perez', 'can_buy' => true]);
+        $this->createExistingTicket($trip, '30123456');
+
+        $page = $this->mountPassengersStep($schedule, $date);
+
+        $page->set('data.sell_without_date_ida', true)
+            ->set('data.passengers.0.dni', '30123456')
+            ->assertHasNoErrors(['data.passengers.0.dni']);
+    }
+
+    protected function createExistingTicket(Trip $trip, string $dni): \App\Models\Ticket
+    {
+        $sale = \App\Models\Sale::create(['user_id' => auth()->id(), 'sale_date' => now(), 'total_amount' => 100]);
+        $passenger = \App\Models\Passenger::create([
+            'first_name' => 'Ana',
+            'last_name' => 'Perez',
+            'dni' => $dni,
+            'passenger_type' => 'adult',
+        ]);
+        $seat = Seat::where('bus_id', $this->bus->id)->orderByDesc('seat_number')->first();
+
+        return \App\Models\Ticket::create([
+            'sale_id' => $sale->id,
+            'trip_id' => $trip->id,
+            'seat_id' => $seat->id,
+            'bus_id' => $this->bus->id,
+            'passenger_id' => $passenger->id,
+            'is_round_trip' => false,
+            'is_return_leg' => false,
+            'origin_location_id' => $this->oran->id,
+            'destination_location_id' => $this->salta->id,
+            'price' => 100,
+        ]);
+    }
+
+    /** Avanza el wizard hasta el paso "Pasajeros" con N pasajeros y N asientos. */
+    protected function mountPassengersStep(Schedule $schedule, string $date, int $passengers = 1): Testable
+    {
+        $seatIds = Seat::where('bus_id', $this->bus->id)->orderBy('seat_number')->limit($passengers)->pluck('id')->all();
+
+        // La cantidad va primero: cambiarla reinicia el viaje elegido.
         $page = Livewire::test(CreateTicket::class)->fillForm([
+            'passengers_count' => (string) $passengers,
             'bus_id' => (string) $this->bus->id,
             'origin_location_id' => (string) $this->oran->id,
             'destination_location_id' => (string) $this->salta->id,
             'departure_date' => $date,
             'schedule_id' => (string) $schedule->id,
-            'passengers_count' => '1',
         ]);
 
         $page->call('callSchemaComponentMethod', 'form.data::wizard', 'nextStep', ['currentStepIndex' => 0]);
 
-        $page->set('data.seat_ids', [$seat->id]);
+        foreach ($seatIds as $seatId) {
+            \App\Models\SeatReservation::create([
+                'trip_id' => $page->get('data.trip_id'),
+                'seat_id' => $seatId,
+                'user_session_id' => session()->getId(),
+                'expires_at' => now()->addMinutes(5),
+            ]);
+        }
+
+        $page->set('data.seat_ids', $seatIds);
         $page->call('callSchemaComponentMethod', 'form.data::wizard', 'nextStep', ['currentStepIndex' => 1]);
+
+        // El repeater usa claves UUID: se renumeran 0..N-1 para que los
+        // tests direccionen a cada pasajero por su posición.
+        $page->set('data.passengers', array_values($page->get('data.passengers') ?? []));
 
         return $page;
     }

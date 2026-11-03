@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Exceptions\DuplicatePassengerOnTripException;
 use App\Models\Bus;
 use App\Models\Schedule;
 use App\Models\Seat;
@@ -12,6 +13,7 @@ use App\Models\TicketDateChange;
 use App\Models\Trip;
 use App\Support\SeatConflict;
 use App\Support\ServiceDays;
+use App\Support\TripPassengerConflicts;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -262,6 +264,16 @@ class TicketRescheduleService
                     throw ValidationException::withMessages(['ticket' => 'El boleto fue eliminado mientras se procesaba el cambio.']);
                 }
 
+                // Una persona por viaje: antes de mover ningún tramo.
+                $returnTicketToMove = $hasReturnMove && ! $isReturnLegTicket
+                    ? $this->findReturnLegTicket($mainTicket)
+                    : null;
+
+                $this->assertPassengerNotOnTargetTrips($mainTicket, [
+                    [$isReturnLegTicket ? null : $mainTicket, $isReturnLegTicket ? null : $newOutboundTrip],
+                    [$isReturnLegTicket ? $mainTicket : $returnTicketToMove, $hasReturnMove ? $newReturnTrip : null],
+                ]);
+
                 $movedReturn = false;
 
                 if ($isReturnLegTicket) {
@@ -405,6 +417,50 @@ class TicketRescheduleService
             }
 
             throw $e;
+        }
+    }
+
+    /**
+     * Una persona por viaje: el pasajero del boleto (o su menor) no puede
+     * tener otro boleto activo en un viaje destino. Solo se controlan los
+     * tramos que cambian de viaje; los boletos que se mueven no cuentan.
+     * Bloquea los viajes destino (por id) para que el control sea definitivo.
+     *
+     * @param  array<int, array{0: ?Ticket, 1: ?Trip}>  $moves  Pares [boleto que se mueve, viaje destino].
+     *
+     * @throws DuplicatePassengerOnTripException
+     */
+    private function assertPassengerNotOnTargetTrips(Ticket $ticket, array $moves): void
+    {
+        $movingTicketIds = [];
+        $targetTripIds = [];
+
+        foreach ($moves as [$movingTicket, $targetTrip]) {
+            if (! $movingTicket || ! $targetTrip) {
+                continue;
+            }
+
+            $movingTicketIds[] = (int) $movingTicket->id;
+
+            if ((int) ($movingTicket->trip_id ?? 0) !== (int) $targetTrip->id) {
+                $targetTripIds[] = (int) $targetTrip->id;
+            }
+        }
+
+        if ($targetTripIds === []) {
+            return;
+        }
+
+        sort($targetTripIds);
+        Trip::query()->whereIn('id', $targetTripIds)->orderBy('id')->lockForUpdate()->get();
+
+        $passenger = $ticket->passenger()->with('children')->first();
+        $dnis = collect([$passenger?->dni])->merge($passenger?->children->pluck('dni') ?? [])->all();
+
+        $conflicts = TripPassengerConflicts::find($dnis, $targetTripIds, $movingTicketIds);
+
+        if ($conflicts->isNotEmpty()) {
+            throw new DuplicatePassengerOnTripException($conflicts, 'schedule_id');
         }
     }
 

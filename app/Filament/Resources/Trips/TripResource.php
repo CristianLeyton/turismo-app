@@ -19,11 +19,13 @@ use Filament\Actions\ViewAction;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Toggle;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
@@ -105,7 +107,7 @@ class TripResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
-            ->modifyQueryUsing(fn ($query) => $query->with(['bus', 'route', 'schedule']))
+            ->modifyQueryUsing(fn ($query) => $query->with(['bus', 'route', 'schedule'])->withCount('tickets'))
             ->columns([
                 TextColumn::make('id')
                     ->label('Nº')
@@ -252,13 +254,32 @@ class TripResource extends Resource
                     ->relationship('route', 'name')
                     ->label('Ruta')
                     ->preload(),
+
+                // Viajes sin pasajeros (sin boletos activos) ocultos por
+                // defecto. El Toggle propio (sin ->toggle()) hace que Filament
+                // aplique la consulta siempre: con el switch apagado filtra.
+                // Buscar por "Viaje Nº" muestra el viaje aunque esté vacío.
+                Filter::make('include_empty_trips')
+                    ->schema([
+                        Toggle::make('include_empty')
+                            ->label('Ver también viajes sin pasajeros')
+                            ->default(false),
+                    ])
+                    ->columnSpan(2)
+                    ->query(function (Builder $query, array $data, HasTable $livewire): Builder {
+                        if ((bool) ($data['include_empty'] ?? false) || filled($livewire->getTableFilterState('trip_id')['id'] ?? null)) {
+                            return $query;
+                        }
+
+                        return $query->whereHas('tickets');
+                    }),
             ])
             ->filtersLayout(FiltersLayout::AboveContent)
             ->deferFilters(false)
             ->filtersFormColumns(5)
             ->persistFiltersInSession()
             ->hiddenFilterIndicators()
-            ->recordClasses(fn ($record) => $record->tickets()->count() === 0 ? 'bg-gray-100 opacity-70 dark:bg-gray-800' : '')
+            ->recordClasses(fn ($record) => (int) $record->tickets_count === 0 ? 'bg-gray-100 opacity-70 dark:bg-gray-800' : '')
             ->recordActions([
                 ViewAction::make('view_details')
                     ->label('Ver detalles')

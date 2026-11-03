@@ -194,6 +194,10 @@ class RescheduleTicket extends ResourcePage
 
         try {
             app(TicketRescheduleService::class)->reschedule($ticket, $payload);
+        } catch (\App\Exceptions\DuplicatePassengerOnTripException $e) {
+            \App\Support\DuplicateTicketNotification::send($e->conflicts(), 'Volver');
+
+            return; // Conservar el estado del form
         } catch (\Illuminate\Validation\ValidationException $e) {
             foreach ($e->errors() as $messages) {
                 foreach ((array) $messages as $message) {

@@ -85,6 +85,18 @@ class Setting extends Model
         ['date' => '2026-09-13', 'has_service' => true, 'reason' => null],
     ];
 
+    /**
+     * Líneas de contacto que se muestran en el PDF del boleto (JSON con una
+     * lista de {name: ?string, phone: string}).
+     */
+    public const CONTACT_LINES = 'tickets.contact_lines';
+
+    /**
+     * Cantidad máxima de líneas de contacto. Es el único lugar que la define:
+     * la página de parámetros y la lectura la respetan.
+     */
+    public const CONTACT_LINES_MAX = 3;
+
     protected $fillable = ['key', 'value'];
 
     /**
@@ -162,6 +174,51 @@ class Setting extends Model
         $value = self::raw(self::WHATSAPP_MENSAJE);
 
         return filled($value) ? $value : self::WHATSAPP_MENSAJE_DEFAULT;
+    }
+
+    /**
+     * Líneas de contacto configuradas, en el orden cargado y como máximo
+     * CONTACT_LINES_MAX. `dial` es el destino del enlace tel:: solo los
+     * dígitos, con el "+" inicial si lo tiene. Sin configuración, ninguna.
+     *
+     * @return list<array{name: ?string, phone: string, dial: string}>
+     */
+    public static function contactLines(): array
+    {
+        $lines = [];
+
+        foreach (self::decodeJson(self::CONTACT_LINES) ?? [] as $line) {
+            $phone = is_array($line) ? trim((string) ($line['phone'] ?? '')) : '';
+
+            if ($phone === '') {
+                continue;
+            }
+
+            $name = trim((string) ($line['name'] ?? ''));
+
+            $lines[] = [
+                'name' => $name !== '' ? $name : null,
+                'phone' => $phone,
+                'dial' => self::dialablePhone($phone),
+            ];
+
+            if (count($lines) === self::CONTACT_LINES_MAX) {
+                break;
+            }
+        }
+
+        return $lines;
+    }
+
+    /**
+     * Teléfono para un enlace tel:: "+54 9 (3878) 804-506" → "+5493878804506".
+     */
+    public static function dialablePhone(string $phone): string
+    {
+        $phone = trim($phone);
+        $digits = preg_replace('/\D+/', '', $phone) ?? '';
+
+        return (str_starts_with($phone, '+') ? '+' : '').$digits;
     }
 
     /**

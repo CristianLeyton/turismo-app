@@ -371,6 +371,49 @@ class ClientPanelTicketsTest extends TestCase
         $this->assertNotContains('2026-10-05', $disabled);
     }
 
+    public function test_el_cliente_no_puede_elegir_un_viaje_donde_ya_tiene_boleto(): void
+    {
+        $f = $this->createPendingTicket('11223344');
+
+        $trip = Trip::create([
+            'route_id' => $f['route']->id,
+            'schedule_id' => $f['schedule']->id,
+            'bus_id' => $f['bus']->id,
+            'trip_date' => '2026-10-05',
+        ]);
+        $otherPassenger = Passenger::create(['first_name' => 'Pasajero', 'last_name' => 'García', 'dni' => '11223344', 'passenger_type' => 'adult']);
+        Ticket::create([
+            'sale_id' => $f['ticket']->sale_id,
+            'trip_id' => $trip->id,
+            'seat_id' => Seat::where('bus_id', $f['bus']->id)->where('seat_number', 3)->first()->id,
+            'bus_id' => $f['bus']->id,
+            'passenger_id' => $otherPassenger->id,
+            'is_round_trip' => false,
+            'is_return_leg' => false,
+            'origin_location_id' => $f['origin']->id,
+            'destination_location_id' => $f['destination']->id,
+            'price' => 15000,
+        ]);
+
+        $this->identify($f['client']->dni);
+
+        Livewire::test(MyTickets::class)
+            ->callAction(TestAction::make('asignar_fecha')->table($f['ticket']), data: [
+                'date' => '2026-10-05',
+                'schedule_id' => $f['schedule']->id,
+                'seat_ids' => [Seat::where('bus_id', $f['bus']->id)->where('seat_number', 1)->first()->id],
+            ])
+            ->assertNotified(
+                \Filament\Notifications\Notification::make()
+                    ->title('No se pudo asignar la fecha')
+                    ->body(\App\Exceptions\DuplicatePassengerOnTripException::MESSAGE)
+                    ->danger()
+                    ->persistent(),
+            );
+
+        $this->assertNull($f['ticket']->fresh()->trip_id, 'El boleto sigue sin fecha.');
+    }
+
     public function test_no_se_permite_fecha_pasada(): void
     {
         $f = $this->createPendingTicket('11223344');

@@ -78,6 +78,10 @@ class TicketSettings extends Page
             'permitir_acompanantes' => Setting::permiteAcompanantes(),
             'descarga_automatica_pdf' => Setting::descargaAutomaticaPdf(),
             'whatsapp_mensaje' => Setting::whatsappMensaje(),
+            'contact_lines' => array_map(fn (array $line): array => [
+                'name' => $line['name'],
+                'phone' => $line['phone'],
+            ], Setting::contactLines()),
             'service_weekdays' => array_map('strval', Setting::serviceWeekdays()),
             'service_exceptions' => array_map(fn (array $exception): array => [
                 'date' => $exception['date'],
@@ -136,6 +140,45 @@ class TicketSettings extends Page
                             ->placeholder(Setting::WHATSAPP_MENSAJE_DEFAULT)
                             ->helperText('Texto que lleva el mensaje cuando se comparte el link del boleto por WhatsApp. Usá {link} donde quieras que aparezca la URL.')
                             ->visible(fn (Get $get): bool => ! (bool) $get('descarga_automatica_pdf')),
+                    ]),
+
+                Section::make('Líneas de contacto')
+                    ->description('Números a los que pueden llamar los clientes. Aparecen en todos los boletos, debajo del asiento y en el orden cargado; desde un celular se pueden tocar para llamar. Cargalos como se marcan desde un celular (con la característica, o con +54 9 si hay clientes de otras provincias). Sin líneas cargadas, el boleto no las muestra.')
+                    ->columnSpanFull()
+                    ->schema([
+                        Repeater::make('contact_lines')
+                            ->hiddenLabel()
+                            ->addActionLabel('Agregar línea')
+                            ->defaultItems(0)
+                            ->maxItems(Setting::CONTACT_LINES_MAX)
+                            ->columns(2)
+                            ->schema([
+                                TextInput::make('name')
+                                    ->label('Nombre (opcional)')
+                                    ->placeholder('Ej.: Orán')
+                                    ->maxLength(30)
+                                    ->validationMessages([
+                                        'max' => 'El nombre no puede tener más de :max caracteres.',
+                                    ]),
+
+                                TextInput::make('phone')
+                                    ->label('Teléfono')
+                                    ->placeholder('Ej.: 3878-804506')
+                                    ->tel()
+                                    ->required()
+                                    ->maxLength(20)
+                                    ->regex('/^\+?[\d\s\-()]{6,20}$/')
+                                    ->rule(static fn (): \Closure => static function (string $attribute, mixed $value, \Closure $fail): void {
+                                        if (strlen(preg_replace('/\D+/', '', (string) $value) ?? '') < 6) {
+                                            $fail('Ingrese un teléfono válido (solo números, espacios, guiones, paréntesis y +).');
+                                        }
+                                    })
+                                    ->validationMessages([
+                                        'required' => 'Ingrese el teléfono.',
+                                        'max' => 'El teléfono no puede tener más de :max caracteres.',
+                                        'regex' => 'Ingrese un teléfono válido (solo números, espacios, guiones, paréntesis y +).',
+                                    ]),
+                            ]),
                     ]),
 
                 Section::make('Venta fuera de término')
@@ -288,6 +331,17 @@ class TicketSettings extends Page
             Setting::WHATSAPP_MENSAJE,
             filled($data['whatsapp_mensaje'] ?? null) ? trim($data['whatsapp_mensaje']) : null,
         );
+
+        $contactLines = collect($data['contact_lines'] ?? [])
+            ->map(fn (array $line): array => [
+                'name' => filled($line['name'] ?? null) ? trim((string) $line['name']) : null,
+                'phone' => trim((string) ($line['phone'] ?? '')),
+            ])
+            ->filter(fn (array $line): bool => $line['phone'] !== '')
+            ->take(Setting::CONTACT_LINES_MAX)
+            ->values()
+            ->all();
+        Setting::set(Setting::CONTACT_LINES, json_encode($contactLines));
 
         $weekdays = array_values(array_unique(array_map('intval', $data['service_weekdays'] ?? [])));
         sort($weekdays);

@@ -74,7 +74,10 @@ class ServiceDaysTripFormTest extends TestCase
             'trip_date' => '2026-10-05',
         ]);
 
+        // Los viajes del fixture no tienen pasajeros: se encienden para que la
+        // lista los muestre y el test pruebe solo el filtro por fecha.
         Livewire::test(ManageTrips::class)
+            ->filterTable('include_empty_trips', ['include_empty' => true])
             ->filterTable('trip_date', ['date' => '2026-10-04'])
             ->assertCanSeeTableRecords([$sundayTrip])
             ->assertCanNotSeeTableRecords([$mondayTrip]);

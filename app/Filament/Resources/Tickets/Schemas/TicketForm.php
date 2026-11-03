@@ -19,6 +19,7 @@ use App\Support\LiveValidation;
 use App\Support\Permissions;
 use App\Support\SaleCutoff;
 use App\Support\ServiceDays;
+use App\Support\TripPassengerConflicts;
 use Carbon\Carbon;
 use Closure;
 use Filament\Actions\Action;
@@ -1862,6 +1863,30 @@ class TicketForm
                     ]),
 
                 Step::make('Pasajeros')
+                    // Una persona por viaje: al presionar "Siguiente", si algún
+                    // DNI (adulto o menor) ya tiene boleto en el viaje de ida
+                    // o de vuelta, se abre el modal de duplicado y no se avanza.
+                    ->afterValidation(function (Get $get, LivewireComponent $livewire): void {
+                        $dnis = TripPassengerConflicts::saleDnis((array) $get('passengers'));
+                        $tripIds = TripPassengerConflicts::saleTripIds([
+                            'trip_id' => $get('trip_id'),
+                            'return_trip_id' => $get('return_trip_id'),
+                            'is_round_trip' => $get('is_round_trip'),
+                            'sell_without_date_ida' => $get('sell_without_date_ida'),
+                            'sell_without_date_vuelta' => $get('sell_without_date_vuelta'),
+                        ]);
+
+                        if (TripPassengerConflicts::find($dnis, $tripIds)->isEmpty()) {
+                            return;
+                        }
+
+                        $livewire->mountAction(CreateTicket::DUPLICATE_PASSENGER_ACTION, [
+                            'dnis' => $dnis,
+                            'tripIds' => $tripIds,
+                        ]);
+
+                        throw new Halt;
+                    })
                     ->schema([
                         ViewField::make('wizard_header_pasajeros')
                             ->view('tickets.wizard-step-header')
@@ -2002,6 +2027,8 @@ class TicketForm
                                                     }
                                                 };
                                             })
+                                            // Una persona por venta (adultos y menores).
+                                            ->rule(static fn (Get $get): Closure => self::distinctSaleDniRule($get, 'dni'))
                                             ->validationMessages([
                                                 'required' => 'Debe ingresar un DNI.',
                                                 'numeric' => 'El DNI debe ser numérico.',
@@ -2131,9 +2158,16 @@ class TicketForm
                                             ->label('DNI del menor')
                                             ->required()
                                             ->numeric()
+                                            ->live(onBlur: true)
+                                            ->afterStateUpdated(static function (TextInput $component, $state): void {
+                                                if (strlen(preg_replace('/\D+/', '', trim((string) $state))) >= 7) {
+                                                    LiveValidation::only($component);
+                                                }
+                                            })
                                             ->rules([
                                                 'digits_between:7,8',
                                             ])
+                                            ->rule(static fn (Get $get): Closure => self::distinctSaleDniRule($get, 'child_data.dni'))
                                             ->validationMessages([
                                                 'required' => 'Debe ingresar un DNI.',
                                                 'numeric' => 'El DNI debe ser numérico.',
@@ -2865,6 +2899,32 @@ class TicketForm
     private static function serviceDayWarning(mixed $date): ?string
     {
         return ServiceDays::userCanBypass() ? ServiceDays::warning($date) : null;
+    }
+
+    /**
+     * Regla de validación de un DNI de la venta (adulto o menor): no puede
+     * repetirse dentro de la venta. Falla si el mismo DNI está cargado en
+     * cualquier otro campo DNI de la venta (de adulto o de menor).
+     */
+    private static function distinctSaleDniRule(Get $get, string $field): Closure
+    {
+        return static function (string $attribute, mixed $value, Closure $fail) use ($get, $field): void {
+            $dni = trim((string) $value);
+
+            if ($dni === '' || ! preg_match('/passengers\.([^.]+)\.(?:child_data\.)?dni$/', $attribute, $matches)) {
+                return;
+            }
+
+            foreach (TripPassengerConflicts::saleDniSlots((array) $get('../../passengers')) as $slot) {
+                $isCurrentField = (string) $slot['key'] === $matches[1] && $slot['field'] === $field;
+
+                if (! $isCurrentField && $slot['dni'] === $dni) {
+                    $fail('Este DNI ya está cargado en otro pasajero de la venta.');
+
+                    return;
+                }
+            }
+        };
     }
 
     /**

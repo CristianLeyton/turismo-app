@@ -754,4 +754,154 @@ class TicketRescheduleServiceTest extends TestCase
 
         $this->assertSame(0, \App\Models\SeatReservation::where('user_session_id', $sessionId)->count());
     }
+
+    // ====================== Una persona por viaje ======================
+
+    private function tripFor(Schedule $schedule, Route $route, string $date): Trip
+    {
+        return Trip::firstOrCreate(
+            ['schedule_id' => $schedule->id, 'trip_date' => $date],
+            ['route_id' => $route->id, 'bus_id' => $this->bus1->id],
+        );
+    }
+
+    private function sellOtherTicket(Trip $trip, string $dni, string $seatNumber = '4'): Ticket
+    {
+        $sale = Sale::create(['user_id' => Auth::id(), 'sale_date' => now(), 'total_amount' => 100]);
+        $passenger = \App\Models\Passenger::create([
+            'first_name' => 'Otro',
+            'last_name' => 'Pasajero',
+            'dni' => $dni,
+            'passenger_type' => 'adult',
+        ]);
+
+        return Ticket::create([
+            'sale_id' => $sale->id,
+            'trip_id' => $trip->id,
+            'seat_id' => Seat::where('bus_id', $trip->bus_id)->where('seat_number', $seatNumber)->first()->id,
+            'passenger_id' => $passenger->id,
+            'is_round_trip' => false,
+            'is_return_leg' => false,
+            'origin_location_id' => $this->oran->id,
+            'destination_location_id' => $this->salta->id,
+            'price' => 100,
+        ]);
+    }
+
+    private function assertDuplicateRejected(callable $callback): \App\Exceptions\DuplicatePassengerOnTripException
+    {
+        try {
+            $callback();
+        } catch (\App\Exceptions\DuplicatePassengerOnTripException $e) {
+            return $e;
+        }
+
+        $this->fail('La reprogramación debió rechazarse por duplicado.');
+    }
+
+    public function test_rechaza_mover_a_un_viaje_donde_el_dni_ya_tiene_otro_boleto(): void
+    {
+        $ticket = $this->createRoundTripSale('2026-10-01', '2026-10-08');
+        $other = $this->sellOtherTicket($this->tripFor($this->scheduleIda, $this->routeIda, '2026-10-05'), '12345678');
+
+        $exception = $this->assertDuplicateRejected(fn () => $this->service->reschedule($ticket, [
+            'scope' => 'outbound',
+            'date' => '2026-10-05',
+            'schedule_id' => $this->scheduleIda->id,
+            'seat_id' => Seat::where('bus_id', $this->bus1->id)->where('seat_number', '3')->first()->id,
+        ]));
+
+        $this->assertSame([$other->id], $exception->conflicts()->map(fn (array $conflict): int => $conflict['ticket']->id)->all());
+        $this->assertSame('2026-10-01', $ticket->fresh()->trip->trip_date->format('Y-m-d'));
+        $this->assertSame(0, $ticket->dateChanges()->count());
+    }
+
+    public function test_cambiar_de_asiento_en_el_mismo_viaje_no_cuenta_como_duplicado(): void
+    {
+        $ticket = $this->createRoundTripSale('2026-10-01', '2026-10-08');
+        // Duplicado previo a la regla en el mismo viaje: no bloquea un cambio de asiento.
+        $this->sellOtherTicket($ticket->trip, '12345678');
+
+        $this->service->reschedule($ticket, [
+            'scope' => 'outbound',
+            'date' => '2026-10-01',
+            'schedule_id' => $this->scheduleIda->id,
+            'seat_id' => Seat::where('bus_id', $this->bus1->id)->where('seat_number', '3')->first()->id,
+        ]);
+
+        $this->assertSame('3', (string) $ticket->fresh()->seat->seat_number);
+    }
+
+    public function test_ambos_tramos_con_conflicto_solo_en_la_vuelta_no_mueve_ninguno(): void
+    {
+        $ticket = $this->createRoundTripSale('2026-10-01', '2026-10-08');
+        $this->sellOtherTicket($this->tripFor($this->scheduleVuelta, $this->routeVuelta, '2026-10-20'), '12345678');
+
+        $this->assertDuplicateRejected(fn () => $this->service->reschedule($ticket, [
+            'scope' => 'both',
+            'date' => '2026-10-05',
+            'schedule_id' => $this->scheduleIda->id,
+            'seat_id' => Seat::where('bus_id', $this->bus1->id)->where('seat_number', '1')->first()->id,
+            'return_date' => '2026-10-20',
+            'return_schedule_id' => $this->scheduleVuelta->id,
+            'return_seat_id' => Seat::where('bus_id', $this->bus1->id)->where('seat_number', '1')->first()->id,
+        ]));
+
+        $ticket->refresh();
+        $this->assertSame('2026-10-01', $ticket->trip->trip_date->format('Y-m-d'));
+        $this->assertSame('2026-10-08', $ticket->returnTrip->trip_date->format('Y-m-d'));
+        $this->assertSame(0, \App\Models\TicketDateChange::query()
+            ->whereIn('ticket_id', Ticket::query()->where('sale_id', $ticket->sale_id)->pluck('id'))
+            ->count());
+    }
+
+    public function test_rechaza_asignar_el_primer_viaje_si_el_dni_ya_viaja(): void
+    {
+        $sale = Sale::create(['user_id' => Auth::id(), 'sale_date' => now(), 'total_amount' => 100]);
+        $passenger = \App\Models\Passenger::create(['first_name' => 'Juan', 'last_name' => 'Pérez', 'dni' => '12345678', 'passenger_type' => 'adult']);
+        $pending = Ticket::create([
+            'sale_id' => $sale->id,
+            'trip_id' => null,
+            'seat_id' => null,
+            'bus_id' => $this->bus1->id,
+            'passenger_id' => $passenger->id,
+            'is_round_trip' => false,
+            'is_return_leg' => false,
+            'origin_location_id' => $this->oran->id,
+            'destination_location_id' => $this->salta->id,
+            'price' => 100,
+        ]);
+        $this->sellOtherTicket($this->tripFor($this->scheduleIda, $this->routeIda, '2026-10-05'), '12345678');
+
+        $this->assertDuplicateRejected(fn () => $this->service->reschedule($pending, [
+            'scope' => 'outbound',
+            'date' => '2026-10-05',
+            'schedule_id' => $this->scheduleIda->id,
+            'seat_id' => Seat::where('bus_id', $this->bus1->id)->where('seat_number', '1')->first()->id,
+        ]));
+
+        $this->assertNull($pending->fresh()->trip_id);
+    }
+
+    public function test_rechaza_mover_si_el_menor_ya_viaja_en_el_destino(): void
+    {
+        $ticket = $this->createRoundTripSale('2026-10-01', '2026-10-08');
+        \App\Models\Passenger::create([
+            'first_name' => 'Nene',
+            'last_name' => 'Pérez',
+            'dni' => '45123456',
+            'parent_passenger_id' => $ticket->passenger_id,
+            'passenger_type' => 'child',
+        ]);
+        $this->sellOtherTicket($this->tripFor($this->scheduleIda, $this->routeIda, '2026-10-05'), '45123456');
+
+        $this->assertDuplicateRejected(fn () => $this->service->reschedule($ticket, [
+            'scope' => 'outbound',
+            'date' => '2026-10-05',
+            'schedule_id' => $this->scheduleIda->id,
+            'seat_id' => Seat::where('bus_id', $this->bus1->id)->where('seat_number', '3')->first()->id,
+        ]));
+
+        $this->assertSame('2026-10-01', $ticket->fresh()->trip->trip_date->format('Y-m-d'));
+    }
 }

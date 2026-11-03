@@ -225,10 +225,32 @@
             color: #6b7280;
             margin-top: 1mm;
         }
+
+        /* Teléfonos de contacto: una fila compacta debajo del asiento. */
+        .contact-lines {
+            font-size: 10px;
+            color: #4b5563;
+            margin: 1mm 2mm 0;
+            line-height: 1.4;
+        }
+
+        .contact-lines-title {
+            font-weight: bold;
+        }
+
+        .contact-lines a {
+            color: #111827;
+            font-weight: bold;
+            text-decoration: underline;
+        }
     </style>
 </head>
 
 <body>
+    @php
+        /* Se leen una vez por PDF: son las mismas para todos los boletos. */
+        $contactLines = \App\Models\Setting::contactLines();
+    @endphp
 
     @foreach (\App\Services\TicketPdfService::sheets($tickets) as $pair)
         <div class='sheet'>
@@ -359,6 +381,19 @@
                                         </td>
                                     </tr>
                                 </table>
+
+                                @if ($contactLines !== [])
+                                    <div class='contact-lines'>
+                                        <span class='contact-lines-title'>Líneas de contacto:</span>
+                                        @foreach ($contactLines as $line)
+                                            @if (! $loop->first)
+                                                &middot;
+                                            @endif
+                                            {{ $line['name'] !== null ? $line['name'].':' : '' }}
+                                            <a href="tel:{{ $line['dial'] }}">{{ $line['phone'] }}</a>
+                                        @endforeach
+                                    </div>
+                                @endif
                             </td>
 
                             {{-- Columna derecha 1/3 --}}

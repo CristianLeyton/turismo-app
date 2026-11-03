@@ -2,11 +2,16 @@
 
 namespace App\Filament\Resources\Tickets\Pages;
 
+use App\Exceptions\DuplicatePassengerOnTripException;
 use App\Filament\Resources\Tickets\Pages\EditTicket\EditTicketForm;
 use App\Filament\Resources\Tickets\TicketResource;
+use App\Models\Passenger;
 use App\Models\Setting;
 use App\Models\Ticket;
 use App\Models\TicketEdit;
+use App\Models\Trip;
+use App\Support\DuplicateTicketNotification;
+use App\Support\TripPassengerConflicts;
 use Filament\Actions\Action;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
@@ -492,62 +497,29 @@ class EditTicket extends ResourcePage
             return false;
         }
 
-        DB::transaction(function () use ($ticket, $passenger, $changes, $passengerChanges, $child, $childFlagNew, $childData, $petFlagNew, $petData, $isReturnLegWithSharedPrice, $data, $reason) {
-            // Pasajero titular.
-            if ($passengerChanges !== []) {
-                $passenger->update($passengerChanges);
-            }
+        // Una persona por viaje: solo si cambia el DNI del titular o del menor,
+        // o si se agrega un menor. Editar otros datos de un boleto que ya
+        // estaba duplicado sigue funcionando.
+        $newDnis = collect([
+            array_key_exists('dni', $passengerChanges) ? $passengerChanges['dni'] : null,
+            $childFlagNew && filled($childData['dni'] ?? null) && (! $child || (string) $child->dni !== (string) $childData['dni'])
+                ? (string) $childData['dni']
+                : null,
+        ])->filter(fn ($dni) => filled($dni))->values()->all();
 
-            // Menor acompañante: crear / actualizar / eliminar según el flag.
-            $childPayload = [
-                'first_name' => trim((string) ($childData['first_name'] ?? '')),
-                'last_name' => trim((string) ($childData['last_name'] ?? '')),
-                'dni' => filled($childData['dni'] ?? null) ? $childData['dni'] : null,
-                'parent_passenger_id' => $passenger->id,
-                'passenger_type' => 'child',
-            ];
-
-            if ($childFlagNew && filled($childPayload['first_name']) && filled($childPayload['last_name'])) {
-                if ($child) {
-                    $child->update($childPayload);
-                } else {
-                    $passenger->children()->create($childPayload);
+        try {
+            DB::transaction(function () use ($ticket, $passenger, $changes, $passengerChanges, $child, $childFlagNew, $childData, $petFlagNew, $petData, $isReturnLegWithSharedPrice, $data, $reason, $newDnis) {
+                if ($newDnis !== [] && $passenger) {
+                    $this->assertNewDnisNotOnPassengerTrips($passenger, $newDnis);
                 }
-            } elseif (! $childFlagNew) {
-                // Desmarcó el acompañante: se borran los pasajeros hijos.
-                $passenger->children()->delete();
-            }
 
-            // Boleto.
-            $ticket->refresh();
-            $ticket->travels_with_child = $childFlagNew;
-            $ticket->travels_with_pets = $petFlagNew;
-            $ticket->pet_names = $petFlagNew ? trim((string) ($petData['pet_names'] ?? '')) ?: null : null;
-            $ticket->pet_count = $petFlagNew ? (filled($petData['pet_count'] ?? null) ? (int) $petData['pet_count'] : null) : null;
+                $this->applyChanges($ticket, $passenger, $changes, $passengerChanges, $child, $childFlagNew, $childData, $petFlagNew, $petData, $isReturnLegWithSharedPrice, $data, $reason);
+            });
+        } catch (DuplicatePassengerOnTripException $e) {
+            DuplicateTicketNotification::send($e->conflicts(), 'Volver');
 
-            if (! $isReturnLegWithSharedPrice) {
-                if (filled($data['payment_method'] ?? null)) {
-                    $ticket->payment_method = $data['payment_method'];
-                }
-                if (filled($data['price'] ?? null)) {
-                    $ticket->price = $data['price'];
-                }
-            }
-            $ticket->save();
-
-            // Auditoría: una fila por campo cambiado.
-            foreach ($changes as [$field, $old, $new]) {
-                TicketEdit::create([
-                    'ticket_id' => $ticket->id,
-                    'field' => $field,
-                    'field_label' => EditTicketForm::fieldLabel($field),
-                    'old_value' => $old === null ? null : (string) $old,
-                    'new_value' => $new === null ? null : (string) $new,
-                    'reason' => $reason,
-                    'user_id' => Auth::id(),
-                ]);
-            }
-        });
+            return false;
+        }
 
         Notification::make()
             ->title('Boleto actualizado')
@@ -558,6 +530,104 @@ class EditTicket extends ResourcePage
         $this->redirect(TicketResource::getUrl('view', ['record' => $ticket->getKey()]));
 
         return true;
+    }
+
+    /**
+     * Ningún DNI nuevo del pasajero (titular o menor) puede tener otro boleto
+     * activo en los viajes de los boletos de ese pasajero (ida y vuelta).
+     * Bloquea esos viajes para que el control sea definitivo.
+     *
+     * @param  list<string>  $newDnis
+     *
+     * @throws DuplicatePassengerOnTripException
+     */
+    private function assertNewDnisNotOnPassengerTrips(Passenger $passenger, array $newDnis): void
+    {
+        $passengerTickets = Ticket::query()
+            ->where('passenger_id', $passenger->id)
+            ->whereNotNull('trip_id')
+            ->get(['id', 'trip_id']);
+
+        $tripIds = $passengerTickets->pluck('trip_id')->map(fn ($id): int => (int) $id)->unique()->sort()->values()->all();
+
+        if ($tripIds === []) {
+            return;
+        }
+
+        Trip::query()->whereIn('id', $tripIds)->orderBy('id')->lockForUpdate()->get();
+
+        $conflicts = TripPassengerConflicts::find($newDnis, $tripIds, $passengerTickets->pluck('id')->all());
+
+        if ($conflicts->isNotEmpty()) {
+            throw new DuplicatePassengerOnTripException($conflicts, 'dni');
+        }
+    }
+
+    /**
+     * Guarda los cambios de la edición dentro de la transacción activa.
+     *
+     * @param  array<int, array{0: string, 1: mixed, 2: mixed}>  $changes
+     * @param  array<string, string>  $passengerChanges
+     * @param  array<string, mixed>  $childData
+     * @param  array<string, mixed>  $petData
+     * @param  array<string, mixed>  $data
+     */
+    private function applyChanges(Ticket $ticket, ?Passenger $passenger, array $changes, array $passengerChanges, ?Passenger $child, bool $childFlagNew, array $childData, bool $petFlagNew, array $petData, bool $isReturnLegWithSharedPrice, array $data, ?string $reason): void
+    {
+        // Pasajero titular.
+        if ($passengerChanges !== []) {
+            $passenger->update($passengerChanges);
+        }
+
+        // Menor acompañante: crear / actualizar / eliminar según el flag.
+        $childPayload = [
+            'first_name' => trim((string) ($childData['first_name'] ?? '')),
+            'last_name' => trim((string) ($childData['last_name'] ?? '')),
+            'dni' => filled($childData['dni'] ?? null) ? $childData['dni'] : null,
+            'parent_passenger_id' => $passenger->id,
+            'passenger_type' => 'child',
+        ];
+
+        if ($childFlagNew && filled($childPayload['first_name']) && filled($childPayload['last_name'])) {
+            if ($child) {
+                $child->update($childPayload);
+            } else {
+                $passenger->children()->create($childPayload);
+            }
+        } elseif (! $childFlagNew) {
+            // Desmarcó el acompañante: se borran los pasajeros hijos.
+            $passenger->children()->delete();
+        }
+
+        // Boleto.
+        $ticket->refresh();
+        $ticket->travels_with_child = $childFlagNew;
+        $ticket->travels_with_pets = $petFlagNew;
+        $ticket->pet_names = $petFlagNew ? trim((string) ($petData['pet_names'] ?? '')) ?: null : null;
+        $ticket->pet_count = $petFlagNew ? (filled($petData['pet_count'] ?? null) ? (int) $petData['pet_count'] : null) : null;
+
+        if (! $isReturnLegWithSharedPrice) {
+            if (filled($data['payment_method'] ?? null)) {
+                $ticket->payment_method = $data['payment_method'];
+            }
+            if (filled($data['price'] ?? null)) {
+                $ticket->price = $data['price'];
+            }
+        }
+        $ticket->save();
+
+        // Auditoría: una fila por campo cambiado.
+        foreach ($changes as [$field, $old, $new]) {
+            TicketEdit::create([
+                'ticket_id' => $ticket->id,
+                'field' => $field,
+                'field_label' => EditTicketForm::fieldLabel($field),
+                'old_value' => $old === null ? null : (string) $old,
+                'new_value' => $new === null ? null : (string) $new,
+                'reason' => $reason,
+                'user_id' => Auth::id(),
+            ]);
+        }
     }
 
     /**

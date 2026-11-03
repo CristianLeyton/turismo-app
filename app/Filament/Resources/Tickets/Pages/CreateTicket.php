@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\Tickets\Pages;
 
+use App\Exceptions\DuplicatePassengerOnTripException;
 use App\Filament\Resources\Tickets\TicketResource;
 use App\Models\Passenger;
 use App\Models\PaymentMethod;
@@ -10,18 +11,22 @@ use App\Models\SeatReservation;
 use App\Models\Setting;
 use App\Models\Ticket;
 use App\Models\Trip;
+use App\Support\DuplicateTicketNotification;
 use App\Support\SaleCutoff;
 use App\Support\ServiceDays;
 use App\Support\ShareLinkNotification;
+use App\Support\TripPassengerConflicts;
 use Filament\Actions\Action;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\CreateRecord;
+use Filament\Support\Enums\Width;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\ValidationException;
 
 class CreateTicket extends CreateRecord
 {
@@ -37,6 +42,84 @@ class CreateTicket extends CreateRecord
     public array $seat_ids = [];
 
     public array $return_seat_ids = [];
+
+    public const DUPLICATE_PASSENGER_ACTION = 'duplicatePassenger';
+
+    /**
+     * Pasos con asientos y el campo que guarda la selección de cada uno.
+     *
+     * @var array<string, string>
+     */
+    private const SEAT_STEPS = [
+        'seat_ids' => 'Asientos (Ida)',
+        'return_seat_ids' => 'Asientos (Vuelta)',
+    ];
+
+    /**
+     * Al presionar "Finalizar" el asistente valida todos los pasos. Si fallan
+     * los asientos (p. ej. la reserva venció y se liberaron), el error queda
+     * en un campo oculto de un paso anterior y no se ve: se avisa con una
+     * notificación que explica el problema y cómo volver a elegirlos.
+     */
+    protected function onValidationError(ValidationException $exception): void
+    {
+        parent::onValidationError($exception);
+
+        $failedSeatFields = collect(array_keys(self::SEAT_STEPS))
+            ->filter(fn (string $field): bool => array_key_exists("data.{$field}", $exception->errors()))
+            ->values();
+
+        if ($failedSeatFields->isEmpty()) {
+            return;
+        }
+
+        $this->notifySeatsNeedReselection($failedSeatFields->all());
+    }
+
+    /**
+     * @param  list<string>  $failedSeatFields  'seat_ids' y/o 'return_seat_ids'.
+     */
+    private function notifySeatsNeedReselection(array $failedSeatFields): void
+    {
+        $isOnlyReturn = $failedSeatFields === ['return_seat_ids'];
+        $legs = count($failedSeatFields) > 1 ? '' : ($isOnlyReturn ? ' de vuelta' : ' de ida');
+        $step = self::SEAT_STEPS[$failedSeatFields[0]];
+
+        Notification::make()
+            ->title("Faltan los asientos{$legs}")
+            ->body("La reserva de los asientos venció y se liberaron. Presioná «Anterior» hasta el paso «{$step}», elegí los asientos de nuevo y volvé a finalizar la venta.")
+            ->icon('heroicon-m-clock')
+            ->warning()
+            ->persistent()
+            ->send();
+    }
+
+    /**
+     * Modal del paso "Pasajeros": algún DNI de la venta ya tiene boleto en
+     * el viaje. Muestra una tarjeta por persona (quién, qué boleto, tramo,
+     * asiento y salida) con "Ver boleto" en otra pestaña, y "Volver a
+     * pasajeros", que cierra el modal sin tocar la venta. Los conflictos se
+     * recalculan con los DNI y viajes recibidos.
+     */
+    public function duplicatePassengerAction(): Action
+    {
+        $conflicts = fn (array $arguments) => TripPassengerConflicts::find(
+            (array) ($arguments['dnis'] ?? []),
+            (array) ($arguments['tripIds'] ?? []),
+        );
+
+        return Action::make(self::DUPLICATE_PASSENGER_ACTION)
+            ->modalHeading(fn (array $arguments): string => DuplicateTicketNotification::title($conflicts($arguments)))
+            ->modalDescription(DuplicateTicketNotification::HINT)
+            ->modalIcon('heroicon-o-identification')
+            ->modalIconColor('danger')
+            ->modalWidth(Width::TwoExtraLarge)
+            ->modalContent(fn (array $arguments) => view('filament.tickets.duplicate-passenger-modal', [
+                'rows' => DuplicateTicketNotification::rows($conflicts($arguments)),
+            ]))
+            ->modalSubmitAction(false)
+            ->modalCancelActionLabel('Volver a pasajeros');
+    }
 
     public function getTitle(): string|Htmlable
     {
@@ -393,6 +476,13 @@ class CreateTicket extends CreateRecord
             $this->assertServiceDay(Trip::find($data['return_trip_id']), 'vuelta');
         }
 
+        // 0.f Una persona por venta y por viaje: sin DNI repetidos dentro de
+        // la venta (adultos y menores) y sin DNI que ya tengan boleto en el
+        // viaje de ida o de vuelta. Sin excepciones por permiso. Se repite
+        // dentro de la transacción, con los viajes bloqueados.
+        $this->assertDistinctSaleDnis($data);
+        $this->assertNoPassengerAlreadyOnSaleTrips($data);
+
         try {
             // Emisión atómica: la venta, los pasajeros y los boletos de los dos
             // tramos se confirman juntos o no se crea nada. Los viajes quedan
@@ -400,6 +490,15 @@ class CreateTicket extends CreateRecord
             // Trip corren como savepoints de esta transacción).
             $firstTicket = DB::transaction(function () use ($data): Model {
                 $this->lockSaleTrips($data);
+
+                $conflicts = TripPassengerConflicts::find(
+                    TripPassengerConflicts::saleDnis($data['passengers'] ?? []),
+                    TripPassengerConflicts::saleTripIds($data),
+                );
+
+                if ($conflicts->isNotEmpty()) {
+                    throw new DuplicatePassengerOnTripException($conflicts);
+                }
 
                 // 1. Crear la venta usando el método del modelo
                 $sale = Sale::createNew(Auth::id());
@@ -586,6 +685,14 @@ class CreateTicket extends CreateRecord
 
                 return $result['tickets']->first();
             });
+        } catch (DuplicatePassengerOnTripException $e) {
+            // Sin liberar reservas: el vendedor vuelve a la venta con sus
+            // asientos para corregir los datos del pasajero.
+            DuplicateTicketNotification::send($e->conflicts(), 'Volver a la venta');
+
+            $this->halt();
+
+            return $data;
         } catch (\Exception $e) {
             $this->releaseSaleReservations($data);
 
@@ -625,6 +732,57 @@ class CreateTicket extends CreateRecord
         if ($tripIds->isNotEmpty()) {
             Trip::query()->whereIn('id', $tripIds)->orderBy('id')->lockForUpdate()->get();
         }
+    }
+
+    /**
+     * Guard final: una venta no puede cargar el mismo DNI dos veces, sumando
+     * pasajeros adultos y menores acompañantes.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    private function assertDistinctSaleDnis(array $data): void
+    {
+        $passengers = $data['passengers'] ?? [];
+        $repeated = TripPassengerConflicts::repeatedDnis(
+            array_column(TripPassengerConflicts::saleDniSlots(is_array($passengers) ? $passengers : []), 'dni'),
+        );
+
+        if ($repeated === []) {
+            return;
+        }
+
+        Notification::make()
+            ->title('No se puede completar la venta')
+            ->icon('heroicon-m-identification')
+            ->body('Hay DNI cargados en más de un pasajero de la venta: '.implode(', ', $repeated).'. Corregí los datos e intentá de nuevo.')
+            ->danger()
+            ->persistent()
+            ->send();
+
+        $this->halt();
+    }
+
+    /**
+     * Guard final: ningún DNI de la venta (adulto o menor) puede tener ya un
+     * boleto activo en el viaje de ida o en el de vuelta. Ningún permiso lo
+     * exceptúa.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    private function assertNoPassengerAlreadyOnSaleTrips(array $data): void
+    {
+        $conflicts = TripPassengerConflicts::find(
+            TripPassengerConflicts::saleDnis($data['passengers'] ?? []),
+            TripPassengerConflicts::saleTripIds($data),
+        );
+
+        if ($conflicts->isEmpty()) {
+            return;
+        }
+
+        DuplicateTicketNotification::send($conflicts, 'Volver a la venta');
+
+        $this->halt();
     }
 
     /**

@@ -244,6 +244,126 @@ class TicketSettingsTest extends TestCase
         $this->assertSame(1, Setting::query()->where('key', Setting::REQUIRE_PASSWORD_TICKET_DELETE)->count());
     }
 
+    // ====================== Líneas de contacto: lectura ======================
+
+    public function test_sin_configuracion_no_hay_lineas_de_contacto(): void
+    {
+        $this->assertSame([], Setting::contactLines());
+    }
+
+    public function test_las_lineas_de_contacto_descartan_entradas_invalidas_y_recortan_al_maximo(): void
+    {
+        Setting::set(Setting::CONTACT_LINES, json_encode([
+            ['name' => ' Orán ', 'phone' => ' 3878-804506 '],
+            ['name' => 'Sin teléfono', 'phone' => '  '],
+            'texto suelto',
+            ['name' => '', 'phone' => '3873-309893'],
+            ['name' => 'Salta', 'phone' => '387 4123456'],
+            ['name' => 'Cuarta', 'phone' => '111111'],
+        ]));
+
+        $this->assertSame([
+            ['name' => 'Orán', 'phone' => '3878-804506', 'dial' => '3878804506'],
+            ['name' => null, 'phone' => '3873-309893', 'dial' => '3873309893'],
+            ['name' => 'Salta', 'phone' => '387 4123456', 'dial' => '3874123456'],
+        ], Setting::contactLines());
+        $this->assertSame(3, Setting::CONTACT_LINES_MAX);
+    }
+
+    public function test_el_destino_del_enlace_conserva_solo_digitos_y_el_mas_inicial(): void
+    {
+        $this->assertSame('+5493878804506', Setting::dialablePhone('+54 9 (3878) 804-506'));
+        $this->assertSame('3878804506', Setting::dialablePhone('(3878) 80-4506'));
+    }
+
+    // ====================== Líneas de contacto: página ======================
+
+    public function test_guardar_lineas_de_contacto_conserva_el_orden_y_se_ven_al_recargar(): void
+    {
+        $this->actingAs($this->admin);
+
+        Livewire::test(TicketSettings::class)
+            ->assertSee('Líneas de contacto')
+            ->assertSet('data.contact_lines', [])
+            ->set('data.contact_lines', [
+                'a' => ['name' => 'Orán', 'phone' => '3878-804506'],
+                'b' => ['name' => 'Tartagal', 'phone' => ' 3873-309893 '],
+            ])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        Setting::flushCache();
+
+        $this->assertSame([
+            ['name' => 'Orán', 'phone' => '3878-804506', 'dial' => '3878804506'],
+            ['name' => 'Tartagal', 'phone' => '3873-309893', 'dial' => '3873309893'],
+        ], Setting::contactLines());
+
+        Livewire::test(TicketSettings::class)
+            ->assertSet('data.contact_lines', fn (array $items): bool => array_values($items) === [
+                ['name' => 'Orán', 'phone' => '3878-804506'],
+                ['name' => 'Tartagal', 'phone' => '3873-309893'],
+            ]);
+    }
+
+    public function test_una_linea_sin_nombre_se_guarda_con_nombre_nulo(): void
+    {
+        $this->actingAs($this->admin);
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.contact_lines', ['a' => ['name' => '', 'phone' => '3878-804506']])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        Setting::flushCache();
+
+        $this->assertNull(Setting::contactLines()[0]['name']);
+    }
+
+    public function test_un_telefono_con_letras_se_rechaza_sin_guardar(): void
+    {
+        $this->actingAs($this->admin);
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.contact_lines', ['a' => ['name' => 'Orán', 'phone' => 'llamar al 3878']])
+            ->call('save')
+            ->assertHasFormErrors(['contact_lines.a.phone' => 'regex']);
+
+        $this->assertDatabaseMissing('settings', ['key' => Setting::CONTACT_LINES]);
+    }
+
+    public function test_un_telefono_con_formato_internacional_se_acepta(): void
+    {
+        $this->actingAs($this->admin);
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.contact_lines', ['a' => ['name' => null, 'phone' => '+54 (3878) 804-506']])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        Setting::flushCache();
+
+        $this->assertSame('+54 (3878) 804-506', Setting::contactLines()[0]['phone']);
+        $this->assertSame('+543878804506', Setting::contactLines()[0]['dial']);
+    }
+
+    public function test_no_se_admiten_mas_lineas_que_el_maximo(): void
+    {
+        $this->actingAs($this->admin);
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.contact_lines', [
+                'a' => ['name' => 'Uno', 'phone' => '111111'],
+                'b' => ['name' => 'Dos', 'phone' => '222222'],
+                'c' => ['name' => 'Tres', 'phone' => '333333'],
+                'd' => ['name' => 'Cuatro', 'phone' => '444444'],
+            ])
+            ->call('save')
+            ->assertHasFormErrors(['contact_lines' => 'max']);
+
+        $this->assertDatabaseMissing('settings', ['key' => Setting::CONTACT_LINES]);
+    }
+
     // ====================== Borrar boleto ======================
 
     private function createOneWayTicket(string $date = '2026-10-01', array $userOverrides = []): Ticket

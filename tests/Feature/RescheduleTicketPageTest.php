@@ -108,6 +108,44 @@ class RescheduleTicketPageTest extends TestCase
         ]);
     }
 
+    public function test_reprogramar_a_un_viaje_donde_el_dni_ya_viaja_muestra_la_alerta_de_duplicado(): void
+    {
+        $this->actingAs($this->admin);
+
+        $ticket = $this->createOneWayTicket();
+        $targetTrip = Trip::create([
+            'route_id' => $ticket->trip->route_id,
+            'schedule_id' => $ticket->trip->schedule_id,
+            'bus_id' => $ticket->trip->bus_id,
+            'trip_date' => '2026-10-05',
+        ]);
+        $otherPassenger = Passenger::create(['first_name' => 'Juana', 'last_name' => 'Rendida', 'dni' => '45678912', 'passenger_type' => 'adult']);
+        $other = Ticket::create([
+            'sale_id' => Sale::create(['user_id' => $this->admin->id, 'sale_date' => now(), 'total_amount' => 100])->id,
+            'trip_id' => $targetTrip->id,
+            'seat_id' => Seat::where('bus_id', $targetTrip->bus_id)->where('seat_number', '4')->first()->id,
+            'passenger_id' => $otherPassenger->id,
+            'is_round_trip' => false,
+            'origin_location_id' => $ticket->origin_location_id,
+            'destination_location_id' => $ticket->destination_location_id,
+            'price' => 100,
+        ]);
+
+        $originalTripId = (int) $ticket->trip_id;
+        $conflicts = \App\Support\TripPassengerConflicts::find(['45678912'], [$targetTrip->id]);
+
+        Livewire::test(RescheduleTicket::class, ['record' => $ticket->id])
+            ->set('data.date', '2026-10-05')
+            ->set('data.schedule_id', $ticket->trip->schedule_id)
+            ->set('data.seat_ids', [Seat::where('bus_id', $targetTrip->bus_id)->where('seat_number', '2')->first()->id])
+            ->call('confirmReschedule')
+            ->assertNotified(\App\Support\DuplicateTicketNotification::make($conflicts, 'Volver'))
+            ->assertNoRedirect();
+
+        $this->assertSame($originalTripId, (int) $ticket->refresh()->trip_id, 'El boleto no debe moverse.');
+        $this->assertSame([$other->id], $conflicts->map(fn (array $conflict): int => $conflict['ticket']->id)->all());
+    }
+
     public function test_la_pagina_renderiza_para_admin(): void
     {
         $this->actingAs($this->admin);

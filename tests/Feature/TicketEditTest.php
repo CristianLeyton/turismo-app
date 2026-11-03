@@ -771,4 +771,112 @@ class TicketEditTest extends TestCase
         $this->assertSame(8000.0, (float) $ida->fresh()->price);
         $this->assertSame(0.0, (float) $vuelta->fresh()->price);
     }
+
+    // ------------------------------------------------------------------
+    // Una persona por viaje
+    // ------------------------------------------------------------------
+
+    protected function sellOnTrip(Trip $trip, string $dni, string $seatNumber): Ticket
+    {
+        $passenger = Passenger::create([
+            'first_name' => 'Otra',
+            'last_name' => 'Persona',
+            'dni' => $dni,
+            'passenger_type' => 'adult',
+        ]);
+
+        return Ticket::create([
+            'sale_id' => Sale::create(['user_id' => $this->seller->id, 'sale_date' => now()])->id,
+            'trip_id' => $trip->id,
+            'passenger_id' => $passenger->id,
+            'seat_id' => Seat::where('bus_id', $this->bus->id)->where('seat_number', $seatNumber)->first()->id,
+            'price' => 10000,
+            'payment_method' => $this->method->code,
+            'origin_location_id' => $this->oran->id,
+            'destination_location_id' => $this->salta->id,
+        ]);
+    }
+
+    public function test_cambiar_el_dni_por_uno_que_ya_viaja_no_guarda_nada(): void
+    {
+        $this->seller->givePermissionTo('tickets.edit');
+        $ticket = $this->createTicket();
+        $this->sellOnTrip($ticket->trip, '30999888', '2');
+
+        Livewire::actingAs($this->seller)
+            ->test(EditTicket::class, ['record' => $ticket->getKey()])
+            ->set('data.dni', '30999888')
+            ->call('save')
+            ->assertNotified(\App\Support\DuplicateTicketNotification::TITLE)
+            ->assertNoRedirect();
+
+        $this->assertSame('30000111', (string) $ticket->passenger->fresh()->dni);
+        $this->assertSame(0, TicketEdit::query()->where('ticket_id', $ticket->id)->count());
+    }
+
+    public function test_cambiar_el_dni_por_uno_que_ya_viaja_en_la_vuelta_se_rechaza(): void
+    {
+        $this->seller->givePermissionTo('tickets.edit');
+        $ticket = $this->createTicket();
+        $returnTrip = Trip::findOrCreateForBooking($this->schedule->id, '2030-01-05', $this->oran->id, $this->salta->id)['trip'];
+
+        // Tramo de vuelta del mismo pasajero (misma venta).
+        Ticket::create([
+            'sale_id' => $ticket->sale_id,
+            'trip_id' => $returnTrip->id,
+            'passenger_id' => $ticket->passenger_id,
+            'seat_id' => Seat::where('bus_id', $this->bus->id)->where('seat_number', '1')->first()->id,
+            'is_round_trip' => true,
+            'is_return_leg' => true,
+            'price' => 0,
+            'payment_method' => $this->method->code,
+            'origin_location_id' => $this->salta->id,
+            'destination_location_id' => $this->oran->id,
+        ]);
+        $ticket->update(['is_round_trip' => true, 'return_trip_id' => $returnTrip->id]);
+        $this->sellOnTrip($returnTrip, '30999888', '3');
+
+        Livewire::actingAs($this->seller)
+            ->test(EditTicket::class, ['record' => $ticket->getKey()])
+            ->set('data.dni', '30999888')
+            ->call('save')
+            ->assertNotified(\App\Support\DuplicateTicketNotification::TITLE);
+
+        $this->assertSame('30000111', (string) $ticket->passenger->fresh()->dni);
+    }
+
+    public function test_agregar_un_menor_que_ya_viaja_se_rechaza(): void
+    {
+        $this->seller->givePermissionTo('tickets.edit');
+        $ticket = $this->createTicket();
+        $this->sellOnTrip($ticket->trip, '45123456', '2');
+
+        Livewire::actingAs($this->seller)
+            ->test(EditTicket::class, ['record' => $ticket->getKey()])
+            ->set('data.travels_with_child', true)
+            ->set('data.child_data.first_name', 'Ana')
+            ->set('data.child_data.last_name', 'Gomez')
+            ->set('data.child_data.dni', '45123456')
+            ->call('save')
+            ->assertNotified(\App\Support\DuplicateTicketNotification::TITLE);
+
+        $this->assertSame(0, $ticket->passenger->children()->count());
+        $this->assertFalse((bool) $ticket->fresh()->travels_with_child);
+    }
+
+    public function test_editar_solo_el_telefono_de_un_duplicado_previo_se_guarda(): void
+    {
+        $this->seller->givePermissionTo('tickets.edit');
+        $ticket = $this->createTicket();
+        // Duplicado anterior a la regla: mismo DNI en el mismo viaje.
+        $this->sellOnTrip($ticket->trip, '30000111', '2');
+
+        Livewire::actingAs($this->seller)
+            ->test(EditTicket::class, ['record' => $ticket->getKey()])
+            ->set('data.phone_number', '3875559999')
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertSame('3875559999', (string) $ticket->passenger->fresh()->phone_number);
+    }
 }

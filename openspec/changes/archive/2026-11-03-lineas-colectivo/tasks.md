@@ -30,8 +30,8 @@
 
 ## 5. Despliegue
 
-- [ ] 5.1 Desplegar la migración y el código sin asignar líneas
-- [ ] 5.2 Asignar líneas y marcar los refuerzos desde Filament, y verificar en una venta real de prueba antes de usarlo con clientes
+- [x] 5.1 Desplegar la migración y el código sin asignar líneas
+- [x] 5.2 Asignar líneas y marcar los refuerzos desde Filament, y verificar en una venta real de prueba antes de usarlo con clientes
 
 ## 6. Reprogramación de tramos sin fecha
 

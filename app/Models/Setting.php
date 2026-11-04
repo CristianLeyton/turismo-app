@@ -64,7 +64,7 @@ class Setting extends Model
      */
     public const WHATSAPP_MENSAJE = 'tickets.whatsapp_mensaje';
 
-    public const WHATSAPP_MENSAJE_DEFAULT = 'Tu boleto: {link}';
+    public const WHATSAPP_MENSAJE_DEFAULT = 'Puedes acceder a tu boleto desde aquí: {link}';
 
     /**
      * Días de la semana con servicio (JSON con enteros ISO 1 = lunes … 7 = domingo).

@@ -5,6 +5,7 @@ namespace App\Filament\Pages;
 use App\Models\Setting;
 use BackedEnum;
 use Carbon\Carbon;
+use Closure;
 use Filament\Actions\Action;
 use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\DatePicker;
@@ -15,34 +16,56 @@ use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Schemas\Components\Actions;
+use Filament\Schemas\Components\Component;
 use Filament\Schemas\Components\EmbeddedSchema;
 use Filament\Schemas\Components\Form;
 use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Tabs;
+use Filament\Schemas\Components\Tabs\Tab;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Validation\ValidationException;
 use UnitEnum;
 
 /**
- * Página de configuración del sistema (solo administradores).
+ * Página Configuración > Parámetros (solo quien tiene `settings.manage`).
  *
- * Hoy expone los parámetros de confirmación de contraseña para acciones
- * sensibles sobre boletos; agregar un nuevo parámetro = una constante en
- * Setting + un Toggle acá.
+ * Agrupa los parámetros del sistema en pestañas según a qué afectan: Venta,
+ * Boleto, Calendario y Seguridad. Un parámetro nuevo lleva una constante en
+ * Setting, su campo en la pestaña que corresponde y su entrada en TAB_FIELDS
+ * (ver la sección "Parámetros" del skill filament-ui).
  */
 class TicketSettings extends Page
 {
+    /**
+     * Campos de cada pestaña. Alimenta el badge de errores y la notificación
+     * de guardado fallido, así ambos nombran siempre las mismas pestañas.
+     *
+     * @var array<string, list<string>>
+     */
+    public const TAB_FIELDS = [
+        'Venta' => ['permitir_acompanantes', 'venta_limite_horas'],
+        'Boleto' => ['descarga_automatica_pdf', 'whatsapp_mensaje', 'contact_lines'],
+        'Calendario' => ['service_weekdays', 'service_exceptions'],
+        'Seguridad' => ['require_password_ticket_delete', 'require_password_ticket_reschedule', 'require_password_ticket_edit'],
+    ];
+
+    public const WHATSAPP_MENSAJE_MAX = 300;
+
+    private const PHONE_INVALID_MESSAGE = 'Ingresá un teléfono válido (solo números, espacios, guiones, paréntesis y +).';
+
     /** @var array<string, mixed> */
     public ?array $data = [];
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::Cog6Tooth;
 
-    protected static ?string $navigationLabel = 'Parametros';
+    protected static ?string $navigationLabel = 'Parámetros';
 
-    protected static ?string $title = 'Parametros';
+    protected static ?string $title = 'Parámetros';
 
-    protected ?string $heading = 'Parametros';
+    protected ?string $heading = 'Parámetros';
 
     protected static string|UnitEnum|null $navigationGroup = 'Configuración';
 
@@ -64,12 +87,16 @@ class TicketSettings extends Page
     }
 
     /**
-     * Valores actuales de los parámetros para el formulario.
+     * Valores actuales de los parámetros para el formulario. Las excepciones
+     * de fechas ya pasadas no se cargan: no afectan nada y fallarían la
+     * validación de fecha mínima.
      *
      * @return array<string, mixed>
      */
     protected function getFormData(): array
     {
+        $today = today()->format('Y-m-d');
+
         return [
             'require_password_ticket_delete' => Setting::getBool(Setting::REQUIRE_PASSWORD_TICKET_DELETE),
             'require_password_ticket_reschedule' => Setting::getBool(Setting::REQUIRE_PASSWORD_TICKET_RESCHEDULE),
@@ -83,11 +110,14 @@ class TicketSettings extends Page
                 'phone' => $line['phone'],
             ], Setting::contactLines()),
             'service_weekdays' => array_map('strval', Setting::serviceWeekdays()),
-            'service_exceptions' => array_map(fn (array $exception): array => [
+            'service_exceptions' => array_values(array_map(fn (array $exception): array => [
                 'date' => $exception['date'],
                 'has_service' => $exception['has_service'] ? '1' : '0',
                 'reason' => $exception['reason'],
-            ], Setting::serviceExceptions()),
+            ], array_filter(
+                Setting::serviceExceptions(),
+                fn (array $exception): bool => $exception['date'] >= $today,
+            ))),
         ];
     }
 
@@ -95,162 +125,301 @@ class TicketSettings extends Page
     {
         return $schema
             ->components([
-                Section::make('Confirmación de contraseña')
-                    ->description('Exigir la contraseña del admin logueado antes de ejecutar acciones sensibles sobre boletos.')
+                Tabs::make('parametros')
+                    ->persistTabInQueryString('pestana')
                     ->columnSpanFull()
-                    ->schema([
-                        Toggle::make('require_password_ticket_delete')
-                            ->label('Pedir contraseña al borrar boletos')
-                            ->helperText('Antes de eliminar (o eliminar definitivamente) un boleto, se pedirá la clave del admin que ejecuta la acción. Si la clave no coincide, el boleto no se borra.')
-                            ->default(false),
-
-                        Toggle::make('require_password_ticket_reschedule')
-                            ->label('Pedir contraseña al reprogramar boletos')
-                            ->helperText('Antes de confirmar una reprogramación, se pedirá la clave del admin que ejecuta la acción. Si la clave no coincide, el boleto no se mueve.')
-                            ->default(false),
-
-                        Toggle::make('require_password_ticket_edit')
-                            ->label('Pedir contraseña al editar boletos')
-                            ->helperText('Antes de guardar los cambios de una edición de boleto, se pedirá la clave del admin que ejecuta la acción. Si la clave no coincide, nada se modifica.')
-                            ->default(false),
-                    ]),
-
-                Section::make('Venta con acompañante')
-                    ->description('Mostrar u ocultar los datos de acompañantes al vender. Es un parámetro visual: no cambia las reglas de venta, sólo qué campos ve el vendedor.')
-                    ->columnSpanFull()
-                    ->schema([
-                        Toggle::make('permitir_acompanantes')
-                            ->label('Vender boletos con acompañante')
-                            /* ->helperText('Activado: en el paso Pasajeros aparecen los switches "¿Viaja con un menor?" y "¿Viaja con mascotas?" con sus datos. Desactivado: esos switches no se muestran.') */
-                            ->default(true),
-                    ]),
-
-                Section::make('Emisión de boletos al finalizar la venta')
-                    ->description('Cómo entrega el sistema el PDF de los boletos al finalizar una venta o una reprogramación.')
-                    ->columnSpanFull()
-                    ->schema([
-                        Toggle::make('descarga_automatica_pdf')
-                            ->label('Descargar PDF automáticamente al vender')
-                            ->live()
-                            ->default(true)
-                            ->helperText('Activado: el PDF se descarga solo, como hasta ahora. Desactivado: en vez de descargarse, se abre la página de previsualización del boleto con un link compartible (por WhatsApp o el que sea) y el botón para descargar el PDF.'),
-
-                        TextInput::make('whatsapp_mensaje')
-                            ->label('Texto del mensaje de WhatsApp')
-                            ->placeholder(Setting::WHATSAPP_MENSAJE_DEFAULT)
-                            ->helperText('Texto que lleva el mensaje cuando se comparte el link del boleto por WhatsApp. Usá {link} donde quieras que aparezca la URL.')
-                            ->visible(fn (Get $get): bool => ! (bool) $get('descarga_automatica_pdf')),
-                    ]),
-
-                Section::make('Líneas de contacto')
-                    ->description('Números a los que pueden llamar los clientes. Aparecen en todos los boletos, debajo del asiento y en el orden cargado; desde un celular se pueden tocar para llamar. Cargalos como se marcan desde un celular (con la característica, o con +54 9 si hay clientes de otras provincias). Sin líneas cargadas, el boleto no las muestra.')
-                    ->columnSpanFull()
-                    ->schema([
-                        Repeater::make('contact_lines')
-                            ->hiddenLabel()
-                            ->addActionLabel('Agregar línea')
-                            ->defaultItems(0)
-                            ->maxItems(Setting::CONTACT_LINES_MAX)
-                            ->columns(2)
-                            ->schema([
-                                TextInput::make('name')
-                                    ->label('Nombre (opcional)')
-                                    ->placeholder('Ej.: Orán')
-                                    ->maxLength(30)
-                                    ->validationMessages([
-                                        'max' => 'El nombre no puede tener más de :max caracteres.',
-                                    ]),
-
-                                TextInput::make('phone')
-                                    ->label('Teléfono')
-                                    ->placeholder('Ej.: 3878-804506')
-                                    ->tel()
-                                    ->required()
-                                    ->maxLength(20)
-                                    ->regex('/^\+?[\d\s\-()]{6,20}$/')
-                                    ->rule(static fn (): \Closure => static function (string $attribute, mixed $value, \Closure $fail): void {
-                                        if (strlen(preg_replace('/\D+/', '', (string) $value) ?? '') < 6) {
-                                            $fail('Ingrese un teléfono válido (solo números, espacios, guiones, paréntesis y +).');
-                                        }
-                                    })
-                                    ->validationMessages([
-                                        'required' => 'Ingrese el teléfono.',
-                                        'max' => 'El teléfono no puede tener más de :max caracteres.',
-                                        'regex' => 'Ingrese un teléfono válido (solo números, espacios, guiones, paréntesis y +).',
-                                    ]),
-                            ]),
-                    ]),
-
-                Section::make('Venta fuera de término')
-                    ->description('Plazo para vender un pasaje de un colectivo que YA SALIÓ. Pasado el plazo, sólo puede emitirlo quien tenga el permiso "Vender después del límite de salida" (se habilita por rol en Roles y permisos; ningún rol lo trae por defecto).')
-                    ->columnSpanFull()
-                    ->schema([
-                        TextInput::make('venta_limite_horas')
-                            ->label('Horas de venta después de la salida')
-                            ->helperText('El plazo corre desde la salida del colectivo en la parada donde sube el pasajero. Ejemplo: con 5 horas, un viaje que salió a las 08:00 se puede vender hasta las 13:00. 0 = sin límite.')
-                            ->numeric()
-                            ->minValue(0)
-                            ->maxValue(720)
-                            ->required()
-                            ->default(Setting::VENTA_LIMITE_HORAS_DEFAULT)
-                            ->suffix('horas')
-                            ->validationMessages([
-                                'required' => 'Ingrese la cantidad de horas.',
-                                'numeric' => 'La cantidad de horas debe ser un número.',
-                                'min' => 'La cantidad de horas no puede ser negativa.',
-                            ]),
-                    ]),
-                Section::make('Días de servicio')
-                    ->description('Fechas en las que hay viajes. En las fechas sin servicio no se puede vender, reprogramar, asignar fecha desde el panel de clientes ni crear viajes, salvo quien tenga el permiso "Vender en días sin servicio" (se habilita por rol; ningún rol lo trae por defecto). El panel de clientes nunca permite elegirlas. Los boletos y viajes ya existentes no se modifican.')
-                    ->columnSpanFull()
-                    ->schema([
-                        CheckboxList::make('service_weekdays')
-                            ->label('Días de la semana con servicio')
-                            ->options([
-                                '1' => 'Lunes',
-                                '2' => 'Martes',
-                                '3' => 'Miércoles',
-                                '4' => 'Jueves',
-                                '5' => 'Viernes',
-                                '6' => 'Sábado',
-                                '7' => 'Domingo',
-                            ])
-                            ->columns(4),
-
-                        Repeater::make('service_exceptions')
-                            ->label('Excepciones por fecha')
-                            ->helperText('Una excepción manda sobre el día de la semana: "Con servicio" habilita una fecha (por ejemplo, un domingo especial) y "Sin servicio" la bloquea (por ejemplo, un feriado).')
-                            ->addActionLabel('Agregar excepción')
-                            ->defaultItems(0)
-                            ->reorderable(false)
-                            ->columns(3)
-                            ->schema([
-                                DatePicker::make('date')
-                                    ->label('Fecha')
-                                    ->required()
-                                    ->distinct()
-                                    ->validationMessages([
-                                        'required' => 'Ingrese la fecha.',
-                                        'distinct' => 'Hay más de una excepción para la misma fecha.',
-                                    ]),
-
-                                Select::make('has_service')
-                                    ->label('Tipo')
-                                    ->options([
-                                        '1' => 'Con servicio',
-                                        '0' => 'Sin servicio',
-                                    ])
-                                    ->default('0')
-                                    ->selectablePlaceholder(false)
-                                    ->required(),
-
-                                TextInput::make('reason')
-                                    ->label('Motivo')
-                                    ->placeholder('Opcional, por ejemplo "Navidad"')
-                                    ->maxLength(100),
-                            ]),
+                    ->tabs([
+                        $this->tab('Venta', Heroicon::OutlinedShoppingCart, $this->saleComponents()),
+                        $this->tab('Boleto', Heroicon::OutlinedTicket, $this->ticketComponents()),
+                        $this->tab('Calendario', Heroicon::OutlinedCalendarDays, $this->calendarComponents()),
+                        $this->tab('Seguridad', Heroicon::OutlinedLockClosed, $this->securityComponents()),
                     ]),
             ]);
+    }
+
+    /**
+     * Pestaña con badge rojo que cuenta los campos con error de la pestaña.
+     *
+     * @param  array<Component|\Filament\Forms\Components\Field>  $components
+     */
+    protected function tab(string $label, Heroicon $icon, array $components): Tab
+    {
+        return Tab::make($label)
+            ->icon($icon)
+            ->badge(fn (): ?int => $this->countTabErrors($label) ?: null)
+            ->badgeColor('danger')
+            ->schema($components);
+    }
+
+    /**
+     * @return array<Component>
+     */
+    protected function saleComponents(): array
+    {
+        return [
+            Section::make('Venta con acompañante')
+                ->columnSpanFull()
+                ->schema([
+                    Toggle::make('permitir_acompanantes')
+                        ->label('Vender boletos con acompañante')
+                        ->hintIcon(Heroicon::OutlinedInformationCircle, tooltip: 'Solo muestra u oculta los campos de menor y mascotas al vender. No cambia las reglas de venta.')
+                        ->default(true),
+                ]),
+
+            Section::make('Venta fuera de término')
+                ->description('Plazo para vender un pasaje de un colectivo que ya salió.')
+                ->columnSpanFull()
+                ->schema([
+                    TextInput::make('venta_limite_horas')
+                        ->label('Horas de venta después de la salida')
+                        ->helperText('0 = sin límite.')
+                        ->hintIcon(Heroicon::OutlinedInformationCircle, tooltip: 'Cuenta desde la salida en la parada donde sube el pasajero. Ej.: con 5 horas, un viaje que salió a las 08:00 se vende hasta las 13:00. Quien tenga el permiso «Vender después del límite de salida» puede vender igual.')
+                        ->integer()
+                        ->minValue(0)
+                        ->maxValue(720)
+                        ->required()
+                        ->default(Setting::VENTA_LIMITE_HORAS_DEFAULT)
+                        ->suffix('horas')
+                        ->validationMessages([
+                            'required' => 'Ingresá la cantidad de horas.',
+                            'numeric' => 'La cantidad de horas tiene que ser un número.',
+                            'integer' => 'La cantidad de horas tiene que ser un número entero.',
+                            'min' => 'La cantidad de horas no puede ser negativa.',
+                            'max' => 'La cantidad de horas no puede ser mayor a :max.',
+                        ]),
+                ]),
+        ];
+    }
+
+    /**
+     * @return array<Component>
+     */
+    protected function ticketComponents(): array
+    {
+        return [
+            Section::make('Emisión al finalizar la venta')
+                ->columnSpanFull()
+                ->schema([
+                    Toggle::make('descarga_automatica_pdf')
+                        ->label('Descargar PDF automáticamente al vender')
+                        ->helperText('Desactivado: se abre la vista previa del boleto con un link para compartir.')
+                        ->live()
+                        ->default(true),
+
+                    TextInput::make('whatsapp_mensaje')
+                        ->label('Texto del mensaje de WhatsApp')
+                        ->placeholder(Setting::WHATSAPP_MENSAJE_DEFAULT)
+                        ->helperText('Usá {link} donde va la URL del boleto.')
+                        ->maxLength(self::WHATSAPP_MENSAJE_MAX)
+                        ->rule(static fn (): Closure => static function (string $attribute, mixed $value, Closure $fail): void {
+                            if (filled($value) && ! str_contains((string) $value, '{link}')) {
+                                $fail('El mensaje tiene que incluir {link} para que lleve la URL del boleto.');
+                            }
+                        })
+                        ->validationMessages([
+                            'max' => 'El mensaje no puede tener más de :max caracteres.',
+                        ])
+                        ->visible(fn (Get $get): bool => ! (bool) $get('descarga_automatica_pdf')),
+                ]),
+
+            Section::make('Líneas de contacto')
+                ->description('Aparecen en todos los boletos, en este orden.')
+                ->columnSpanFull()
+                ->schema([
+                    Repeater::make('contact_lines')
+                        ->hiddenLabel()
+                        ->addActionLabel('Agregar línea')
+                        ->defaultItems(0)
+                        ->maxItems(Setting::CONTACT_LINES_MAX)
+                        ->columns(2)
+                        ->validationMessages([
+                            'max' => 'Podés cargar como máximo :max líneas.',
+                        ])
+                        ->schema([
+                            TextInput::make('name')
+                                ->label('Nombre (opcional)')
+                                ->placeholder('Ej.: Orán')
+                                ->maxLength(30)
+                                ->validationMessages([
+                                    'max' => 'El nombre no puede tener más de :max caracteres.',
+                                ]),
+
+                            TextInput::make('phone')
+                                ->label('Teléfono')
+                                ->placeholder('Ej.: 3878-804506')
+                                ->hintIcon(Heroicon::OutlinedInformationCircle, tooltip: 'Cargalo como se marca desde un celular. Para clientes de otras provincias, con +54 9. En el boleto se puede tocar para llamar.')
+                                ->tel()
+                                ->required()
+                                ->maxLength(20)
+                                ->regex('/^\+?[\d\s\-()]{6,20}$/')
+                                ->rule(static fn (): Closure => static function (string $attribute, mixed $value, Closure $fail): void {
+                                    if (strlen(preg_replace('/\D+/', '', (string) $value) ?? '') < 6) {
+                                        $fail(self::PHONE_INVALID_MESSAGE);
+                                    }
+                                })
+                                ->validationMessages([
+                                    'required' => 'Ingresá el teléfono.',
+                                    'max' => 'El teléfono no puede tener más de :max caracteres.',
+                                    'regex' => self::PHONE_INVALID_MESSAGE,
+                                ]),
+                        ]),
+                ]),
+        ];
+    }
+
+    /**
+     * @return array<Component>
+     */
+    protected function calendarComponents(): array
+    {
+        return [
+            Section::make('Días de servicio')
+                ->description('En fechas sin servicio no se vende ni se crean viajes. Los boletos ya vendidos no cambian.')
+                ->columnSpanFull()
+                ->schema([
+                    CheckboxList::make('service_weekdays')
+                        ->label('Días de la semana con servicio')
+                        ->hintIcon(Heroicon::OutlinedInformationCircle, tooltip: 'Quien tenga el permiso «Vender en días sin servicio» puede operar igual. El panel de clientes nunca permite elegir esas fechas.')
+                        ->options([
+                            '1' => 'Lunes',
+                            '2' => 'Martes',
+                            '3' => 'Miércoles',
+                            '4' => 'Jueves',
+                            '5' => 'Viernes',
+                            '6' => 'Sábado',
+                            '7' => 'Domingo',
+                        ])
+                        ->columns(4)
+                        ->required()
+                        ->validationMessages([
+                            'required' => 'Elegí al menos un día con servicio.',
+                        ]),
+
+                    Repeater::make('service_exceptions')
+                        ->label('Excepciones por fecha')
+                        ->helperText('Una excepción manda sobre el día de la semana.')
+                        ->hintIcon(Heroicon::OutlinedInformationCircle, tooltip: 'Ej.: «Con servicio» para un domingo especial, «Sin servicio» para un feriado.')
+                        ->addActionLabel('Agregar excepción')
+                        ->defaultItems(0)
+                        ->reorderable(false)
+                        ->columns(3)
+                        ->schema([
+                            DatePicker::make('date')
+                                ->label('Fecha')
+                                ->displayFormat('d/m/Y')
+                                ->minDate(fn (): string => today()->format('Y-m-d'))
+                                ->required()
+                                ->distinct()
+                                ->validationMessages([
+                                    'required' => 'Ingresá la fecha.',
+                                    'distinct' => 'Hay más de una excepción para la misma fecha.',
+                                    'after_or_equal' => 'La fecha no puede ser anterior a hoy.',
+                                ]),
+
+                            Select::make('has_service')
+                                ->label('Tipo')
+                                ->options([
+                                    '1' => 'Con servicio',
+                                    '0' => 'Sin servicio',
+                                ])
+                                ->default('0')
+                                ->selectablePlaceholder(false)
+                                ->required()
+                                ->validationMessages([
+                                    'required' => 'Elegí el tipo.',
+                                ]),
+
+                            TextInput::make('reason')
+                                ->label('Motivo')
+                                ->placeholder('Opcional, por ejemplo "Navidad"')
+                                ->maxLength(100)
+                                ->validationMessages([
+                                    'max' => 'El motivo no puede tener más de :max caracteres.',
+                                ]),
+                        ]),
+                ]),
+        ];
+    }
+
+    /**
+     * @return array<Component>
+     */
+    protected function securityComponents(): array
+    {
+        return [
+            Section::make('Confirmación de contraseña')
+                ->description('Se pide la contraseña de quien hace la acción. Si no coincide, la acción no se ejecuta.')
+                ->columnSpanFull()
+                ->schema([
+                    Toggle::make('require_password_ticket_delete')
+                        ->label('Al borrar boletos')
+                        ->default(false),
+
+                    Toggle::make('require_password_ticket_reschedule')
+                        ->label('Al reprogramar boletos')
+                        ->default(false),
+
+                    Toggle::make('require_password_ticket_edit')
+                        ->label('Al editar boletos')
+                        ->default(false),
+                ]),
+        ];
+    }
+
+    /**
+     * Cantidad de campos de la pestaña que tienen error de validación.
+     */
+    protected function countTabErrors(string $tab): int
+    {
+        return count(array_filter(
+            $this->getErrorBag()->keys(),
+            fn (string $key): bool => $this->fieldBelongsToTab($key, $tab),
+        ));
+    }
+
+    /**
+     * Pestañas que tienen al menos uno de los campos con error, en orden.
+     *
+     * @param  list<string>  $errorKeys
+     * @return list<string>
+     */
+    protected function tabsWithErrors(array $errorKeys): array
+    {
+        return array_values(array_filter(
+            array_keys(self::TAB_FIELDS),
+            fn (string $tab): bool => collect($errorKeys)->contains(fn (string $key): bool => $this->fieldBelongsToTab($key, $tab)),
+        ));
+    }
+
+    protected function fieldBelongsToTab(string $errorKey, string $tab): bool
+    {
+        foreach (self::TAB_FIELDS[$tab] as $field) {
+            if ($errorKey === "data.{$field}" || str_starts_with($errorKey, "data.{$field}.")) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * El guardado es todo o nada: si falla, se avisa que no se guardó ningún
+     * cambio y en qué pestañas están los errores (Filament abre solo la del
+     * primero, las demás muestran el badge).
+     */
+    protected function onValidationError(ValidationException $exception): void
+    {
+        parent::onValidationError($exception);
+
+        $tabs = $this->tabsWithErrors(array_keys($exception->errors()));
+
+        Notification::make()
+            ->title('No se guardaron los cambios')
+            ->body($tabs === []
+                ? 'Revisá los campos marcados.'
+                : 'Revisá los campos marcados en '.collect($tabs)->join(', ', ' y ').'.')
+            ->danger()
+            ->send();
     }
 
     public function defaultForm(Schema $schema): Schema
@@ -266,7 +435,7 @@ class TicketSettings extends Page
             ]);
     }
 
-    public function getFormContentComponent(): \Filament\Schemas\Components\Component
+    public function getFormContentComponent(): Component
     {
         return Form::make([EmbeddedSchema::make('form')])
             ->id('form')
@@ -295,6 +464,12 @@ class TicketSettings extends Page
     public function save(): void
     {
         $data = $this->form->getState();
+
+        $today = today()->format('Y-m-d');
+        $expiredExceptionsCount = count(array_filter(
+            Setting::serviceExceptions(),
+            fn (array $exception): bool => $exception['date'] < $today,
+        ));
 
         Setting::set(
             Setting::REQUIRE_PASSWORD_TICKET_DELETE,
@@ -326,11 +501,14 @@ class TicketSettings extends Page
             ($data['descarga_automatica_pdf'] ?? true) ? '1' : '0',
         );
 
-        // Mensaje vacío = volver al texto por defecto.
-        Setting::set(
-            Setting::WHATSAPP_MENSAJE,
-            filled($data['whatsapp_mensaje'] ?? null) ? trim($data['whatsapp_mensaje']) : null,
-        );
+        // Oculto (descarga automática activada), el campo no llega en el
+        // estado: se conserva el mensaje guardado. Vacío = texto por defecto.
+        if (array_key_exists('whatsapp_mensaje', $data)) {
+            Setting::set(
+                Setting::WHATSAPP_MENSAJE,
+                filled($data['whatsapp_mensaje']) ? trim($data['whatsapp_mensaje']) : null,
+            );
+        }
 
         $contactLines = collect($data['contact_lines'] ?? [])
             ->map(fn (array $line): array => [
@@ -359,9 +537,17 @@ class TicketSettings extends Page
             ->all();
         Setting::set(Setting::SERVICE_EXCEPTIONS, json_encode($exceptions));
 
+        $body = 'Los cambios se aplicaron correctamente.';
+
+        if ($expiredExceptionsCount === 1) {
+            $body .= ' Se quitó 1 excepción de una fecha que ya pasó.';
+        } elseif ($expiredExceptionsCount > 1) {
+            $body .= " Se quitaron {$expiredExceptionsCount} excepciones de fechas que ya pasaron.";
+        }
+
         Notification::make()
             ->title('Configuración guardada')
-            ->body('Los cambios se aplicaron correctamente.')
+            ->body($body)
             ->success()
             ->send();
 

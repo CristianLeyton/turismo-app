@@ -17,7 +17,12 @@ use App\Models\Setting;
 use App\Models\Ticket;
 use App\Models\Trip;
 use App\Models\User;
+use App\Support\ServiceDays;
+use Filament\Schemas\Components\Tabs;
+use Filament\Schemas\Components\Tabs\Tab;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
+use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -42,6 +47,7 @@ class TicketSettingsTest extends TestCase
 
     protected function tearDown(): void
     {
+        Carbon::setTestNow();
         Setting::flushCache();
 
         parent::tearDown();
@@ -55,9 +61,11 @@ class TicketSettingsTest extends TestCase
 
         Livewire::test(TicketSettings::class)
             ->assertOk()
+            ->assertSee('Parámetros')
             ->assertSee('Confirmación de contraseña')
-            ->assertSee('Pedir contraseña al borrar boletos')
-            ->assertSee('Pedir contraseña al editar boletos');
+            ->assertSee('Al borrar boletos')
+            ->assertSee('Al reprogramar boletos')
+            ->assertSee('Al editar boletos');
 
         $response = $this->get(TicketSettings::getUrl());
 
@@ -164,6 +172,7 @@ class TicketSettingsTest extends TestCase
 
     public function test_la_pagina_carga_los_dias_de_servicio_actuales(): void
     {
+        Carbon::setTestNow('2026-09-01');
         $this->actingAs($this->admin);
 
         Livewire::test(TicketSettings::class)
@@ -176,6 +185,7 @@ class TicketSettingsTest extends TestCase
 
     public function test_guardar_un_feriado_deja_la_fecha_sin_servicio(): void
     {
+        Carbon::setTestNow('2026-09-01');
         $this->actingAs($this->admin);
 
         $this->assertTrue(\App\Support\ServiceDays::hasService('2026-12-25'));
@@ -214,13 +224,15 @@ class TicketSettingsTest extends TestCase
     {
         $this->actingAs($this->admin);
 
+        $date = today()->addMonth()->format('Y-m-d');
+
         Livewire::test(TicketSettings::class)
             ->set('data.service_exceptions', [
-                'a' => ['date' => '2026-12-25', 'has_service' => '0', 'reason' => null],
-                'b' => ['date' => '2026-12-25', 'has_service' => '1', 'reason' => null],
+                'a' => ['date' => $date, 'has_service' => '0', 'reason' => null],
+                'b' => ['date' => $date, 'has_service' => '1', 'reason' => null],
             ])
             ->call('save')
-            ->assertHasFormErrors();
+            ->assertHasFormErrors(['service_exceptions.a.date' => 'Hay más de una excepción para la misma fecha.']);
 
         $this->assertDatabaseMissing('settings', ['key' => Setting::SERVICE_EXCEPTIONS]);
     }
@@ -327,7 +339,8 @@ class TicketSettingsTest extends TestCase
         Livewire::test(TicketSettings::class)
             ->set('data.contact_lines', ['a' => ['name' => 'Orán', 'phone' => 'llamar al 3878']])
             ->call('save')
-            ->assertHasFormErrors(['contact_lines.a.phone' => 'regex']);
+            ->assertHasFormErrors(['contact_lines.a.phone' => 'regex'])
+            ->assertSee('Ingresá un teléfono válido (solo números, espacios, guiones, paréntesis y +).');
 
         $this->assertDatabaseMissing('settings', ['key' => Setting::CONTACT_LINES]);
     }
@@ -362,6 +375,288 @@ class TicketSettingsTest extends TestCase
             ->assertHasFormErrors(['contact_lines' => 'max']);
 
         $this->assertDatabaseMissing('settings', ['key' => Setting::CONTACT_LINES]);
+    }
+
+    // ====================== Pestañas y errores ======================
+
+    /**
+     * Badge de cada pestaña, por label, tal como lo calcula el formulario.
+     *
+     * @return array<string, mixed>
+     */
+    private function tabBadges(Testable $component): array
+    {
+        $tabs = collect($component->instance()->form->getFlatComponents())
+            ->first(fn ($child): bool => $child instanceof Tabs);
+
+        return collect($tabs->getChildSchema()->getComponents())
+            ->mapWithKeys(fn (Tab $tab): array => [$tab->getLabel() => $tab->getBadge()])
+            ->all();
+    }
+
+    public function test_las_pestanas_estan_en_orden_y_sin_errores_no_tienen_badge(): void
+    {
+        $this->actingAs($this->admin);
+
+        $component = Livewire::test(TicketSettings::class);
+
+        $this->assertSame(
+            ['Venta' => null, 'Boleto' => null, 'Calendario' => null, 'Seguridad' => null],
+            $this->tabBadges($component),
+        );
+    }
+
+    public function test_un_telefono_invalido_marca_la_pestana_boleto(): void
+    {
+        $this->actingAs($this->admin);
+
+        $component = Livewire::test(TicketSettings::class)
+            ->set('data.contact_lines', ['a' => ['name' => 'Orán', 'phone' => 'llamar al 3878']])
+            ->call('save')
+            ->assertHasFormErrors(['contact_lines.a.phone']);
+
+        $this->assertSame(
+            ['Venta' => null, 'Boleto' => 1, 'Calendario' => null, 'Seguridad' => null],
+            $this->tabBadges($component),
+        );
+
+        $component
+            ->set('data.contact_lines', ['a' => ['name' => 'Orán', 'phone' => '3878-804506']])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $this->assertSame(
+            ['Venta' => null, 'Boleto' => null, 'Calendario' => null, 'Seguridad' => null],
+            $this->tabBadges($component),
+        );
+    }
+
+    public function test_el_guardado_fallido_avisa_las_pestanas_con_errores(): void
+    {
+        $this->actingAs($this->admin);
+
+        $component = Livewire::test(TicketSettings::class)
+            ->set('data.contact_lines', ['a' => ['name' => 'Orán', 'phone' => 'llamar al 3878']])
+            ->set('data.service_weekdays', [])
+            ->call('save')
+            ->assertNotified(
+                \Filament\Notifications\Notification::make()
+                    ->title('No se guardaron los cambios')
+                    ->body('Revisá los campos marcados en Boleto y Calendario.')
+                    ->danger(),
+            );
+
+        $this->assertSame(
+            ['Venta' => null, 'Boleto' => 1, 'Calendario' => 1, 'Seguridad' => null],
+            $this->tabBadges($component),
+        );
+    }
+
+    public function test_el_guardado_es_todo_o_nada(): void
+    {
+        $this->actingAs($this->admin);
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.venta_limite_horas', 8)
+            ->set('data.contact_lines', ['a' => ['name' => 'Orán', 'phone' => 'llamar al 3878']])
+            ->call('save')
+            ->assertHasFormErrors(['contact_lines.a.phone']);
+
+        Setting::flushCache();
+
+        $this->assertSame(Setting::VENTA_LIMITE_HORAS_DEFAULT, Setting::ventaLimiteHoras());
+        $this->assertDatabaseMissing('settings', ['key' => Setting::VENTA_LIMITE_HORAS]);
+    }
+
+    // ====================== Textos ======================
+
+    public function test_la_explicacion_de_contrasena_aparece_una_sola_vez_y_los_permisos_van_en_tooltip(): void
+    {
+        $this->actingAs($this->admin);
+
+        $component = Livewire::test(TicketSettings::class)
+            ->assertSeeText('Se pide la contraseña de quien hace la acción. Si no coincide, la acción no se ejecuta.')
+            ->assertDontSeeText('Vender en días sin servicio');
+
+        $this->assertSame(1, substr_count($component->html(), 'Si no coincide'));
+
+        $calendarHint = collect($component->instance()->form->getFlatComponents())
+            ->first(fn ($child): bool => $child instanceof \Filament\Forms\Components\CheckboxList)
+            ->getHintIconTooltip();
+
+        $this->assertStringContainsString('Vender en días sin servicio', $calendarHint);
+    }
+
+    // ====================== Validaciones ======================
+
+    public function test_las_horas_de_venta_con_decimales_se_rechazan(): void
+    {
+        $this->actingAs($this->admin);
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.venta_limite_horas', 2.5)
+            ->call('save')
+            ->assertHasFormErrors(['venta_limite_horas' => 'integer'])
+            ->assertSee('La cantidad de horas tiene que ser un número entero.');
+
+        $this->assertDatabaseMissing('settings', ['key' => Setting::VENTA_LIMITE_HORAS]);
+    }
+
+    public function test_las_horas_de_venta_mayores_al_maximo_se_rechazan_en_espanol(): void
+    {
+        $this->actingAs($this->admin);
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.venta_limite_horas', 800)
+            ->call('save')
+            ->assertHasFormErrors(['venta_limite_horas' => 'max'])
+            ->assertSee('La cantidad de horas no puede ser mayor a 720.');
+    }
+
+    public function test_el_mensaje_de_whatsapp_sin_link_se_rechaza(): void
+    {
+        $this->actingAs($this->admin);
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.descarga_automatica_pdf', false)
+            ->set('data.whatsapp_mensaje', 'Gracias por viajar con nosotros')
+            ->call('save')
+            ->assertHasFormErrors(['whatsapp_mensaje'])
+            ->assertSee('El mensaje tiene que incluir {link}');
+
+        $this->assertDatabaseMissing('settings', ['key' => Setting::WHATSAPP_MENSAJE]);
+    }
+
+    public function test_el_mensaje_de_whatsapp_demasiado_largo_se_rechaza(): void
+    {
+        $this->actingAs($this->admin);
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.descarga_automatica_pdf', false)
+            ->set('data.whatsapp_mensaje', str_repeat('a', 300).' {link}')
+            ->call('save')
+            ->assertHasFormErrors(['whatsapp_mensaje' => 'max']);
+    }
+
+    public function test_el_mensaje_de_whatsapp_vacio_usa_el_texto_por_defecto(): void
+    {
+        $this->actingAs($this->admin);
+
+        Setting::set(Setting::WHATSAPP_MENSAJE, 'Tu pasaje: {link}');
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.descarga_automatica_pdf', false)
+            ->set('data.whatsapp_mensaje', '')
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        Setting::flushCache();
+
+        $this->assertSame(Setting::WHATSAPP_MENSAJE_DEFAULT, Setting::whatsappMensaje());
+    }
+
+    public function test_el_mensaje_de_whatsapp_oculto_no_se_pierde_al_guardar(): void
+    {
+        $this->actingAs($this->admin);
+
+        Setting::set(Setting::DESCARGA_AUTOMATICA_PDF, '0');
+        Setting::set(Setting::WHATSAPP_MENSAJE, 'Tu pasaje: {link}');
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.descarga_automatica_pdf', true)
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        Setting::flushCache();
+
+        $this->assertTrue(Setting::descargaAutomaticaPdf());
+        $this->assertSame('Tu pasaje: {link}', Setting::whatsappMensaje());
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.descarga_automatica_pdf', false)
+            ->assertSet('data.whatsapp_mensaje', 'Tu pasaje: {link}');
+    }
+
+    public function test_sin_dias_de_servicio_no_se_guarda(): void
+    {
+        $this->actingAs($this->admin);
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.service_weekdays', [])
+            ->call('save')
+            ->assertHasFormErrors(['service_weekdays' => 'required'])
+            ->assertSee('Elegí al menos un día con servicio.');
+
+        Setting::flushCache();
+
+        $this->assertSame(Setting::SERVICE_WEEKDAYS_DEFAULT, Setting::serviceWeekdays());
+        $this->assertDatabaseMissing('settings', ['key' => Setting::SERVICE_WEEKDAYS]);
+    }
+
+    public function test_una_excepcion_con_fecha_pasada_se_rechaza(): void
+    {
+        Carbon::setTestNow('2026-11-04');
+        $this->actingAs($this->admin);
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.service_exceptions', [
+                'a' => ['date' => '2026-11-03', 'has_service' => '0', 'reason' => null],
+            ])
+            ->call('save')
+            ->assertHasFormErrors(['service_exceptions.a.date' => 'after_or_equal'])
+            ->assertSee('La fecha no puede ser anterior a hoy.');
+
+        $this->assertDatabaseMissing('settings', ['key' => Setting::SERVICE_EXCEPTIONS]);
+    }
+
+    public function test_una_excepcion_para_hoy_se_acepta(): void
+    {
+        Carbon::setTestNow('2026-11-04');
+        $this->actingAs($this->admin);
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.service_exceptions', [
+                'a' => ['date' => '2026-11-04', 'has_service' => '0', 'reason' => null],
+            ])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        Setting::flushCache();
+
+        $this->assertFalse(ServiceDays::hasService('2026-11-04'));
+    }
+
+    // ====================== Excepciones vencidas ======================
+
+    public function test_las_excepciones_vencidas_se_quitan_al_guardar_y_se_avisa(): void
+    {
+        Carbon::setTestNow('2026-11-04');
+        $this->actingAs($this->admin);
+
+        Setting::set(Setting::SERVICE_EXCEPTIONS, json_encode([
+            ['date' => '2026-09-13', 'has_service' => true, 'reason' => null],
+            ['date' => '2026-12-25', 'has_service' => false, 'reason' => 'Navidad'],
+        ]));
+
+        Livewire::test(TicketSettings::class)
+            ->assertSet('data.service_exceptions', fn (array $items): bool => array_values($items) === [
+                ['date' => '2026-12-25', 'has_service' => '0', 'reason' => 'Navidad'],
+            ])
+            ->set('data.venta_limite_horas', 6)
+            ->call('save')
+            ->assertHasNoFormErrors()
+            ->assertNotified(
+                \Filament\Notifications\Notification::make()
+                    ->title('Configuración guardada')
+                    ->body('Los cambios se aplicaron correctamente. Se quitó 1 excepción de una fecha que ya pasó.')
+                    ->success(),
+            );
+
+        Setting::flushCache();
+
+        $this->assertSame([
+            ['date' => '2026-12-25', 'has_service' => false, 'reason' => 'Navidad'],
+        ], Setting::serviceExceptions());
     }
 
     // ====================== Borrar boleto ======================

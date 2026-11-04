@@ -91,7 +91,7 @@ El mensaje de WhatsApp SHALL ser opcional: vacío, se usa el texto por defecto. 
 
 #### Scenario: Mensaje vacío
 - **WHEN** el administrador borra el mensaje y guarda
-- **THEN** se guarda y al compartir se usa el texto por defecto "Tu boleto: {link}"
+- **THEN** se guarda y al compartir se usa el texto por defecto "Podés acceder a tu boleto desde aquí: {link}"
 
 #### Scenario: Campo oculto
 - **GIVEN** el mensaje guardado es "Tu pasaje: {link}"

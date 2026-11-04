@@ -52,15 +52,16 @@ Route::get('admin/boletos/{ticket}/link', AdminTicketShareLinkController::class)
 Route::get('tickets/download', [TicketDownloadController::class, 'download'])->name('tickets.download');
 Route::get('tickets/download/multiple', [TicketDownloadController::class, 'downloadMultiple'])->name('tickets.download.multiple');
 
-// Ruta para descargar PDF de viajes
+// PDF / Excel con los pasajeros de un viaje. El panel ya no las usa (exporta
+// desde las acciones de TripResource), pero se mantienen por enlaces viejos
+// guardados: exigen sesión del panel y permiso `trips.view`.
 Route::get('/trips/{trip}/pdf', function (Trip $trip, TripPdfService $service) {
     return $service->downloadTripPdf($trip);
-})->name('trips.pdf.download');
+})->middleware(['auth', 'can:view,trip'])->name('trips.pdf.download');
 
-// Ruta para descargar Excel de viajes
 Route::get('/trips/{trip}/excel', function (Trip $trip, TripExcelService $service) {
     return $service->downloadTripExcel($trip);
-})->name('trips.excel.download');
+})->middleware(['auth', 'can:view,trip'])->name('trips.excel.download');
 
 // Reservas temporales de asientos del selector: sólo con sesión de un
 // vendedor (guard web) o de un cliente (guard client). Operan siempre sobre la

@@ -72,6 +72,7 @@ hosting y no cambia con los deploys (ver README).
 | `composer.json` / `composer.lock` | `composer install --no-dev --optimize-autoloader` |
 | `package.json` / `package-lock.json` | `npm ci && npm run build` |
 | `.env.example` | Comparar con el `.env` del servidor y agregar las variables nuevas |
+| `routes/*.php` o `bootstrap/app.php` | `php artisan route:clear` (lo incluye `optimize:clear` del paso 3.6). Si las rutas quedan cacheadas, el servidor sigue con las viejas: por ejemplo, sin el `auth` nuevo |
 
 Si no cambió nada de la tabla, ese paso se puede saltear.
 
@@ -339,6 +340,36 @@ ORDER BY rs.updated_at DESC;
     eliminar la ruta". Lo mismo con un destino usado en una ruta.
 - **Rollback:** revertir el código y limpiar cachés. Los datos no cambian de
   forma.
+
+### Exportaciones de viajes con login (2026-11-04)
+
+`/trips/{id}/pdf` y `/trips/{id}/excel` dejaban bajar sin sesión el listado de
+pasajeros de cualquier viaje. Ahora exigen sesión del panel y el permiso
+`trips.view`. Las URLs no cambian. No tiene migraciones ni cambios de permisos.
+
+- **Obligatorio:** limpiar la caché de rutas. Si no, producción sigue sirviendo
+  las rutas viejas, sin protección:
+
+  ```bash
+  php artisan route:clear
+
+  o
+
+  /opt/alt/php84/usr/bin/php artisan route:clear
+  ```
+
+  El paso 3.6 (`optimize:clear && optimize`) también la limpia y la regenera.
+  Con correrlo alcanza, pero no hay que saltearlo.
+- **Sin `npm run build`**: no cambian vistas.
+- **Avisar:** quien tenga guardado un enlace `/trips/{id}/pdf|excel` (por
+  ejemplo, un chofer) ahora tiene que iniciar sesión en el panel con un usuario
+  que tenga "Viajes: Ver". Sin cuenta, el enlace ya no le sirve: tiene que
+  pedirle el PDF a alguien del panel.
+- **Qué probar después:**
+  - En una ventana privada, sin login, abrir `/trips/<id>/pdf` de un viaje con
+    pasajeros: tiene que redirigir a `/admin/login`, no descargar el PDF.
+  - Logueado, "PDF" y "Excel" en Viajes siguen descargando.
+- **Rollback:** revertir el código y volver a limpiar la caché de rutas.
 
 ---
 

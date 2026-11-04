@@ -125,6 +125,10 @@ final class Permissions
                 'label' => 'Colectivos',
                 'actions' => self::standardActions(),
             ],
+            'lineas' => [
+                'label' => 'Líneas',
+                'actions' => self::standardActions(),
+            ],
             'bus_layout_areas' => [
                 'label' => 'Distribuciones de asientos',
                 'actions' => self::standardActions(),

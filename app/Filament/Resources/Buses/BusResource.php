@@ -127,6 +127,8 @@ class BusResource extends Resource
     {
         return $table
             ->recordTitleAttribute('name')
+            ->recordUrl(null)
+            ->recordAction(null)
             ->columns([
                 TextColumn::make('name')
                     ->label('Nombre')

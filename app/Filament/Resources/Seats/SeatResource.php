@@ -23,10 +23,8 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
-use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Columns\ToggleColumn;
-use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Filters\TrashedFilter;
@@ -34,7 +32,6 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
 use Illuminate\Validation\Rule;
-use UnitEnum;
 
 class SeatResource extends Resource
 {
@@ -42,14 +39,15 @@ class SeatResource extends Resource
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::User;
 
-    
-      protected static ?string $cluster = BusesCluster::class;
+    protected static ?string $cluster = BusesCluster::class;
 
     protected static ?string $modelLabel = 'asiento';
+
     protected static ?string $pluralModelLabel = 'Asientos';
+
     protected static bool $hasTitleCaseModelLabel = false;
+
     protected static ?int $navigationSort = 2;
-    
 
     public static function form(Schema $schema): Schema
     {
@@ -77,6 +75,7 @@ class SeatResource extends Resource
                         if (! $busId) {
                             return null;
                         }
+
                         return Bus::find($busId)?->seat_count;
                     })
                     ->validationMessages([
@@ -95,6 +94,7 @@ class SeatResource extends Resource
                         if (! $busId) {
                             return null;
                         }
+
                         return Bus::find($busId)?->floors;
                     })
                     ->validationMessages([
@@ -103,19 +103,19 @@ class SeatResource extends Resource
                         'min' => 'El piso debe ser al menos :min.',
                         'max' => 'El piso no debe exceder :max.',
                     ]),
-                
+
                 TextInput::make('row')
                     ->label('Fila')
                     ->numeric()
                     ->minValue(0)
                     ->helperText('Posición de fila en el layout visual (0 = sin posición específica)'),
-                
+
                 TextInput::make('column')
                     ->label('Columna')
                     ->numeric()
                     ->minValue(0)
                     ->helperText('Posición de columna en el layout visual (0 = sin posición específica)'),
-                
+
                 Select::make('position')
                     ->label('Posición')
                     ->options([
@@ -125,7 +125,7 @@ class SeatResource extends Resource
                         'aisle' => 'Pasillo',
                     ])
                     ->helperText('Posición relativa del asiento'),
-                
+
                 Select::make('seat_type')
                     ->label('Tipo de asiento')
                     ->options([
@@ -134,7 +134,7 @@ class SeatResource extends Resource
                         'disabled' => 'Deshabilitado',
                     ])
                     ->default('normal'),
-                
+
                 Toggle::make('is_active')
                     ->label('Activo')
                     ->required(),
@@ -144,6 +144,8 @@ class SeatResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
+            ->recordUrl(null)
+            ->recordAction(null)
             ->paginated([5, 10, 25, 50, 100])
             ->columns([
                 TextColumn::make('bus.name')
@@ -191,7 +193,7 @@ class SeatResource extends Resource
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
-                 SelectFilter::make('bus')
+                SelectFilter::make('bus')
                     ->relationship('bus', 'name')
                     ->label('Colectivo'),
 

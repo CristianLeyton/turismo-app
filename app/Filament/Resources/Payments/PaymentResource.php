@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Services\PaymentsExcelService;
 use App\Services\PaymentsPdfService;
 use BackedEnum;
+use Carbon\Carbon;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
 use Filament\Actions\BulkActionGroup;
@@ -34,10 +35,9 @@ use Filament\Tables\Filters\TrashedFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
+use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Support\Facades\DB;
-use Carbon\Carbon;
 
 class PaymentResource extends Resource
 {
@@ -48,15 +48,18 @@ class PaymentResource extends Resource
     protected static string|BackedEnum|null $navigationIcon = Heroicon::Banknotes;
 
     protected static ?string $modelLabel = 'pago';
+
     protected static ?string $pluralModelLabel = 'Pagos';
+
     protected static bool $hasTitleCaseModelLabel = false;
+
     protected static ?int $navigationSort = 2;
 
     protected static ?string $recordTitleAttribute = 'id';
 
     protected static function formatMoney(float $amount): string
     {
-        return '$' . number_format($amount, 0, ',', '.');
+        return '$'.number_format($amount, 0, ',', '.');
     }
 
     /**
@@ -95,8 +98,8 @@ class PaymentResource extends Resource
                 Select::make('user_id')
                     ->label('Vendedor')
                     ->relationship('user', 'name')
-                    ->getOptionLabelFromRecordUsing(fn(User $record): string => trim($record->name . ' ' . ($record->surname ?? '')))
-                    
+                    ->getOptionLabelFromRecordUsing(fn (User $record): string => trim($record->name.' '.($record->surname ?? '')))
+
                     ->preload()
                     ->required()
                     ->validationMessages([
@@ -182,13 +185,13 @@ class PaymentResource extends Resource
                     ->alignCenter(),
                 TextColumn::make('user.name')
                     ->label('Vendedor')
-                    ->getStateUsing(fn(Model $record): string => $record->user
-                        ? trim($record->user->name . ' ' . ($record->user->surname ?? ''))
+                    ->getStateUsing(fn (Model $record): string => $record->user
+                        ? trim($record->user->name.' '.($record->user->surname ?? ''))
                         : '—')
                     ->sortable(),
                 TextColumn::make('amount')
                     ->label('Monto')
-                    ->formatStateUsing(fn(Model $record): string => static::formatMoney((float) $record->amount))
+                    ->formatStateUsing(fn (Model $record): string => static::formatMoney((float) $record->amount))
                     ->weight('bold')
                     ->sortable()
                     ->alignEnd(),
@@ -207,7 +210,7 @@ class PaymentResource extends Resource
                     ->hidden(),
             ])
             ->defaultSort('payment_date', 'desc')
-            ->recordAction(false)
+            ->recordAction(null)
             ->recordUrl(null)
             ->filters([
                 Filter::make('date_range')
@@ -239,11 +242,12 @@ class PaymentResource extends Resource
                     ->indicateUsing(function (array $data): array {
                         $indicators = [];
                         if ($data['from'] ?? null) {
-                            $indicators[] = 'Desde: ' . Carbon::parse($data['from'])->format('d/m/Y');
+                            $indicators[] = 'Desde: '.Carbon::parse($data['from'])->format('d/m/Y');
                         }
                         if ($data['to'] ?? null) {
-                            $indicators[] = 'Hasta: ' . Carbon::parse($data['to'])->format('d/m/Y');
+                            $indicators[] = 'Hasta: '.Carbon::parse($data['to'])->format('d/m/Y');
                         }
+
                         return $indicators;
                     }),
                 Filter::make('seller')
@@ -254,7 +258,7 @@ class PaymentResource extends Resource
                                 ->orderBy('name')
                                 ->get()
                                 ->mapWithKeys(fn (User $u) => [
-                                    $u->id => trim($u->name . ' ' . ($u->surname ?? '')),
+                                    $u->id => trim($u->name.' '.($u->surname ?? '')),
                                 ]))
                             ->placeholder('Todos los vendedores'),
                     ])
@@ -339,7 +343,7 @@ class PaymentResource extends Resource
                 ]),
             ])
             ->toolbarActions([
-                /*  BulkActionGroup::make([
+            /*  BulkActionGroup::make([
                     DeleteBulkAction::make(),
                     ForceDeleteBulkAction::make(),
                     RestoreBulkAction::make(),

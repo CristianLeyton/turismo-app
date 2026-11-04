@@ -107,7 +107,7 @@ class SetPassword extends Page
 
             Notification::make()
                 ->title('No se pudo guardar la contraseña.')
-                ->body('Ocurrió un problema: '.$e->getMessage().'. Probá de nuevo o consultá en boletería.')
+                ->body('Ocurrió un problema: '.$e->getMessage().'. Probá de nuevo o comunicate con nosotros.')
                 ->danger()
                 ->persistent()
                 ->send();

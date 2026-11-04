@@ -27,7 +27,7 @@ class ClientLogin extends Login
 
     public function getSubheading(): string|Htmlable|null
     {
-        return 'Tu contraseña inicial es tu DNI. Si no podés entrar, consultá en boletería.';
+        return 'Tu usuario es tu DNI. Si no podés entrar, comunicate con nosotros por favor.';
     }
 
     protected function getEmailFormComponent(): Component

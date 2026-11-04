@@ -202,6 +202,8 @@ class RouteStopResource extends Resource
 
         return $table
             ->modifyQueryUsing(fn (Builder $query) => $query->with(['location', 'route.activeSchedules']))
+            ->recordUrl(null)
+            ->recordAction(null)
             // Con ruta elegida el recorrido completo va en una sola pantalla
             // (necesario para arrastrar); sin ruta, se pagina como antes.
             ->paginated($isInsideRoute ? false : fn (Table $table): bool => ! $hasRouteFilter($table))

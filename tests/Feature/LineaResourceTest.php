@@ -9,6 +9,7 @@ use App\Models\Bus;
 use App\Models\Linea;
 use App\Models\User;
 use App\Support\Permissions;
+use Filament\Actions\ActionGroup;
 use Filament\Actions\CreateAction;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\EditAction;
@@ -136,6 +137,25 @@ class LineaResourceTest extends TestCase
 
         $this->assertDatabaseHas('lineas', ['name' => 'Salta - Jujuy']);
         $this->assertDatabaseMissing('lineas', ['id' => $linea->id]);
+    }
+
+    public function test_las_acciones_de_fila_tienen_menu_para_celular(): void
+    {
+        $recordActions = Livewire::test(ManageLineas::class)
+            ->instance()
+            ->getTable()
+            ->getRecordActions();
+
+        $mobileMenu = collect($recordActions)
+            ->first(fn ($action): bool => $action instanceof ActionGroup
+                && str_contains($action->getExtraAttributes()['class'] ?? '', 'md:hidden'));
+
+        $this->assertNotNull($mobileMenu, 'Falta el menú de tres puntitos para celular.');
+
+        $this->assertEqualsCanonicalizing(
+            ['edit', 'delete'],
+            collect($mobileMenu->getActions())->map(fn ($action): string => $action->getName())->values()->all(),
+        );
     }
 
     public function test_colectivo_sin_linea_queda_sin_linea_al_editarlo(): void

@@ -54,6 +54,8 @@ class MyTickets extends BaseDashboard implements HasTable
                 ->when(! $this->mostrarFechados, fn (Builder $q) => $q->whereNull('trip_id'))
                 ->with(['passenger', 'origin', 'destination', 'trip.schedule', 'trip.bus', 'seat']))
             ->defaultPaginationPageOption(25)
+            ->recordUrl(null)
+            ->recordAction(null)
             ->columns([
                 TextColumn::make('id')
                     ->label('N°')
@@ -189,7 +191,7 @@ class MyTickets extends BaseDashboard implements HasTable
 
                     Notification::make()
                         ->title('No se pudo asignar la fecha')
-                        ->body('Ocurrió un problema: '.$e->getMessage().'. Volvé a intentar en unos minutos o consultá en boletería.')
+                        ->body('Ocurrió un problema: '.$e->getMessage().'. Volvé a intentar en unos minutos o comunicate con nosotros.')
                         ->danger()
                         ->persistent()
                         ->send();

@@ -6,6 +6,7 @@ use App\Filament\Clusters\Buses\BusesCluster;
 use App\Filament\Resources\Lineas\Pages\ManageLineas;
 use App\Models\Linea;
 use BackedEnum;
+use Filament\Actions\ActionGroup;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\EditAction;
 use Filament\Forms\Components\TextInput;
@@ -54,6 +55,8 @@ class LineaResource extends Resource
     {
         return $table
             ->recordTitleAttribute('name')
+            ->recordUrl(null)
+            ->recordAction(null)
             ->columns([
                 TextColumn::make('name')
                     ->label('Nombre')
@@ -65,6 +68,16 @@ class LineaResource extends Resource
                     ->alignCenter(),
             ])
             ->recordActions([
+                // Menú de tres puntitos (sólo celular): los ítems conservan
+                // su label para que el menú abierto muestre el texto.
+                ActionGroup::make([
+                    EditAction::make()->button(),
+                    DeleteAction::make()->button(),
+                ])->icon('heroicon-m-ellipsis-vertical')
+                    ->hiddenLabel()
+                    ->size('sm')
+                    ->extraAttributes(['class' => 'md:hidden']),
+
                 EditAction::make()->button()->hiddenLabel()->extraAttributes([
                     'title' => 'Editar', 'class' => 'hidden md:inline-flex',
                 ]),

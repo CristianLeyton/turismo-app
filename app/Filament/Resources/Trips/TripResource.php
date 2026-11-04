@@ -108,6 +108,8 @@ class TripResource extends Resource
     {
         return $table
             ->modifyQueryUsing(fn ($query) => $query->with(['bus', 'route', 'schedule'])->withCount('tickets'))
+            ->recordUrl(null)
+            ->recordAction(null)
             ->columns([
                 TextColumn::make('id')
                     ->label('Nº')

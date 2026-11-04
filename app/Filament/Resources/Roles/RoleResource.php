@@ -5,7 +5,6 @@ namespace App\Filament\Resources\Roles;
 use App\Filament\Clusters\Users\UsersCluster;
 use App\Filament\Resources\Roles\Pages\ManageRoles;
 use App\Support\Permissions;
-use App\Models\User;
 use BackedEnum;
 use Filament\Actions\ActionGroup;
 use Filament\Actions\DeleteAction;
@@ -19,8 +18,8 @@ use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
-use Spatie\Permission\Models\Role;
 use Illuminate\Support\Facades\Auth;
+use Spatie\Permission\Models\Role;
 
 /**
  * Autogestión de roles y permisos.
@@ -181,15 +180,17 @@ class RoleResource extends Resource
     {
         return $table
             ->recordTitleAttribute('name')
+            ->recordUrl(null)
+            ->recordAction(null)
             ->modifyQueryUsing(function ($query) {
-            $query->where('guard_name', 'web')
-                  ->withCount(['users', 'permissions']);
+                $query->where('guard_name', 'web')
+                    ->withCount(['users', 'permissions']);
 
-            // Si el usuario actual NO es super administrador, ocultamos ese rol de la tabla
-            if (! Auth::user()?->hasRole(Permissions::ROLE_SUPER)) {
-                $query->where('name', '!=', Permissions::ROLE_SUPER);
-            }
-        })->columns([
+                // Si el usuario actual NO es super administrador, ocultamos ese rol de la tabla
+                if (! Auth::user()?->hasRole(Permissions::ROLE_SUPER)) {
+                    $query->where('name', '!=', Permissions::ROLE_SUPER);
+                }
+            })->columns([
                 TextColumn::make('name')
                     ->label('Rol')
                     ->searchable()
@@ -208,15 +209,15 @@ class RoleResource extends Resource
                     ->alignCenter(),
             ])
             ->recordActions([
-                ActionGroup::make([
-                    static::editRoleAction()->button()->extraAttributes(['title' => 'Editar']),
-                    static::deleteRoleAction()->button()->extraAttributes(['title' => 'Eliminar']),
-                ])->icon('heroicon-m-ellipsis-vertical')
-                    ->size('sm')
-                    ->extraAttributes(['class' => 'md:hidden']),
+                    ActionGroup::make([
+                        static::editRoleAction()->button()->extraAttributes(['title' => 'Editar']),
+                        static::deleteRoleAction()->button()->extraAttributes(['title' => 'Eliminar']),
+                    ])->icon('heroicon-m-ellipsis-vertical')
+                        ->size('sm')
+                        ->extraAttributes(['class' => 'md:hidden']),
 
-                static::editRoleAction()->hiddenLabel()->extraAttributes(['title' => 'Editar', 'class' => 'hidden md:inline-flex']),
-                static::deleteRoleAction()->hiddenLabel()->extraAttributes(['title' => 'Eliminar', 'class' => 'hidden md:inline-flex']),
+                    static::editRoleAction()->hiddenLabel()->extraAttributes(['title' => 'Editar', 'class' => 'hidden md:inline-flex']),
+                    static::deleteRoleAction()->hiddenLabel()->extraAttributes(['title' => 'Eliminar', 'class' => 'hidden md:inline-flex']),
             ]);
     }
 

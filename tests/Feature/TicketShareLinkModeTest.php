@@ -87,7 +87,7 @@ class TicketShareLinkModeTest extends TestCase
         $this->get($shareUrl)
             ->assertOk()
             ->assertSee('Descargar PDF')
-            ->assertSee('Compartir por WhatsApp');
+            ->assertSee('<span>Enviar</span>', false);
 
         // PDF inline (preview).
         $inline = $this->get($ticket->sharePdfUrl('inline'));
@@ -256,7 +256,7 @@ class TicketShareLinkModeTest extends TestCase
 
         $this->get($ticket->shareUrl())
             ->assertOk()
-            ->assertSeeInOrder(['Compartir por WhatsApp', 'Descargar PDF', 'Copiar link'])
+            ->assertSeeInOrder(['<span>Enviar</span>', 'Descargar PDF', 'Copiar link'], false)
             ->assertDontSee('No hay teléfonos cargados');
     }
 
@@ -267,7 +267,7 @@ class TicketShareLinkModeTest extends TestCase
         $this->get(Sale::sole()->shareUrl())
             ->assertOk()
             ->assertSeeInOrder(['Enviar a Uno Juan', 'Enviar a Dos Juana', 'Descargar PDF', 'Copiar link'])
-            ->assertDontSee('Compartir por WhatsApp');
+            ->assertDontSee('<span>Enviar</span>', false);
     }
 
     public function test_sin_telefonos_no_hay_whatsapp_y_se_aclara(): void
@@ -276,7 +276,7 @@ class TicketShareLinkModeTest extends TestCase
 
         $this->get($ticket->shareUrl())
             ->assertOk()
-            ->assertDontSee('Compartir por WhatsApp')
+            ->assertDontSee('<span>Enviar</span>', false)
             ->assertDontSee('Enviar a ')
             ->assertSee('No hay teléfonos cargados')
             ->assertSeeInOrder(['Descargar PDF', 'Copiar link']);

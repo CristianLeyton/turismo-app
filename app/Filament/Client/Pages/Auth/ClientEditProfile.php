@@ -67,7 +67,7 @@ class ClientEditProfile extends BaseEditProfile
                     ->label('DNI')
                     ->disabled()
                     ->dehydrated(false)
-                    ->helperText('El DNI no se puede cambiar: si está mal, consultá en boletería.'),
+                    ->helperText('El DNI no se puede cambiar: si está mal, comunicate con nosotros por favor.'),
 
                 $this->getPasswordFormComponent(),
 

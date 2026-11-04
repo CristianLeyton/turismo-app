@@ -60,7 +60,7 @@ final class ShareLinkNotification
             // Con varios teléfonos la elección de destinatario vive en la
             // página del link (un botón por persona).
             $actions[] = Action::make('compartir_whatsapp')
-                ->label('Compartir por WhatsApp')
+                ->label('Enviar por Whatsapp')
                 ->icon('heroicon-m-paper-airplane')
                 ->color('success')
                 ->button()

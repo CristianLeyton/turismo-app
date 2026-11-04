@@ -109,6 +109,8 @@ class ScheduleResource extends Resource
 
         return $table
             ->recordTitleAttribute('display_name')
+            ->recordUrl(null)
+            ->recordAction(null)
             ->columns([
                 TextColumn::make('route.name')
                     ->label('Ruta')

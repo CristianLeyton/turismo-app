@@ -3,27 +3,24 @@
 namespace App\Filament\Resources\Tickets\Tables;
 
 use App\Filament\Resources\Tickets\TicketResource;
+use App\Models\Ticket;
+use App\Models\User;
+use App\Services\TicketPdfService;
+use Filament\Actions\Action;
+use Filament\Actions\ActionGroup;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
-use Filament\Actions\EditAction;
 use Filament\Actions\ForceDeleteBulkAction;
 use Filament\Actions\RestoreBulkAction;
 use Filament\Actions\ViewAction;
-use Filament\Actions\Action;
-use Filament\Tables\Columns\IconColumn;
-use Filament\Tables\Columns\TextColumn;
-use Filament\Tables\Filters\TrashedFilter;
-use Filament\Tables\Filters\Filter;
-use Filament\Tables\Table;
-use Filament\Tables\Enums\FiltersLayout;
-use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Select;
-use App\Models\User;
-use App\Services\TicketPdfService;
-use App\Models\Ticket;
-use Filament\Actions\ActionGroup;
-use Livewire\Livewire;
+use Filament\Forms\Components\TextInput;
+use Filament\Tables\Columns\IconColumn;
+use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Enums\FiltersLayout;
+use Filament\Tables\Filters\Filter;
+use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 
 class TicketsTable
@@ -54,10 +51,9 @@ class TicketsTable
                 TextColumn::make('passenger.last_name')
                     ->label('Nombre')
                     ->limit(22)
-                    ->tooltip(fn($state, $record) => $record->passenger->last_name . ' ' . $record->passenger->first_name)
+                    ->tooltip(fn ($state, $record) => $record->passenger->last_name.' '.$record->passenger->first_name)
                     ->formatStateUsing(
-                        fn($state, $record) =>
-                        $record->passenger->last_name . ' ' . $record->passenger->first_name,
+                        fn ($state, $record) => $record->passenger->last_name.' '.$record->passenger->first_name,
                     ),
 
                 TextColumn::make('passenger.dni')
@@ -69,7 +65,7 @@ class TicketsTable
                     ->badge()
                     ->color('success')
                     ->date('d/m/Y')
-                    ->url(fn(Ticket $record) => TicketResource::getUrl('view', ['record' => $record])),
+                    ->url(fn (Ticket $record) => TicketResource::getUrl('view', ['record' => $record])),
 
                 TextColumn::make('sale.user.name')
                     ->label('Vendedor')
@@ -80,7 +76,7 @@ class TicketsTable
 
                 TextColumn::make('trip.trip_date')
                     ->label('Salida')
-                    ->placeholder(fn(Ticket $record) => $record->isPendingDate() ? 'Sin fecha' : '—')
+                    ->placeholder(fn (Ticket $record) => $record->isPendingDate() ? 'Sin fecha' : '—')
                     ->formatStateUsing(function ($record) {
                         if ($record->isPendingDate()) {
                             return 'Sin fecha';
@@ -97,15 +93,16 @@ class TicketsTable
                     })
                     ->badge()
                     ->visibleFrom('md')
-                    ->color(fn(Ticket $record) => $record->isPendingDate() ? 'warning' : 'info')
-                    ->url(fn(Ticket $record) => TicketResource::getUrl('view', ['record' => $record])),
+                    ->color(fn (Ticket $record) => $record->isPendingDate() ? 'warning' : 'info')
+                    ->url(fn (Ticket $record) => TicketResource::getUrl('view', ['record' => $record])),
 
                 TextColumn::make('origin_location_id')
                     ->label('Ruta')
                     ->formatStateUsing(function ($record) {
                         if ($record->origin && $record->destination) {
-                            return $record->origin->name . ' → ' . $record->destination->name;
+                            return $record->origin->name.' → '.$record->destination->name;
                         }
+
                         return 'Ruta no disponible';
                     })
                     ->alignCenter()
@@ -118,7 +115,7 @@ class TicketsTable
                     ->badge()
                     ->color('primary')
                     ->visibleFrom('md')
-                    ->placeholder(fn(Ticket $record) => $record->isPendingDate() ? 'X' : '—')
+                    ->placeholder(fn (Ticket $record) => $record->isPendingDate() ? 'X' : '—')
                     ->alignCenter(),
 
                 IconColumn::make('is_round_trip')
@@ -140,9 +137,10 @@ class TicketsTable
                     })
                     ->visibleFrom('md')
                     ->alignCenter(), */
-            ]) 
-            ->defaultSort('id', 'desc') 
+            ])
+            ->defaultSort('id', 'desc')
             ->recordUrl(null)
+            ->recordAction(null)
             /* ->persistSortInSession() */
             ->paginated([5, 10, 25, 50, 100])
             ->defaultPaginationPageOption(50)
@@ -155,20 +153,21 @@ class TicketsTable
                             ->label('Boleto N°')
                             ->placeholder('Número de boleto')
                             ->numeric()
-                            ->minValue(1)
+                            ->minValue(1),
                     ])
                     ->query(function (Builder $query, array $data): Builder {
                         return $query
                             ->when(
                                 $data['id'],
-                                fn(Builder $query, int $id): Builder => $query->where('tickets.id', $id),
+                                fn (Builder $query, int $id): Builder => $query->where('tickets.id', $id),
                             );
                     })
                     ->indicateUsing(function (array $data): array {
                         $indicators = [];
                         if ($data['id'] ?? null) {
-                            $indicators[] = 'Boleto: ' . $data['id'];
+                            $indicators[] = 'Boleto: '.$data['id'];
                         }
+
                         return $indicators;
                     }),
 
@@ -177,13 +176,13 @@ class TicketsTable
                     ->form([
                         TextInput::make('query')
                             ->label('Pasajero')
-                            ->placeholder('Nombre o DNI del pasajero')
+                            ->placeholder('Nombre o DNI del pasajero'),
                     ])
                     ->query(function (Builder $query, array $data): Builder {
                         return $query
                             ->when(
                                 $data['query'],
-                                fn(Builder $query, string $search): Builder => $query->whereHas('passenger', function (Builder $q) use ($search) {
+                                fn (Builder $query, string $search): Builder => $query->whereHas('passenger', function (Builder $q) use ($search) {
                                     $q->where('first_name', 'like', "%{$search}%")
                                         ->orWhere('last_name', 'like', "%{$search}%")
                                         ->orWhere('dni', 'like', "%{$search}%");
@@ -193,8 +192,9 @@ class TicketsTable
                     ->indicateUsing(function (array $data): array {
                         $indicators = [];
                         if ($data['query'] ?? null) {
-                            $indicators[] = 'Pasajero: ' . $data['query'];
+                            $indicators[] = 'Pasajero: '.$data['query'];
                         }
+
                         return $indicators;
                     }),
 
@@ -211,7 +211,7 @@ class TicketsTable
                         return $query
                             ->when(
                                 $data['date'],
-                                fn(Builder $query, $date): Builder => $query->whereHas('sale', function (Builder $q) use ($date) {
+                                fn (Builder $query, $date): Builder => $query->whereHas('sale', function (Builder $q) use ($date) {
                                     $q->whereDate('sale_date', '=', $date);
                                 }),
                             );
@@ -219,11 +219,11 @@ class TicketsTable
                     ->indicateUsing(function (array $data): array {
                         $indicators = [];
                         if ($data['date'] ?? null) {
-                            $indicators[] = 'Venta: ' . \Carbon\Carbon::parse($data['date'])->format('d/m/Y');
+                            $indicators[] = 'Venta: '.\Carbon\Carbon::parse($data['date'])->format('d/m/Y');
                         }
+
                         return $indicators;
                     }),
-
 
                 Filter::make('vendedor')
                     ->label('Vendedor')
@@ -231,22 +231,23 @@ class TicketsTable
                         Select::make('user_id')
                             ->label('Vendedor')
                             ->placeholder('Todos')
-                            ->options(fn() => User::query()->where('id', '!=', 1)->orderBy('name')->pluck('name', 'id')->toArray()),
+                            ->options(fn () => User::query()->where('id', '!=', 1)->orderBy('name')->pluck('name', 'id')->toArray()),
                     ])
                     ->query(function (Builder $query, array $data): Builder {
                         return $query->when(
                             $data['user_id'] ?? null,
-                            fn(Builder $query, $userId): Builder => $query->whereHas('sale', fn(Builder $q) => $q->where('user_id', $userId)),
+                            fn (Builder $query, $userId): Builder => $query->whereHas('sale', fn (Builder $q) => $q->where('user_id', $userId)),
                         );
                     })
                     ->indicateUsing(function (array $data): array {
                         $indicators = [];
-                        if (!empty($data['user_id'])) {
+                        if (! empty($data['user_id'])) {
                             $user = User::find($data['user_id']);
                             if ($user) {
-                                $indicators[] = 'Vendedor: ' . $user->name;
+                                $indicators[] = 'Vendedor: '.$user->name;
                             }
                         }
+
                         return $indicators;
                     }),
 
@@ -263,7 +264,7 @@ class TicketsTable
                         return $query
                             ->when(
                                 $data['date'],
-                                fn(Builder $query, $date): Builder => $query->whereHas('trip', function (Builder $q) use ($date) {
+                                fn (Builder $query, $date): Builder => $query->whereHas('trip', function (Builder $q) use ($date) {
                                     $q->whereDate('trip_date', '=', $date);
                                 }),
                             );
@@ -271,8 +272,9 @@ class TicketsTable
                     ->indicateUsing(function (array $data): array {
                         $indicators = [];
                         if ($data['date'] ?? null) {
-                            $indicators[] = 'Salida: ' . \Carbon\Carbon::parse($data['date'])->format('d/m/Y');
+                            $indicators[] = 'Salida: '.\Carbon\Carbon::parse($data['date'])->format('d/m/Y');
                         }
+
                         return $indicators;
                     }),
 
@@ -281,13 +283,13 @@ class TicketsTable
                     ->form([
                         TextInput::make('query')
                             ->label('Ruta')
-                            ->placeholder('Origen o destino')
+                            ->placeholder('Origen o destino'),
                     ])
                     ->query(function (Builder $query, array $data): Builder {
                         return $query
                             ->when(
                                 $data['query'],
-                                fn(Builder $query, string $search): Builder => $query->where(function (Builder $q) use ($search) {
+                                fn (Builder $query, string $search): Builder => $query->where(function (Builder $q) use ($search) {
                                     $q->whereHas('origin', function (Builder $subQ) use ($search) {
                                         $subQ->where('name', 'like', "%{$search}%");
                                     })
@@ -300,19 +302,20 @@ class TicketsTable
                     ->indicateUsing(function (array $data): array {
                         $indicators = [];
                         if ($data['query'] ?? null) {
-                            $indicators[] = 'Ruta: ' . $data['query'];
+                            $indicators[] = 'Ruta: '.$data['query'];
                         }
+
                         return $indicators;
                     }),
 
-                    //Filtrar boletos que no tienen fecha de salida
-                    Filter::make('trip_id')
-                        ->label('Ver únicamente boletos sin fecha')
-                        ->toggle()
-                        ->columnSpan(2)
-                        ->query(function (Builder $query): Builder {
-                            return $query->whereNull('trip_id');
-                        }),
+                // Filtrar boletos que no tienen fecha de salida
+                Filter::make('trip_id')
+                    ->label('Ver únicamente boletos sin fecha')
+                    ->toggle()
+                    ->columnSpan(2)
+                    ->query(function (Builder $query): Builder {
+                        return $query->whereNull('trip_id');
+                    }),
             ])
             ->filtersLayout(FiltersLayout::AboveContent)
             ->filtersFormColumns(6)
@@ -335,7 +338,7 @@ class TicketsTable
                         )
                         ->action(function (Ticket $record) {
 
-                            $pdfService = new TicketPdfService();
+                            $pdfService = new TicketPdfService;
                             $sale = $record->sale;
 
                             if ($record->is_round_trip) {
@@ -354,11 +357,11 @@ class TicketsTable
                             $filename = "Boleto_N°{$ticketId}_{$colectivo}.pdf";
 
                             return response()->streamDownload(
-                                fn() => print($pdfContent),
+                                fn () => print ($pdfContent),
                                 $filename,
                                 ['Content-Type' => 'application/pdf']
                             );
-                        })
+                        }),
                 ])->icon('heroicon-m-ellipsis-vertical')
                     ->hiddenLabel()
                     ->size('sm')
@@ -367,7 +370,7 @@ class TicketsTable
                 ViewAction::make()->button()->hiddenLabel()->extraAttributes(
                     ['title' => 'Ver boleto', 'class' => 'hidden md:inline-flex']
                 ),
-/*                 Action::make('edit_ticket')
+                /*                 Action::make('edit_ticket')
                     ->label('Editar')
                     ->icon('heroicon-m-pencil-square')
                     ->color('info')
@@ -383,7 +386,7 @@ class TicketsTable
                     )
                     ->action(function (Ticket $record) {
 
-                        $pdfService = new TicketPdfService();
+                        $pdfService = new TicketPdfService;
                         $sale = $record->sale;
 
                         if ($record->is_round_trip) {
@@ -402,11 +405,11 @@ class TicketsTable
                         $filename = "Boleto_N°{$ticketId}_{$colectivo}.pdf";
 
                         return response()->streamDownload(
-                            fn() => print($pdfContent),
+                            fn () => print ($pdfContent),
                             $filename,
                             ['Content-Type' => 'application/pdf']
                         );
-                    })
+                    }),
             ])
             /* ->toolbarActions([
                 BulkActionGroup::make([

@@ -19,6 +19,25 @@ class RouteStop extends Model
         'arrival_offset_minutes',
     ];
 
+    /**
+     * Una parada nueva sin orden explícito va al final del recorrido. Cuenta
+     * también las eliminadas: la UNIQUE (route_id, stop_order) las incluye.
+     */
+    protected static function booted(): void
+    {
+        static::creating(function (RouteStop $stop): void {
+            if ($stop->stop_order !== null || $stop->route_id === null) {
+                return;
+            }
+
+            $lastOrder = static::withTrashed()
+                ->where('route_id', $stop->route_id)
+                ->max('stop_order');
+
+            $stop->stop_order = $lastOrder === null ? 1 : ((int) $lastOrder) + 1;
+        });
+    }
+
     public function route(): BelongsTo
     {
         return $this->belongsTo(Route::class);

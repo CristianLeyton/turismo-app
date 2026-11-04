@@ -135,7 +135,8 @@ class RouteStopsReorderTest extends TestCase
         // Arrastramos Moreno (pos 2) a la posición 1, donde estaba Cruce Castelar.
         Livewire::test(ManageRouteStops::class)
             ->assertOk()
-            ->call('reorderTable', [$stopB->getKey(), $stopA->getKey()], $stopB->getKey());
+            ->call('reorderTable', [$stopB->getKey(), $stopA->getKey()], $stopB->getKey())
+            ->call('confirmStopOrder');
 
         $stopA->refresh();
         $stopB->refresh();
@@ -183,7 +184,8 @@ class RouteStopsReorderTest extends TestCase
 
         Livewire::test(ManageRouteStops::class)
             ->assertOk()
-            ->call('reorderTable', [$stopC->getKey(), $stopA->getKey(), $stopB->getKey()]);
+            ->call('reorderTable', [$stopC->getKey(), $stopA->getKey(), $stopB->getKey()])
+            ->call('confirmStopOrder');
 
         $stopA->refresh();
         $stopB->refresh();
@@ -226,7 +228,8 @@ class RouteStopsReorderTest extends TestCase
         Livewire::test(ManageRouteStops::class)
             ->set('tableFilters', [])
             ->assertOk()
-            ->call('reorderTable', [$stopB->getKey(), $stopA->getKey()], $stopB->getKey());
+            ->call('reorderTable', [$stopB->getKey(), $stopA->getKey()], $stopB->getKey())
+            ->call('confirmStopOrder');
 
         $stopA->refresh();
         $stopB->refresh();
@@ -246,15 +249,15 @@ class RouteStopsReorderTest extends TestCase
         $route = $this->setupRoute();
         $location = Location::create(['name' => 'La Plata', 'is_active' => true]);
 
-        // Salida de referencia del horario: 13:00. 17:30 -> 270 min; 18:00 -> 300.
+        // Salida de referencia del horario: 13:00. 17:30 -> 270 min; 17:00 -> 240.
+        // El orden ya no se carga: la parada nueva va al final del recorrido.
         Livewire::test(ManageRouteStops::class)
             ->assertOk()
             ->callAction('create', data: [
                 'route_id' => $route->id,
                 'location_id' => $location->id,
-                'stop_order' => 2,
                 'departure_offset_minutes' => '17:30',
-                'arrival_offset_minutes' => '18:00',
+                'arrival_offset_minutes' => '17:00',
             ]);
 
         $stop = RouteStop::query()->where('route_id', $route->id)->where('location_id', $location->id)->first();
@@ -262,7 +265,8 @@ class RouteStopsReorderTest extends TestCase
         $this->assertNotNull($stop, 'La parada se debería crear en la base.');
 
         $this->assertSame(270, $stop->departure_offset_minutes);
-        $this->assertSame(300, $stop->arrival_offset_minutes);
+        $this->assertSame(240, $stop->arrival_offset_minutes);
+        $this->assertSame(1, $stop->stop_order);
     }
 
     #[Test]
@@ -283,15 +287,14 @@ class RouteStopsReorderTest extends TestCase
             ->callTableAction('edit', $stop->getKey(), data: [
                 'route_id' => $route->id,
                 'location_id' => $location->id,
-                'stop_order' => 3,
                 'departure_offset_minutes' => '15:00', // == 13:00 + 120 minutos
-                'arrival_offset_minutes' => '18:30',   // == 13:00 + 330 minutos
+                'arrival_offset_minutes' => '14:30',   // == 13:00 + 90 minutos
             ]);
 
         $stop->refresh();
 
         $this->assertSame(120, $stop->departure_offset_minutes);
-        $this->assertSame(330, $stop->arrival_offset_minutes);
+        $this->assertSame(90, $stop->arrival_offset_minutes);
     }
 
     #[Test]

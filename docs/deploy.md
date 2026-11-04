@@ -256,6 +256,90 @@ limpieza de reservas vencidas sigue a cargo del cron con
     selector y reserva el asiento.
 - **Rollback:** revertir el código y limpiar cachés.
 
+### Permisos de "Líneas" (2026-11-03)
+
+La vista Colectivos > Líneas pasa a exigir permisos del módulo nuevo `lineas`
+(antes cualquier usuario del panel podía verla y editarla). No tiene
+migraciones.
+
+- **Obligatorio:** `php artisan permissions:sync` (paso 3.4). Sin él, solo el
+  Super Administrador entra a Líneas.
+- **Después del sync:** en Roles, habilitar "Líneas" a los roles que la usen.
+  Por defecto ni Administrador ni Vendedor la traen, igual que el resto de los
+  módulos de configuración.
+- **Qué probar después:** con un Vendedor, Líneas no aparece en el menú
+  Colectivos y `/admin/buses/lineas` da 403.
+- **Rollback:** revertir el código. Los permisos `lineas.*` que queden en la
+  base no tienen efecto.
+
+### Editor de rutas: recorrido y horarios en una sola pantalla (2026-11-04)
+
+Cada ruta se edita en una pantalla con pestañas Datos, Recorrido y Horarios.
+Desaparecen los menús sueltos "Paradas" y "Horarios" del cluster Destinos. El
+orden de las paradas se guarda recién al tocar "Confirmar cambios". Se bloquea
+eliminar horarios y rutas con viajes pendientes, y destinos usados en rutas.
+No tiene migraciones ni cambios de permisos.
+
+**Antes de desplegar**, después del backup del paso 3.1, correr estas
+consultas en la base de producción:
+
+```sql
+-- A. Roles a medida que pierden acceso: tienen permisos de paradas u horarios
+--    pero no los de rutas que exige la pantalla de la ruta.
+SELECT r.name FROM roles r
+JOIN role_has_permissions rp ON rp.role_id = r.id
+JOIN permissions p ON p.id = rp.permission_id
+WHERE r.name <> 'Super Administrador'
+GROUP BY r.id, r.name
+HAVING SUM(p.name LIKE 'route_stops.%' OR p.name LIKE 'schedules.%') > 0
+   AND (SUM(p.name = 'routes.view_any') = 0 OR SUM(p.name = 'routes.update') = 0);
+
+-- B. Paradas con órdenes desfasados por el error viejo al reordenar.
+SELECT route_id, id, stop_order FROM route_stops
+WHERE stop_order > 1000 ORDER BY route_id, stop_order;
+
+-- C. Paradas editadas en los últimos 90 días (por el bug de la hora mal
+--    mostrada en el formulario de edición).
+SELECT rs.id, r.name AS ruta, l.name AS parada,
+       rs.departure_offset_minutes, rs.arrival_offset_minutes, rs.updated_at
+FROM route_stops rs
+JOIN routes r ON r.id = rs.route_id
+JOIN locations l ON l.id = rs.location_id
+WHERE rs.deleted_at IS NULL AND rs.updated_at >= NOW() - INTERVAL 90 DAY
+ORDER BY rs.updated_at DESC;
+```
+
+- **A:** si devuelve roles, habilitarles "Rutas: Ver listado" y "Rutas:
+  Editar" en la matriz de Roles después del deploy. Si no, pierden el acceso a
+  paradas y horarios.
+- **B:** si devuelve filas, la ruta funciona igual, porque el orden relativo se
+  mantiene y la pantalla numera 1, 2, 3… Se normaliza sola la próxima vez que
+  alguien reordene y confirme esa ruta.
+- **C:** el formulario viejo mostraba mal la hora al editar una parada. Si
+  alguien guardó sin tocarla, pudo quedar una hora incorrecta. Después del
+  deploy, abrir el Recorrido de esas rutas y verificar que las horas tengan
+  sentido.
+
+- **Obligatorio:**
+  - `npm ci && npm run build` (paso 3.5): hay una vista nueva
+    (`resources/views/filament/resources/route-stops/reordering-header.blade.php`)
+    con clases Tailwind.
+  - Cachés (paso 3.6).
+- **Avisar a quienes configuran rutas:**
+  - Paradas y horarios se editan desde Destinos > Rutas > (lápiz de la ruta),
+    en las pestañas Recorrido y Horarios.
+  - Para cambiar el orden de las paradas: "Cambiar orden", arrastrar y
+    "Confirmar cambios". Si se sale sin confirmar, no se guarda nada.
+- **Qué probar después:**
+  - Abrir una ruta y revisar las tres pestañas.
+  - En Recorrido, editar una parada: la hora del formulario coincide con la de
+    la tabla.
+  - Arrastrar una parada y "Descartar cambios": vuelve al orden original.
+  - Tocar eliminar en una ruta con boletos vendidos: aparece "No se puede
+    eliminar la ruta". Lo mismo con un destino usado en una ruta.
+- **Rollback:** revertir el código y limpiar cachés. Los datos no cambian de
+  forma.
+
 ---
 
 ## Ejemplo real: deploy de la edición de boletos (2026-10-13)

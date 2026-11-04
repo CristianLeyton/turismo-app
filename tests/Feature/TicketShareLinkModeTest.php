@@ -364,7 +364,7 @@ class TicketShareLinkModeTest extends TestCase
 
         Livewire::test(ViewTicket::class, ['record' => $ticket->id])
             ->assertActionVisible('ver_link')
-            ->assertActionHasUrl('ver_link', $ticket->fresh()->shareUrl())
+            ->assertActionHasUrl('ver_link', route('admin.boletos.link', ['ticket' => $ticket->id]))
             ->assertActionShouldOpenUrlInNewTab('ver_link');
 
         $this->assertStringContainsString('/boletos/t_', $ticket->fresh()->shareUrl());

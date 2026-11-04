@@ -240,26 +240,11 @@ class RescheduleTicket extends ResourcePage
             return;
         }
 
-        $sale = $freshTicket->sale;
-        $pdfService = new TicketPdfService;
-
-        $passengerTickets = $sale->tickets()
-            ->where('passenger_id', $freshTicket->passenger_id)
-            ->with(['trip', 'returnTrip', 'origin', 'destination', 'seat'])
-            ->get();
-
-        if ($freshTicket->is_round_trip) {
-            $pdfContent = $pdfService->generateRoundTripTicket($sale, $passengerTickets);
-        } else {
-            $pdfContent = $pdfService->generatePassengerTickets($sale, collect([$freshTicket]));
-        }
-
-        $colectivo = str_replace(' ', '_', $freshTicket->trip?->bus?->name ?? 'Sin fecha');
-        $filename = "Boleto_N°{$freshTicket->id}_{$colectivo}.pdf";
+        $pdf = (new TicketPdfService)->forTicket($freshTicket);
 
         session([
-            'ticket_pdf_content' => base64_encode($pdfContent),
-            'ticket_pdf_filename' => $filename,
+            'ticket_pdf_content' => base64_encode($pdf['content']),
+            'ticket_pdf_filename' => $pdf['filename'],
         ]);
 
         $downloadUrl = route('tickets.download');

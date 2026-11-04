@@ -108,8 +108,8 @@ class TicketContactLinesPdfTest extends TestCase
 
         $html = $this->renderPdfHtml();
 
-        $this->assertStringContainsString('<a href="tel:3878804506">3878-804506</a>', $html);
-        $this->assertStringContainsString('<a href="tel:+5493878804506">+54 9 (3878) 804-506</a>', $html);
+        $this->assertStringContainsString('<a style="color:#d946ef" href="tel:3878804506">3878-804506</a>', $html);
+        $this->assertStringContainsString('<a style="color:#d946ef" href="tel:+5493878804506">+54 9 (3878) 804-506</a>', $html);
         $this->assertStringNotContainsString('>Orán:</a>', $html);
     }
 

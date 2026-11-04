@@ -390,7 +390,7 @@
                                                 &middot;
                                             @endif
                                             {{ $line['name'] !== null ? $line['name'].':' : '' }}
-                                            <a href="tel:{{ $line['dial'] }}">{{ $line['phone'] }}</a>
+                                            <a style="color:#d946ef" href="tel:{{ $line['dial'] }}">{{ $line['phone'] }}</a>
                                         @endforeach
                                     </div>
                                 @endif

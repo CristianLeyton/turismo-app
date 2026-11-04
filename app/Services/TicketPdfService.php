@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Sale;
+use App\Models\Ticket;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Support\Collection;
 
@@ -93,6 +94,45 @@ class TicketPdfService
         }
 
         return $pdfs;
+    }
+
+    /**
+     * PDF de un boleto individual y nombre del archivo. Es la única regla
+     * para todos los accesos: hoja de ida y vuelta con los boletos del
+     * pasajero en la venta si `is_round_trip`, hoja individual si no.
+     *
+     * @return array{content: string, filename: string}
+     */
+    public function forTicket(Ticket $ticket): array
+    {
+        $sale = $ticket->sale;
+
+        if ($ticket->is_round_trip) {
+            $passengerTickets = $sale->tickets()
+                ->where('passenger_id', $ticket->passenger_id)
+                ->with(['trip', 'returnTrip', 'origin', 'destination', 'seat'])
+                ->get();
+
+            $content = $this->generateRoundTripTicket($sale, $passengerTickets);
+        } else {
+            $content = $this->generatePassengerTickets($sale, collect([$ticket]));
+        }
+
+        return [
+            'content' => $content,
+            'filename' => self::filenameFor($ticket),
+        ];
+    }
+
+    /**
+     * Nombre del archivo del PDF de un boleto: `Boleto_N°{id}_{colectivo}.pdf`
+     * (`Sin_fecha` cuando no tiene viaje o colectivo).
+     */
+    public static function filenameFor(Ticket $ticket): string
+    {
+        $colectivo = str_replace(' ', '_', $ticket->trip?->bus?->name ?? 'Sin fecha');
+
+        return "Boleto_N°{$ticket->id}_{$colectivo}.pdf";
     }
 
     /**

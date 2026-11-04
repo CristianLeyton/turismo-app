@@ -26,6 +26,13 @@ class TicketInfolist
                     ->view('tickets.infolist-sale-details')
                     ->columnSpanFull(),
 
+                // Vista previa del PDF del boleto (ruta autenticada del panel,
+                // sin links públicos; funciona también con boletos eliminados).
+                ViewEntry::make('pdf_preview')
+                    ->label('')
+                    ->view('tickets.infolist-pdf-preview')
+                    ->columnSpanFull(),
+
                 // Historial de ediciones (correcciones de datos, tickets.edit).
                 // Una entrada por edición con autor, fecha, motivo y el detalle
                 // Antes/Después de cada campo: el mismo render que el detalle

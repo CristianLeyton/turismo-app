@@ -86,18 +86,9 @@ class TicketShareController extends Controller
      */
     private function ticketPdf(Ticket $ticket, string $disposition)
     {
-        $pdfService = new TicketPdfService;
+        $pdf = (new TicketPdfService)->forTicket($ticket);
 
-        $passengerTickets = $ticket->sale->tickets()
-            ->where('passenger_id', $ticket->passenger_id)
-            ->with(['trip', 'returnTrip', 'origin', 'destination', 'seat'])
-            ->get();
-
-        $pdfContent = $ticket->is_round_trip
-            ? $pdfService->generateRoundTripTicket($ticket->sale, $passengerTickets)
-            : $pdfService->generatePassengerTickets($ticket->sale, collect([$ticket]));
-
-        return $this->pdfResponse($pdfContent, self::ticketFilename($ticket), $disposition);
+        return $this->pdfResponse($pdf['content'], $pdf['filename'], $disposition);
     }
 
     // ------------------------------------------------------------------
@@ -193,9 +184,7 @@ class TicketShareController extends Controller
 
     public static function ticketFilename(Ticket $ticket): string
     {
-        $colectivo = str_replace(' ', '_', $ticket->trip?->bus?->name ?? 'Sin fecha');
-
-        return "Boleto_N°{$ticket->id}_{$colectivo}.pdf";
+        return TicketPdfService::filenameFor($ticket);
     }
 
     public static function saleFilename(Sale $sale): string

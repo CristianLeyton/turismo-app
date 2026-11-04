@@ -80,7 +80,7 @@ class ViewTicket extends ViewRecord
                 ->icon('heroicon-m-link')
                 ->color('gray')
                 ->visible(fn (Ticket $record): bool => ! Setting::descargaAutomaticaPdf() && ! $record->trashed())
-                ->url(fn (Ticket $record): string => $record->shareUrl(), shouldOpenInNewTab: true),
+                ->url(fn (Ticket $record): string => route('admin.boletos.link', ['ticket' => $record->id]), shouldOpenInNewTab: true),
             Action::make('download_pdf')
                 ->label('Descargar')
                 ->icon('heroicon-m-arrow-down-tray')
@@ -89,28 +89,11 @@ class ViewTicket extends ViewRecord
                     ['title' => 'Descargar boleto']
                 )
                 ->action(function (Ticket $record) {
-
-                    $pdfService = new TicketPdfService;
-                    $sale = $record->sale;
-
-                    if ($record->is_round_trip) {
-                        $passengerTickets = $sale->tickets()
-                            ->where('passenger_id', $record->passenger_id)
-                            ->with(['trip', 'returnTrip', 'origin', 'destination', 'seat'])
-                            ->get();
-
-                        $pdfContent = $pdfService->generateRoundTripTicket($sale, $passengerTickets);
-                    } else {
-                        $pdfContent = $pdfService->generatePassengerTickets($sale, collect([$record]));
-                    }
-
-                    $ticketId = $record->id;
-                    $colectivo = str_replace(' ', '_', $record->trip?->bus?->name ?? 'Sin fecha');
-                    $filename = "Boleto_N°{$ticketId}_{$colectivo}.pdf";
+                    $pdf = (new TicketPdfService)->forTicket($record);
 
                     return response()->streamDownload(
-                        fn () => print ($pdfContent),
-                        $filename,
+                        fn () => print ($pdf['content']),
+                        $pdf['filename'],
                         ['Content-Type' => 'application/pdf']
                     );
                 }),

@@ -338,27 +338,11 @@ class TicketsTable
                         )
                         ->action(function (Ticket $record) {
 
-                            $pdfService = new TicketPdfService;
-                            $sale = $record->sale;
-
-                            if ($record->is_round_trip) {
-                                $passengerTickets = $sale->tickets()
-                                    ->where('passenger_id', $record->passenger_id)
-                                    ->with(['trip', 'returnTrip', 'origin', 'destination', 'seat'])
-                                    ->get();
-
-                                $pdfContent = $pdfService->generateRoundTripTicket($sale, $passengerTickets);
-                            } else {
-                                $pdfContent = $pdfService->generatePassengerTickets($sale, collect([$record]));
-                            }
-
-                            $ticketId = $record->id;
-                            $colectivo = str_replace(' ', '_', $record->trip?->bus?->name ?? 'Sin fecha');
-                            $filename = "Boleto_N°{$ticketId}_{$colectivo}.pdf";
+                            $pdf = (new TicketPdfService)->forTicket($record);
 
                             return response()->streamDownload(
-                                fn () => print ($pdfContent),
-                                $filename,
+                                fn () => print ($pdf['content']),
+                                $pdf['filename'],
                                 ['Content-Type' => 'application/pdf']
                             );
                         }),
@@ -386,27 +370,11 @@ class TicketsTable
                     )
                     ->action(function (Ticket $record) {
 
-                        $pdfService = new TicketPdfService;
-                        $sale = $record->sale;
-
-                        if ($record->is_round_trip) {
-                            $passengerTickets = $sale->tickets()
-                                ->where('passenger_id', $record->passenger_id)
-                                ->with(['trip', 'returnTrip', 'origin', 'destination', 'seat'])
-                                ->get();
-
-                            $pdfContent = $pdfService->generateRoundTripTicket($sale, $passengerTickets);
-                        } else {
-                            $pdfContent = $pdfService->generatePassengerTickets($sale, collect([$record]));
-                        }
-
-                        $ticketId = $record->id;
-                        $colectivo = str_replace(' ', '_', $record->trip?->bus?->name ?? 'Sin fecha');
-                        $filename = "Boleto_N°{$ticketId}_{$colectivo}.pdf";
+                        $pdf = (new TicketPdfService)->forTicket($record);
 
                         return response()->streamDownload(
-                            fn () => print ($pdfContent),
-                            $filename,
+                            fn () => print ($pdf['content']),
+                            $pdf['filename'],
                             ['Content-Type' => 'application/pdf']
                         );
                     }),

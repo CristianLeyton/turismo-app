@@ -51,23 +51,11 @@ class ClientTicketPdfController extends Controller
             404
         );
 
-        $pdfService = new TicketPdfService;
+        $pdf = (new TicketPdfService)->forTicket($ticket);
 
-        $passengerTickets = $ticket->sale->tickets()
-            ->where('passenger_id', $ticket->passenger_id)
-            ->with(['trip', 'returnTrip', 'origin', 'destination', 'seat'])
-            ->get();
-
-        $pdfContent = $ticket->is_round_trip
-            ? $pdfService->generateRoundTripTicket($ticket->sale, $passengerTickets)
-            : $pdfService->generatePassengerTickets($ticket->sale, collect([$ticket]));
-
-        $colectivo = str_replace(' ', '_', $ticket->trip?->bus?->name ?? 'Sin fecha');
-        $filename = "Boleto_N°{$ticket->id}_{$colectivo}.pdf";
-
-        return Response::make($pdfContent, 200, [
+        return Response::make($pdf['content'], 200, [
             'Content-Type' => 'application/pdf',
-            'Content-Disposition' => 'inline; filename="'.rawurlencode($filename).'"',
+            'Content-Disposition' => 'inline; filename="'.rawurlencode($pdf['filename']).'"',
         ]);
     }
 }

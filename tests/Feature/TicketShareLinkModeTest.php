@@ -295,6 +295,32 @@ class TicketShareLinkModeTest extends TestCase
             ->assertSee('data-theme-option="system"', false);
     }
 
+    public function test_la_pagina_muestra_las_lineas_de_contacto_como_enlaces_tel(): void
+    {
+        Setting::set(Setting::CONTACT_LINES, json_encode([
+            ['name' => 'Orán', 'phone' => '+54 9 (3878) 804-506'],
+            ['name' => '', 'phone' => '387 123-4567'],
+        ]));
+        $ticket = $this->sellLinkMode(['81000001']);
+
+        $this->get($ticket->shareUrl())
+            ->assertOk()
+            ->assertSeeInOrder(['Contacto:', 'Orán:', '+54 9 (3878) 804-506', '387 123-4567'])
+            ->assertSee('href="tel:+5493878804506"', false)
+            ->assertSee('text-fuchsia-600', false)
+            ->assertDontSee('Link verificable del boleto');
+    }
+
+    public function test_sin_lineas_de_contacto_la_pagina_no_muestra_el_bloque(): void
+    {
+        $ticket = $this->sellLinkMode(['81000001']);
+
+        $this->get($ticket->shareUrl())
+            ->assertOk()
+            ->assertDontSee('Contacto:')
+            ->assertDontSee('href="tel:', false);
+    }
+
     public function test_la_notificacion_ofrece_abrir_copiar_descargar_y_whatsapp_en_orden(): void
     {
         $ticket = $this->sellLinkMode(['81000001'], ['81000001' => '3881234567']);

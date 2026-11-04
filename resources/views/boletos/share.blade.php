@@ -67,6 +67,7 @@
 </head>
 
 @php
+    $contactLines = \App\Models\Setting::contactLines();
     $buttonBase = 'fi-btn fi-size-md w-full sm:w-auto';
     $buttonPrimary =
         $buttonBase .
@@ -83,27 +84,42 @@
     <div class="mx-auto flex max-w-5xl flex-col gap-6 px-4 py-6 md:px-6 md:py-8">
 
         {{-- Barra superior: logo del panel + selector de tema --}}
-        <div class="flex items-center justify-between gap-4">
-             <a href="{{ url('') }}" class="inline-block"> 
-                    @include('filament.admin.logo')
-                </a>
+        <div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+            <a href="{{ url('') }}" class="inline-block">
+                @include('filament.admin.logo')
+            </a>
 
-                <div class="flex items-center gap-3">
-                    <span class="hidden items-center gap-1.5 text-xs text-gray-500 sm:inline-flex dark:text-gray-400">
-                        {{ svg('heroicon-m-shield-check', 'size-4') }}
-                        Link verificable del boleto
-                    </span>
+            {{-- Mismas líneas de contacto que el PDF. En celular bajan a su
+                 propia fila; sin líneas cargadas no se muestra nada. --}}
+            @if ($contactLines !== [])
+                <p
+                    class="order-last flex w-full flex-wrap items-center gap-x-1 gap-y-0.5 text-xs text-gray-500 sm:order-0 sm:w-auto mt-5 sm:mt-0 dark:text-gray-400">
+                    {{ svg('heroicon-m-phone', 'size-3.5 shrink-0') }}
+                    <span>Contacto:</span>
+                    @foreach ($contactLines as $line)
+                        @if (!$loop->first)
+                            <span aria-hidden="true">&middot;</span>
+                        @endif
+                        <span class="inline-flex items-center gap-1">
+                            @if ($line['name'] !== null)
+                                <span>{{ $line['name'] }}:</span>
+                            @endif
+                            <a href="tel:{{ $line['dial'] }}"
+                                class="font-semibold text-fuchsia-600 hover:underline dark:text-fuchsia-400">{{ $line['phone'] }}</a>
+                        </span>
+                    @endforeach
+                </p>
+            @endif
 
-                    <div class="fi-theme-switcher" role="group" aria-label="Tema">
-                        @foreach (['light' => ['heroicon-m-sun', 'Claro'], 'dark' => ['heroicon-m-moon', 'Oscuro'], 'system' => ['heroicon-m-computer-desktop', 'Sistema']] as $themeOption => [$themeIcon, $themeLabel])
-                            <button type="button" class="fi-theme-switcher-btn" data-theme-option="{{ $themeOption }}"
-                                aria-label="{{ $themeLabel }}" title="{{ $themeLabel }}"
-                                onclick="window.shareTheme.set('{{ $themeOption }}')">
-                                {{ svg($themeIcon, 'fi-icon fi-size-md') }}
-                            </button>
-                        @endforeach
-                    </div>
-                </div>
+            <div class="fi-theme-switcher" role="group" aria-label="Tema">
+                @foreach (['light' => ['heroicon-m-sun', 'Claro'], 'dark' => ['heroicon-m-moon', 'Oscuro'], 'system' => ['heroicon-m-computer-desktop', 'Sistema']] as $themeOption => [$themeIcon, $themeLabel])
+                    <button type="button" class="fi-theme-switcher-btn" data-theme-option="{{ $themeOption }}"
+                        aria-label="{{ $themeLabel }}" title="{{ $themeLabel }}"
+                        onclick="window.shareTheme.set('{{ $themeOption }}')">
+                        {{ svg($themeIcon, 'fi-icon fi-size-md') }}
+                    </button>
+                @endforeach
+            </div>
         </div>
 
         {{-- Encabezado de página, como el de Filament: título + acciones --}}

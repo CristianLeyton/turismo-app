@@ -15,10 +15,14 @@ La autorización se resuelve en tres capas:
 | Rol | Qué puede hacer |
 |---|---|
 | **Super Administrador** | Todo (bypass total vía `Gate::before`). Reservado para el usuario fundador (id 1). |
-| **Administrador** | Ventas, boletos (incl. reprogramar/eliminar), clientes (incl. banear), pagos, usuarios, roles, historial y configuración. No accede a módulos de configuración de flota (colectivos, rutas, horarios, asientos) ni a `payments.force_delete` — igual que el viejo `is_admin`. |
-| **Vendedor** | Vender boletos, ver/editar clientes, ver ventas y viajes. Igual que cualquier usuario sin `is_admin` antes de la migración. |
+| **Administrador** | Ventas, viajes, boletos (incl. reprogramar, eliminar y restaurar), pagos, métodos de pago, usuarios, roles, historial y configuración. Por defecto **no** trae Clientes ni ningún permiso `*.force_delete` (eliminar definitivamente), ni los módulos de configuración de flota (colectivos, rutas, horarios, asientos). |
+| **Vendedor** | Ver y vender boletos, y viajes (sin `trips.force_delete`). Por defecto **no** trae Clientes ni Ventas. |
 
 Cualquier **rol custom** (ej. "Supervisor") se crea desde la UI y se le asignan permisos con la matriz de checkboxes.
+
+En la matriz cada editor solo ve y asigna los permisos que él mismo tiene: un Administrador con los permisos por defecto no ve el módulo Clientes, así que habilitar Clientes a un rol lo hace el Super Administrador.
+
+`php artisan permissions:sync` solo **agrega** permisos: en una instalación que ya tenía los defaults anteriores, los roles conservan Clientes, Ventas o `force_delete` hasta que se desmarquen a mano desde la matriz.
 
 ### Política de borrado de roles
 
@@ -35,7 +39,7 @@ Acciones estándar: `view_any`, `view`, `create`, `update`, `delete`, `restore`,
 
 ### Reset de contraseña de cliente (`clients.reset_password`)
 
-Permiso de Clientes que habilita el action **Resetear contraseña** del listado: la contraseña del cliente vuelve a ser su DNI (hasheada), se activa la bandera de primer ingreso y al próximo ingreso el panel lo obliga a elegir una nueva. Lo trae **Administrador** por defecto; sirve cuando el cliente olvidó la contraseña que eligió.
+Permiso de Clientes que habilita el action **Resetear contraseña** del listado: la contraseña del cliente vuelve a ser su DNI (hasheada), se activa la bandera de primer ingreso y al próximo ingreso el panel lo obliga a elegir una nueva. No viene en ningún rol por defecto: se habilita desde la matriz junto con el resto de Clientes. Sirve cuando el cliente olvidó la contraseña que eligió.
 
 ### Venta sin fecha (`tickets.vender_sin_fecha`)
 

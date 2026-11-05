@@ -237,6 +237,43 @@ class LineaSaleSearchTest extends TestCase
         );
     }
 
+    // ====================== Buscador en Origen y Destino ======================
+
+    public function test_el_buscador_aparece_solo_con_mas_de_diez_opciones(): void
+    {
+        $this->assertFalse($this->callPrivate('hasEnoughOptionsToSearch', []));
+        $this->assertFalse($this->callPrivate('hasEnoughOptionsToSearch', array_fill(1, 10, 'Parada')));
+        $this->assertTrue($this->callPrivate('hasEnoughOptionsToSearch', array_fill(1, 11, 'Parada')));
+    }
+
+    public function test_el_buscador_cuenta_las_paradas_dentro_de_los_grupos_y_no_los_grupos(): void
+    {
+        $this->assertTrue($this->callPrivate('hasEnoughOptionsToSearch', [
+            'Hacia Salta' => array_fill(1, 6, 'Parada'),
+            'Hacia Orán' => array_fill(100, 5, 'Parada'),
+        ]));
+
+        $this->assertFalse($this->callPrivate('hasEnoughOptionsToSearch', [
+            'Hacia Salta' => array_fill(1, 5, 'Parada'),
+            'Hacia Orán' => array_fill(100, 5, 'Parada'),
+        ]));
+    }
+
+    public function test_el_destino_detallado_con_mas_de_diez_paradas_es_buscable(): void
+    {
+        $locations = collect(range(1, 12))
+            ->map(fn (int $i): Location => Location::create(['name' => "Parada {$i}", 'is_active' => true]))
+            ->all();
+        $largo = Bus::create(['name' => 'Largo', 'plate' => 'DDD444', 'seat_count' => 10, 'floors' => 1]);
+        $this->createRoute($largo, 'Recorrido largo', $locations);
+
+        $options = $this->callPrivate('destinationOptions', $largo->id, $locations[0]->id, true);
+
+        // Un solo grupo con 11 paradas: antes se contaba 1 (el grupo) y no buscaba.
+        $this->assertCount(1, $options);
+        $this->assertTrue($this->callPrivate('hasEnoughOptionsToSearch', $options));
+    }
+
     public function test_el_estilo_de_los_selectores_sigue_el_parametro(): void
     {
         $this->assertFalse($this->callPrivate('detailedSelectors'));

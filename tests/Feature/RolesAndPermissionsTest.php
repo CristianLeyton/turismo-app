@@ -18,23 +18,30 @@ class RolesAndPermissionsTest extends TestCase
 
     // ====================== Paridad del rol Vendedor ======================
 
-    public function test_vendedor_puede_vender_y_ver_clientes_ventas_y_viajes(): void
+    public function test_vendedor_puede_vender_y_ver_viajes(): void
     {
         $vendedor = User::factory()->vendedor()->create();
 
         $this->actingAs($vendedor);
 
-        // Paridad: lo que un usuario sin is_admin podía hacer antes.
         $this->assertTrue($vendedor->can('tickets.view_any'));
         $this->assertTrue($vendedor->can('tickets.view'));
         $this->assertTrue($vendedor->can('tickets.create'));
-        $this->assertTrue($vendedor->can('clients.view_any'));
-        $this->assertTrue($vendedor->can('clients.view'));
-        $this->assertTrue($vendedor->can('clients.create'));
-        $this->assertTrue($vendedor->can('clients.update'));
-        $this->assertTrue($vendedor->can('sales.view_any'));
         $this->assertTrue($vendedor->can('trips.view_any'));
         $this->assertTrue($vendedor->can('trips.create'));
+    }
+
+    public function test_vendedor_no_tiene_clientes_ventas_ni_force_delete_por_defecto(): void
+    {
+        $vendedor = User::factory()->vendedor()->create();
+
+        $this->actingAs($vendedor);
+
+        foreach (Permissions::all() as $permission) {
+            if (str_starts_with($permission, 'clients.') || str_starts_with($permission, 'sales.') || str_ends_with($permission, '.force_delete')) {
+                $this->assertFalse($vendedor->can($permission), "El vendedor no debería tener {$permission}");
+            }
+        }
     }
 
     public function test_vendedor_no_puede_acceder_a_gestion(): void
@@ -73,10 +80,23 @@ class RolesAndPermissionsTest extends TestCase
         $this->assertTrue($admin->can('settings.manage'));
         $this->assertTrue($admin->can('tickets.reschedule'));
         $this->assertTrue($admin->can('tickets.delete'));
-        $this->assertTrue($admin->can('clients.delete'));
-        $this->assertTrue($admin->can('clients.ban'));
+        $this->assertTrue($admin->can('tickets.restore'));
+        $this->assertTrue($admin->can('sales.delete'));
         $this->assertTrue($admin->can('roles.view_any'));
         $this->assertTrue($admin->can('roles.assign'));
+    }
+
+    public function test_administrador_no_tiene_clientes_ni_force_delete_por_defecto(): void
+    {
+        $admin = User::factory()->admin()->create();
+
+        $this->actingAs($admin);
+
+        foreach (Permissions::all() as $permission) {
+            if (str_starts_with($permission, 'clients.') || str_ends_with($permission, '.force_delete')) {
+                $this->assertFalse($admin->can($permission), "El administrador no debería tener {$permission}");
+            }
+        }
     }
 
     public function test_administrador_no_accede_a_modulos_de_configuracion_como_antes(): void
@@ -426,7 +446,8 @@ class RolesAndPermissionsTest extends TestCase
         $labels = $checkboxLists->map(fn ($list) => $list->getLabel())->values()->all();
 
         $this->assertContains('Boletos', $labels);
-        $this->assertContains('Clientes', $labels);
+        // El admin no tiene permisos de clientes por defecto: no puede otorgarlos.
+        $this->assertNotContains('Clientes', $labels);
         $this->assertContains('Pagos', $labels);
         $this->assertContains('Usuarios', $labels);
         $this->assertContains('Configuración', $labels);

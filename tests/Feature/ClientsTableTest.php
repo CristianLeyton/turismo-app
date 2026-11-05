@@ -29,7 +29,7 @@ class ClientsTableTest extends TestCase
 
     public function test_el_filtro_muestra_solo_los_baneados(): void
     {
-        $this->actingAs(User::factory()->vendedor()->create());
+        $this->actingAs(User::factory()->superAdmin()->create());
 
         Clients::create(['dni' => '11111111', 'nombre' => 'Ana', 'apellido' => 'García', 'can_buy' => true]);
         Clients::create(['dni' => '22222222', 'nombre' => 'Beto', 'apellido' => 'López', 'can_buy' => false, 'comments' => 'No paga']);
@@ -54,7 +54,7 @@ class ClientsTableTest extends TestCase
 
     public function test_la_columna_cuenta_los_boletos_de_todos_los_pasajeros_con_ese_dni(): void
     {
-        $this->actingAs(User::factory()->vendedor()->create());
+        $this->actingAs(User::factory()->superAdmin()->create());
 
         $cliente = Clients::create(['dni' => '33333333', 'nombre' => 'Carla', 'apellido' => 'Díaz', 'can_buy' => true]);
         $f = $this->makeSaleFixture();

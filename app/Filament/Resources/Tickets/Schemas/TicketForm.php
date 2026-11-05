@@ -416,7 +416,7 @@ class TicketForm
                                     // buscador (solo con >10 paradas, con pocas estorba) y
                                     // paradas numeradas; simple = select nativo, lista plana.
                                     ->native(fn (): bool => ! self::detailedSelectors())
-                                    ->searchable(fn (Get $get): bool => self::detailedSelectors() && count(self::originOptions($get('bus_id'), true)) > 10)
+                                    ->searchable(fn (Get $get): bool => self::detailedSelectors() && self::hasEnoughOptionsToSearch(self::originOptions($get('bus_id'), true)))
                                     ->optionsLimit(100)
                                     ->options(fn (Get $get) => self::originOptions($get('bus_id'), self::detailedSelectors()))
                                     ->live()
@@ -441,7 +441,7 @@ class TicketForm
                                     ->disabled(fn (Get $get) => blank($get('origin_location_id')))->placeholder('Seleccione un origen primero')
                                     // Mismo criterio de estilo que Origen.
                                     ->native(fn (): bool => ! self::detailedSelectors())
-                                    ->searchable(fn (Get $get): bool => self::detailedSelectors() && count(self::destinationOptions($get('bus_id'), $get('origin_location_id'), true)) > 10)
+                                    ->searchable(fn (Get $get): bool => self::detailedSelectors() && self::hasEnoughOptionsToSearch(self::destinationOptions($get('bus_id'), $get('origin_location_id'), true)))
                                     ->optionsLimit(100)
                                     ->options(fn (Get $get) => self::destinationOptions($get('bus_id'), $get('origin_location_id'), self::detailedSelectors()))
                                     ->live()
@@ -2735,6 +2735,24 @@ class TicketForm
             ->orderBy('name')
             ->pluck('name', 'id')
             ->all();
+    }
+
+    /**
+     * ¿El select tiene más de 10 opciones como para mostrar el buscador? Con
+     * pocas estorba. Cuenta las opciones dentro de cada grupo (Destino viene
+     * agrupado por sentido), no la cantidad de grupos.
+     *
+     * @param  array<int|string, string|array<int, string>>  $options
+     */
+    private static function hasEnoughOptionsToSearch(array $options): bool
+    {
+        $count = 0;
+
+        foreach ($options as $option) {
+            $count += is_array($option) ? count($option) : 1;
+        }
+
+        return $count > 10;
     }
 
     /**

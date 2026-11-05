@@ -10,6 +10,8 @@
         ['type' => 'luggage', 'label' => 'Equipaje', 'chip' => 'bg-purple-100 border-purple-300 text-purple-800'],
         ['type' => 'driver', 'label' => 'Conductor', 'chip' => 'bg-gray-200 border-gray-400 text-gray-700'],
         ['type' => 'pasillo', 'label' => 'Pasillo', 'chip' => 'bg-white border-gray-300 text-gray-500'],
+        ['type' => 'stairs', 'label' => 'Escalera', 'chip' => 'bg-stone-200 border-stone-400 text-stone-800'],
+        ['type' => 'bar', 'label' => 'Bar', 'chip' => 'bg-teal-100 border-teal-300 text-teal-800'],
         ['type' => 'other', 'label' => 'Otra', 'chip' => 'bg-pink-100 border-pink-300 text-pink-800'],
     ];
 
@@ -85,6 +87,8 @@
                 <option value="luggage">Guardaequipaje</option>
                 <option value="driver">Cabina conductor</option>
                 <option value="pasillo">Pasillo</option>
+                <option value="stairs">Escalera</option>
+                <option value="bar">Bar</option>
                 <option value="other">Otra</option>
             </select>
         </div>
@@ -141,6 +145,8 @@
                                         'luggage' => 'bg-purple-100 border-purple-300 text-purple-800 dark:bg-purple-900/30 dark:border-purple-700 dark:text-purple-200',
                                         'driver' => 'bg-gray-200 border-gray-400 text-gray-700 dark:bg-gray-700 dark:text-gray-200',
                                         'pasillo' => 'bg-white border-gray-100 dark:bg-gray-900 dark:border-gray-800',
+                                        'stairs' => 'bg-stone-200 border-stone-400 text-stone-800 dark:bg-stone-800/50 dark:border-stone-600 dark:text-stone-200',
+                                        'bar' => 'bg-teal-100 border-teal-300 text-teal-800 dark:bg-teal-900/30 dark:border-teal-700 dark:text-teal-200',
                                         default => 'bg-pink-100 border-pink-300 text-pink-800 dark:bg-pink-900/30 dark:border-pink-700 dark:text-pink-200',
                                     } }}"
                                 :class="isDragging() ? 'opacity-60' : ''"
@@ -213,6 +219,8 @@
                                             'luggage' => 'bg-purple-100 border-purple-300 text-purple-800',
                                             'driver' => 'bg-gray-200 border-gray-400 text-gray-700',
                                             'pasillo' => 'bg-white border-gray-200 text-gray-500',
+                                            'stairs' => 'bg-stone-200 border-stone-400 text-stone-800',
+                                            'bar' => 'bg-teal-100 border-teal-300 text-teal-800',
                                             default => 'bg-pink-100 border-pink-300 text-pink-800',
                                         } }}"
                                     style="height: 24px"

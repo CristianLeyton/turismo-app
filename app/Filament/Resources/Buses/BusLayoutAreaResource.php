@@ -71,6 +71,8 @@ class BusLayoutAreaResource extends Resource
                         'bathroom' => 'BAÑO',
                         'luggage' => 'Equipaje',
                         'driver' => 'Conductor',
+                        'stairs' => 'Escalera',
+                        'bar' => 'Bar',
                         'other' => 'Otro',
                     ])
                     ->required()
@@ -89,6 +91,8 @@ class BusLayoutAreaResource extends Resource
                             'bathroom' => 'BAÑO',
                             'luggage' => 'EQUIPAJE',
                             'driver' => 'CONDUCTOR',
+                            'stairs' => 'ESCALERA',
+                            'bar' => 'BAR',
                             default => 'ÁREA',
                         };
                     })
@@ -173,6 +177,8 @@ class BusLayoutAreaResource extends Resource
                         'bathroom' => 'BAÑO',
                         'luggage' => 'Equipaje',
                         'driver' => 'Conductor',
+                        'stairs' => 'Escalera',
+                        'bar' => 'Bar',
                         default => ucfirst($state),
                     })
                     ->color(fn (string $state): string => match ($state) {
@@ -180,6 +186,7 @@ class BusLayoutAreaResource extends Resource
                         'bathroom' => 'info',
                         'luggage' => 'success',
                         'driver' => 'danger',
+                        'bar' => 'warning',
                         default => 'gray',
                     }),
 
@@ -239,6 +246,8 @@ class BusLayoutAreaResource extends Resource
                         'bathroom' => 'BAÑO',
                         'luggage' => 'Equipaje',
                         'driver' => 'Conductor',
+                        'stairs' => 'Escalera',
+                        'bar' => 'Bar',
                         'other' => 'Otro',
                     ]),
 

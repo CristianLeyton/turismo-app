@@ -1,7 +1,6 @@
 <?php
 
 use App\Http\Controllers\AdminTicketPdfController;
-use App\Http\Controllers\AdminTicketShareLinkController;
 use App\Http\Controllers\Api\SeatReservationController;
 use App\Http\Controllers\ClientLogoutController;
 use App\Http\Controllers\ClientTicketPdfController;
@@ -34,9 +33,9 @@ Route::middleware(EnsureClientPanelIsEnabled::class)->group(function () {
     Route::get('clientes/boletos/{ticket}', [ClientTicketPdfController::class, 'show'])->name('clientes.boletos.show');
 });
 
-// Links compartibles de boletos: quien tenga el link ve el PDF y puede
-// compartirlo/descargarlo (sin login; el token es el permiso).
-// 't_...' = boleto individual · 's_...' = PDF combinado de la venta.
+// Links compartibles de boletos: quien tenga el link recibe el PDF y puede
+// descargarlo (sin login; el token es el permiso).
+// 't_...' = boleto individual. Los tokens de venta ('s_...') dan 404.
 Route::get('boletos/{token}', [TicketShareController::class, 'show'])->name('boletos.share');
 Route::get('boletos/{token}/pdf', [TicketShareController::class, 'pdf'])->name('boletos.share.pdf');
 
@@ -47,11 +46,6 @@ Route::get('admin/boletos/{ticket}/pdf', AdminTicketPdfController::class)
     ->middleware('auth')
     ->withTrashed()
     ->name('admin.boletos.pdf');
-
-// "Ver link" del panel: crea el token público recién al hacer click.
-Route::get('admin/boletos/{ticket}/link', AdminTicketShareLinkController::class)
-    ->middleware('auth')
-    ->name('admin.boletos.link');
 
 // Rutas para descarga de tickets PDF
 Route::get('tickets/download', [TicketDownloadController::class, 'download'])->name('tickets.download');

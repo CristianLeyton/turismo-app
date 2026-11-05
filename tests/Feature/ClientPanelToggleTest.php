@@ -16,7 +16,8 @@ use Tests\TestCase;
 /**
  * Parámetro "Panel de clientes activo" (change client-panel-toggle): el panel
  * /clientes y sus rutas sueltas existen solo con el parámetro activado; el
- * aviso del login de administración y el logo del boleto público lo siguen.
+ * aviso del login de administración lo sigue y el link público del boleto no
+ * depende de él.
  */
 class ClientPanelToggleTest extends TestCase
 {
@@ -103,7 +104,9 @@ class ClientPanelToggleTest extends TestCase
     {
         $ticket = $this->createTicketFor('11223344');
 
-        $this->get($ticket->shareUrl())->assertOk();
+        $response = $this->get($ticket->shareUrl())->assertOk();
+
+        $this->assertSame('application/pdf', $response->headers->get('Content-Type'));
     }
 
     public function test_el_aviso_del_login_de_administracion_sigue_al_parametro(): void
@@ -116,23 +119,6 @@ class ClientPanelToggleTest extends TestCase
             ->assertOk()
             ->assertSee('¿Sos cliente?')
             ->assertSee('href="'.route('filament.clientes.auth.login').'"', false);
-    }
-
-    public function test_el_logo_del_boleto_publico_sigue_al_parametro(): void
-    {
-        $ticket = $this->createTicketFor('11223344');
-        $loginHref = 'href="'.route('filament.clientes.auth.login').'"';
-
-        $this->get($ticket->shareUrl())
-            ->assertOk()
-            ->assertSee('href="'.url('').'" class="inline-block"', false)
-            ->assertDontSee($loginHref, false);
-
-        Setting::set(Setting::PANEL_CLIENTES_ACTIVO, '1');
-
-        $this->get($ticket->shareUrl())
-            ->assertOk()
-            ->assertSee($loginHref.' class="inline-block"', false);
     }
 
     public function test_el_ingreso_de_clientes_muestra_las_lineas_de_contacto(): void

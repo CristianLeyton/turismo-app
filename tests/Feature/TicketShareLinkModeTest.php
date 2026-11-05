@@ -2,8 +2,10 @@
 
 namespace Tests\Feature;
 
+use App\Filament\Actions\TicketDeliveryAction;
 use App\Filament\Resources\Tickets\Pages\CreateTicket;
 use App\Filament\Resources\Tickets\Pages\ViewTicket;
+use App\Filament\Resources\Tickets\TicketResource;
 use App\Models\Bus;
 use App\Models\Clients;
 use App\Models\Location;
@@ -17,20 +19,27 @@ use App\Models\Setting;
 use App\Models\Ticket;
 use App\Models\Trip;
 use App\Models\User;
-use App\Support\BrandPalette;
-use App\Support\ShareLinkNotification;
+use App\Services\TicketPdfService;
+use App\Support\TicketDelivery;
 use App\Support\WhatsAppShare;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\View;
+use Illuminate\Support\Js;
 use Livewire\Livewire;
 use Tests\TestCase;
 
 /**
- * Feature temporal: modo de emisión por link (DESCARGA_AUTOMATICA_PDF off).
+ * Modo de emisión por link (DESCARGA_AUTOMATICA_PDF desactivado): el link
+ * público entrega el PDF del boleto y la venta abre el modal de entrega.
  */
 class TicketShareLinkModeTest extends TestCase
 {
     use RefreshDatabase;
+
+    /** @var array<string, mixed> */
+    private array $fixture = [];
 
     protected function setUp(): void
     {
@@ -59,6 +68,8 @@ class TicketShareLinkModeTest extends TestCase
 
         $this->assertSame(route('tickets.download'), session('auto_download_url'));
         $this->assertNotNull(session('ticket_pdf_content'));
+        $this->assertNull(session(TicketDelivery::SESSION_KEY), 'Con descarga automática no se abre el modal de entrega.');
+        $this->assertSame(url('/admin'), $this->invokeRedirectUrl());
 
         // El token no se genera de forcing: no está en la tabla todavía.
         $this->assertFalse(
@@ -67,71 +78,93 @@ class TicketShareLinkModeTest extends TestCase
         );
     }
 
-    public function test_con_modo_link_un_pasajero_abre_el_share_del_boleto(): void
+    // -----------------------------------------------------------------
+    // Link público: el PDF del boleto
+    // -----------------------------------------------------------------
+
+    public function test_el_link_de_un_boleto_entrega_su_pdf_en_linea(): void
     {
-        Setting::set(Setting::DESCARGA_AUTOMATICA_PDF, '0');
-        $f = $this->makeFixture();
-        $this->actingAs(User::factory()->vendedor()->create());
+        $ticket = $this->sellLinkMode(['81000001']);
+        auth()->logout();
 
-        $this->invokeHandleRecordCreation($this->salePayload($f, ['81000001'], ['81000001' => '3881234567']));
+        $response = $this->get($ticket->shareUrl());
 
-        $ticket = Ticket::sole();
-        $this->assertNotNull($ticket->share_token);
+        $response->assertOk();
+        $this->assertSame('application/pdf', $response->headers->get('Content-Type'));
+        $this->assertStringStartsWith('%PDF', $response->getContent());
+        $this->assertSame(
+            'inline; filename="'.rawurlencode(TicketPdfService::filenameFor($ticket)).'"',
+            $response->headers->get('Content-Disposition'),
+        );
+        $this->assertStringContainsString('no-cache', (string) $response->headers->get('Cache-Control'));
+    }
 
+    public function test_la_descarga_del_link_entrega_el_pdf_como_adjunto(): void
+    {
+        $ticket = $this->sellLinkMode(['81000001']);
+        auth()->logout();
+
+        $response = $this->get($ticket->sharePdfUrl('attachment'));
+
+        $response->assertOk();
+        $this->assertSame(
+            'attachment; filename="'.rawurlencode(TicketPdfService::filenameFor($ticket)).'"',
+            $response->headers->get('Content-Disposition'),
+        );
+
+        $this->get(route('boletos.share.pdf', ['token' => $ticket->share_token, 'disposition' => 'otra']))->assertNotFound();
+    }
+
+    public function test_el_link_de_un_boleto_borrado_da_404(): void
+    {
+        $ticket = $this->sellLinkMode(['81000001']);
         $shareUrl = $ticket->shareUrl();
-        $this->assertSame($shareUrl, session('auto_download_url'), 'La venta abre la página del link.');
 
-        // No se generó PDF en sesión (el flujo viejo quedó fuera).
-        $this->assertNull(session('ticket_pdf_content'));
+        $ticket->delete();
 
-        // Página de preview accesible sin sesión/login.
-        $this->get($shareUrl)
-            ->assertOk()
-            ->assertSee('Descargar PDF')
-            ->assertSee('<span>Enviar</span>', false);
-
-        // PDF inline (preview).
-        $inline = $this->get($ticket->sharePdfUrl('inline'));
-        $inline->assertOk();
-        $this->assertSame('application/pdf', $inline->headers->get('Content-Type'));
-        $this->assertStringContainsString('inline', (string) $inline->headers->get('Content-Disposition'));
-        $this->assertStringContainsString('no-cache', (string) $inline->headers->get('Cache-Control'));
-
-        // PDF attachment (descarga).
-        $download = $this->get($ticket->sharePdfUrl('attachment'));
-        $download->assertOk();
-        $this->assertStringContainsString('attachment', (string) $download->headers->get('Content-Disposition'));
-
-        // Token inventado → 404.
-        $this->get('/boletos/t_nuncafue')->assertNotFound();
+        // Borrado → el token ya no resuelve (sin SoftDeletingScope de ningun
+        // lado para el fetch público): 404 limpio.
+        $this->get($shareUrl)->assertNotFound();
     }
 
-    public function test_con_modo_link_varios_pasajeros_abre_el_share_de_la_venta(): void
+    public function test_un_token_inventado_o_de_venta_da_404(): void
     {
-        Setting::set(Setting::DESCARGA_AUTOMATICA_PDF, '0');
-        $f = $this->makeFixture();
-        $this->actingAs(User::factory()->vendedor()->create());
+        $this->sellLinkMode(['81000001']);
+        $saleToken = Sale::sole()->shareToken();
 
-        $this->invokeHandleRecordCreation($this->salePayload(
-            $f,
-            ['81000001', '81000002'],
-        ));
+        $this->assertStringStartsWith('s_', $saleToken);
 
-        $sale = Sale::sole();
-        $this->assertNotNull($sale->share_token);
-
-        // Dos pasajeros → abre la página combinada de la venta.
-        $this->assertSame($sale->shareUrl(), session('auto_download_url'));
-
-        $response = $this->get($sale->shareUrl())
-            ->assertOk()
-            ->assertSee('Boletos de la venta');
-
-        // PDF combinado.
-        $pdf = $this->get($sale->sharePdfUrl('inline'));
-        $pdf->assertOk();
-        $this->assertSame(200, $pdf->getStatusCode());
+        $this->get('/boletos/t_nuncafue')->assertNotFound();
+        $this->get('/boletos/'.$saleToken)->assertNotFound();
+        $this->get('/boletos/'.$saleToken.'/pdf?disposition=attachment')->assertNotFound();
     }
+
+    public function test_el_pdf_del_link_usa_el_color_de_la_empresa(): void
+    {
+        Setting::set(Setting::PRIMARY_COLOR, '#0e7490');
+        $ticket = $this->sellLinkMode(['81000001']);
+
+        $data = $this->capturePdfData(fn () => $this->get($ticket->shareUrl())->assertOk());
+
+        BrandColorPdfTest::assertUsesBrandPalette($this, view('tickets.pdf.passenger-tickets', $data)->render());
+    }
+
+    public function test_el_link_de_la_ida_de_un_diferido_incluye_la_vuelta(): void
+    {
+        $this->sellUndatedRoundTrip(['81000001']);
+
+        $ida = Ticket::query()->where('is_return_leg', false)->sole();
+        $vuelta = Ticket::query()->where('is_return_leg', true)->sole();
+
+        $data = $this->capturePdfData(fn () => $this->get($ida->fresh()->shareUrl())->assertOk());
+
+        $this->assertEqualsCanonicalizing([$ida->id, $vuelta->id], $data['tickets']->pluck('id')->all());
+        $this->assertNull($vuelta->fresh()->share_token, 'La vuelta no recibe link propio.');
+    }
+
+    // -----------------------------------------------------------------
+    // Teléfonos de WhatsApp
+    // -----------------------------------------------------------------
 
     public function test_los_teléfonos_de_pasajeros_y_padron_se_deduplican(): void
     {
@@ -147,13 +180,9 @@ class TicketShareLinkModeTest extends TestCase
         // Padrón: DNI del segundo pasajero con el MISMO teléfono de compra
         // (duplicado) y el primero con otro teléfono.
         Clients::create(['dni' => '81000002', 'nombre' => 'Ana', 'apellido' => 'Dos', 'telefono' => '3881234567', 'can_buy' => true]);
-        Clients::create(['dni' => '81000001', 'nombre' => 'Ana', 'apellido' => 'Uno', 'telefono' => '3881239999', 'can_buy' => true]);
+        Clients::create(['dni' => '81000001', 'nombre' => 'Ana', 'apellido' => 'Uno', 'telefono' => '03881239999', 'can_buy' => true]);
 
-        $sale = Sale::sole();
-        $targets = WhatsAppShare::forSale($sale, 'https://example.com/link');
-
-        $phones = array_column($targets, 'phone');
-
+        $phones = array_column(WhatsAppShare::candidatesForSale(Sale::sole()), 'phone');
         sort($phones);
 
         $this->assertSame(
@@ -162,351 +191,390 @@ class TicketShareLinkModeTest extends TestCase
             'Todos los teléfonos del pasajero y del padrón, normalizados y sin duplicados.',
         );
 
-        // El mensaje lleva el link reemplazado en el texto default.
-        $expectedText = str_replace('{link}', 'https://example.com/link', Setting::WHATSAPP_MENSAJE_DEFAULT);
-        $this->assertStringContainsString($expectedText, urldecode($targets[0]['url']));
+        $this->assertCount(3, WhatsAppShare::candidatesForSale(Sale::sole(), unique: false));
     }
 
-    public function test_la_pagina_del_boleto_usa_el_color_de_la_empresa(): void
+    public function test_la_normalizacion_del_telefono(): void
     {
-        Setting::set(Setting::DESCARGA_AUTOMATICA_PDF, '0');
-        Setting::set(Setting::PRIMARY_COLOR, '#0e7490');
-
-        $f = $this->makeFixture();
-        $this->actingAs(User::factory()->vendedor()->create());
-
-        $this->invokeHandleRecordCreation($this->salePayload($f, ['81000001'], ['81000001' => '3881234567']));
-
-        $palette = BrandPalette::fromHex('#0e7490');
-
-        $this->get(Ticket::sole()->shareUrl())
-            ->assertOk()
-            ->assertSee("--primary-600: {$palette[600]};", false)
-            ->assertSee("--primary-50: {$palette[50]};", false)
-            ->assertSee('--primary-text: #ffffff;', false)
-            ->assertDontSee('fuchsia', false);
-    }
-
-    public function test_el_mensaje_de_whatsapp_viene_de_parametros(): void
-    {
-        Setting::set(Setting::WHATSAPP_MENSAJE, 'Aca va tu boleto: {link} - buscado desde_parametros');
-
-        $f = $this->makeFixture();
-        $this->actingAs(User::factory()->vendedor()->create());
-
-        $this->invokeHandleRecordCreation($this->salePayload($f, ['81000001'], ['81000001' => '3881234567']));
-
-        $ticket = Ticket::sole();
-        $targets = WhatsAppShare::forSale($ticket->sale, $ticket->shareUrl());
-
-        $this->assertStringContainsString('desde_parametros', $targets[0]['url']);
-    }
-
-    public function test_el_link_de_un_boleto_borrado_da_404(): void
-    {
-        Setting::set(Setting::DESCARGA_AUTOMATICA_PDF, '0');
-        $f = $this->makeFixture();
-        $this->actingAs(User::factory()->vendedor()->create());
-
-        $this->invokeHandleRecordCreation($this->salePayload($f, ['81000001'], ['81000001' => '3881234567']));
-
-        $ticket = Ticket::sole();
-        $shareUrl = $ticket->shareUrl();
-
-        $ticket->delete();
-
-        // Borrado → el token ya no resuelve (sin SoftDeletingScope de ningun
-        // lado para el fetch público): 404 limpio.
-        $this->get($shareUrl)->assertNotFound();
+        $this->assertSame('543881234567', WhatsAppShare::normalizePhone('3881234567'));
+        $this->assertSame('543881234567', WhatsAppShare::normalizePhone('03881234567'));
+        $this->assertSame('543881234567', WhatsAppShare::normalizePhone('(388) 123-4567'));
+        $this->assertSame('5493881234567', WhatsAppShare::normalizePhone('+54 9 388 123 4567'));
+        $this->assertSame('', WhatsAppShare::normalizePhone('sin número'));
     }
 
     // -----------------------------------------------------------------
-    // Página pública: encabezado, bloques, acciones y vista previa
+    // Datos del modal de entrega
     // -----------------------------------------------------------------
 
-    public function test_la_pagina_de_un_boleto_muestra_titulo_ruta_y_tarjetas(): void
-    {
-        $ticket = $this->sellLinkMode(['81000001'], ['81000001' => '3881234567']);
-
-        $this->get($ticket->shareUrl())
-            ->assertOk()
-            ->assertSee("Boleto N°{$ticket->id}")
-            ->assertSee('Orán L → Salta L')
-            ->assertSeeInOrder(['Pasajero', 'Detalles de venta']);
-    }
-
-    public function test_la_pagina_de_una_venta_muestra_un_bloque_por_boleto(): void
-    {
-        $this->sellLinkMode(['81000001', '81000002']);
-
-        $sale = Sale::sole();
-        [$first, $second] = $sale->tickets()->orderBy('id')->get()->all();
-
-        $response = $this->get($sale->shareUrl())
-            ->assertOk()
-            ->assertSee("Boletos de la venta N°{$sale->id}")
-            ->assertSeeInOrder([
-                "Boleto N°{$first->id} — Uno Juan",
-                "Boleto N°{$second->id} — Dos Juana",
-                'Detalles de venta',
-            ]);
-
-        $this->assertSame(1, substr_count($response->getContent(), 'Detalles de venta'), 'Una sola tarjeta de detalles de venta.');
-    }
-
-    public function test_un_diferido_con_vuelta_asignada_muestra_ida_y_vuelta(): void
-    {
-        $ticket = $this->sellLinkMode(['81000001']);
-
-        $returnTrip = Trip::findOrCreateForBooking($ticket->trip->schedule_id, '2030-10-05', $ticket->origin_location_id, $ticket->destination_location_id)['trip'];
-        $ticket->update(['is_round_trip' => true, 'return_trip_id' => $returnTrip->id]);
-
-        $this->get($ticket->shareUrl())
-            ->assertOk()
-            ->assertSee('Ida:')
-            ->assertSee('Vuelta:')
-            ->assertSee('05/10/2030');
-
-        $this->get('/boletos/t_noexiste')->assertNotFound();
-        $this->get('/boletos/s_noexiste')->assertNotFound();
-    }
-
-    public function test_con_un_telefono_las_acciones_van_en_orden(): void
-    {
-        $ticket = $this->sellLinkMode(['81000001'], ['81000001' => '3881234567']);
-
-        $this->get($ticket->shareUrl())
-            ->assertOk()
-            ->assertSeeInOrder(['<span>Enviar</span>', 'Descargar PDF', 'Copiar link'], false)
-            ->assertDontSee('No hay teléfonos cargados');
-    }
-
-    public function test_con_varios_telefonos_hay_un_boton_por_destinatario(): void
-    {
-        $this->sellLinkMode(['81000001', '81000002'], ['81000001' => '3881234567', '81000002' => '3881239999']);
-
-        $this->get(Sale::sole()->shareUrl())
-            ->assertOk()
-            ->assertSeeInOrder(['Enviar a Uno Juan', 'Enviar a Dos Juana', 'Descargar PDF', 'Copiar link'])
-            ->assertDontSee('<span>Enviar</span>', false);
-    }
-
-    public function test_sin_telefonos_no_hay_whatsapp_y_se_aclara(): void
-    {
-        $ticket = $this->sellLinkMode(['81000001']);
-
-        $this->get($ticket->shareUrl())
-            ->assertOk()
-            ->assertDontSee('<span>Enviar</span>', false)
-            ->assertDontSee('Enviar a ')
-            ->assertSee('No hay teléfonos cargados')
-            ->assertSeeInOrder(['Descargar PDF', 'Copiar link']);
-    }
-
-    public function test_la_vista_previa_ofrece_abrir_el_pdf_y_el_selector_de_tema(): void
-    {
-        $ticket = $this->sellLinkMode(['81000001']);
-
-        $this->get($ticket->shareUrl())
-            ->assertOk()
-            ->assertSee('Abrir PDF')
-            ->assertSee($ticket->sharePdfUrl('inline'), false)
-            ->assertSee('data-theme-option="light"', false)
-            ->assertSee('data-theme-option="dark"', false)
-            ->assertSee('data-theme-option="system"', false);
-    }
-
-    public function test_la_pagina_muestra_las_lineas_de_contacto_como_enlaces_tel(): void
-    {
-        Setting::set(Setting::CONTACT_LINES, json_encode([
-            ['name' => 'Orán', 'phone' => '+54 9 (3878) 804-506'],
-            ['name' => '', 'phone' => '387 123-4567'],
-        ]));
-        $ticket = $this->sellLinkMode(['81000001']);
-
-        $this->get($ticket->shareUrl())
-            ->assertOk()
-            ->assertSeeInOrder(['Contacto:', 'Orán:', '+54 9 (3878) 804-506', '387 123-4567'])
-            ->assertSee('href="tel:+5493878804506"', false)
-            ->assertSee('text-primary-600', false)
-            ->assertDontSee('Link verificable del boleto');
-    }
-
-    public function test_sin_lineas_de_contacto_la_pagina_no_muestra_el_bloque(): void
-    {
-        $ticket = $this->sellLinkMode(['81000001']);
-
-        $this->get($ticket->shareUrl())
-            ->assertOk()
-            ->assertDontSee('Contacto:')
-            ->assertDontSee('href="tel:', false);
-    }
-
-    public function test_la_notificacion_ofrece_abrir_copiar_descargar_y_whatsapp_en_orden(): void
-    {
-        $ticket = $this->sellLinkMode(['81000001'], ['81000001' => '3881234567']);
-        $shareUrl = $ticket->shareUrl();
-
-        $actions = ShareLinkNotification::actionsFor($ticket->sale, $shareUrl, $ticket->sharePdfUrl('attachment'));
-
-        $this->assertSame(
-            ['abrir_link', 'copiar_link', 'descargar_pdf', 'compartir_whatsapp'],
-            array_map(fn ($action) => $action->getName(), $actions),
-        );
-
-        $this->assertSame($shareUrl, $actions[0]->getUrl());
-        $this->assertTrue($actions[0]->shouldOpenUrlInNewTab());
-
-        // "Copiar link" no navega: dispara el evento con la URL, y sobrevive
-        // a la serialización de la notification.
-        $copy = \Filament\Actions\Action::fromArray($actions[1]->toArray());
-        $this->assertNull($copy->getUrl());
-        $this->assertSame(ShareLinkNotification::COPY_EVENT, $copy->getEvent());
-        $this->assertSame(['url' => $shareUrl], $copy->getEventData());
-        $this->assertFalse($copy->shouldClose());
-
-        $this->assertSame($ticket->sharePdfUrl('attachment'), $actions[2]->getUrl());
-        $this->assertStringStartsWith('https://wa.me/', $actions[3]->getUrl());
-    }
-
-    public function test_la_notificacion_sin_telefonos_no_tiene_whatsapp(): void
-    {
-        $ticket = $this->sellLinkMode(['81000001']);
-
-        $actions = ShareLinkNotification::actionsFor($ticket->sale, $ticket->shareUrl(), $ticket->sharePdfUrl('attachment'));
-
-        $this->assertSame(
-            ['abrir_link', 'copiar_link', 'descargar_pdf'],
-            array_map(fn ($action) => $action->getName(), $actions),
-        );
-    }
-
-    public function test_la_notificacion_con_varios_telefonos_lleva_whatsapp_a_la_pagina(): void
-    {
-        $this->sellLinkMode(['81000001', '81000002'], ['81000001' => '3881234567', '81000002' => '3881239999']);
-        $sale = Sale::sole();
-
-        $actions = ShareLinkNotification::actionsFor($sale, $sale->shareUrl(), $sale->sharePdfUrl('attachment'));
-
-        $this->assertSame($sale->shareUrl(), end($actions)->getUrl());
-    }
-
-    public function test_el_panel_escucha_el_evento_de_copiar_link(): void
-    {
-        $this->actingAs(User::factory()->vendedor()->create());
-
-        $this->get('/admin')
-            ->assertOk()
-            ->assertSee("window.addEventListener('".ShareLinkNotification::COPY_EVENT."'", false);
-    }
-
-    // -----------------------------------------------------------------
-    // Panel admin: "Ver link" en el detalle del boleto
-    // -----------------------------------------------------------------
-
-    public function test_ver_link_en_el_detalle_con_el_parametro_desactivado(): void
-    {
-        $ticket = $this->sellLinkMode(['81000001']);
-        $this->actingAs($this->makeAdmin());
-
-        Livewire::test(ViewTicket::class, ['record' => $ticket->id])
-            ->assertActionVisible('ver_link')
-            ->assertActionHasUrl('ver_link', route('admin.boletos.link', ['ticket' => $ticket->id]))
-            ->assertActionShouldOpenUrlInNewTab('ver_link');
-
-        $this->assertStringContainsString('/boletos/t_', $ticket->fresh()->shareUrl());
-    }
-
-    public function test_ver_link_oculto_con_el_parametro_activado(): void
-    {
-        $ticket = $this->sellLinkMode(['81000001']);
-        Setting::set(Setting::DESCARGA_AUTOMATICA_PDF, '1');
-        $this->actingAs($this->makeAdmin());
-
-        Livewire::test(ViewTicket::class, ['record' => $ticket->id])
-            ->assertActionHidden('ver_link');
-    }
-
-    public function test_ver_link_oculto_con_el_parametro_sin_configurar(): void
-    {
-        $ticket = $this->sellLinkMode(['81000001']);
-        Setting::query()->where('key', Setting::DESCARGA_AUTOMATICA_PDF)->delete();
-        Setting::flushCache();
-        $this->actingAs($this->makeAdmin());
-
-        Livewire::test(ViewTicket::class, ['record' => $ticket->id])
-            ->assertActionHidden('ver_link');
-    }
-
-    public function test_ver_link_oculto_para_un_boleto_eliminado(): void
-    {
-        $ticket = $this->sellLinkMode(['81000001']);
-        $ticket->delete();
-        $this->actingAs($this->makeAdmin());
-
-        Livewire::test(ViewTicket::class, ['record' => $ticket->id])
-            ->assertActionHidden('ver_link');
-    }
-
-    // -----------------------------------------------------------------
-    // Diferido: sólo las idas en pantalla, todos los boletos en el PDF
-    // -----------------------------------------------------------------
-
-    public function test_el_link_de_una_venta_diferida_muestra_solo_las_idas(): void
+    public function test_un_diferido_de_dos_pasajeros_entrega_dos_filas_de_ida(): void
     {
         $this->sellUndatedRoundTrip(['81000001', '81000002']);
 
         $sale = Sale::sole();
         $idas = $sale->tickets()->where('is_return_leg', false)->orderBy('id')->get();
-        $vueltas = $sale->tickets()->where('is_return_leg', true)->orderBy('id')->get();
-        $this->assertCount(2, $idas);
-        $this->assertCount(2, $vueltas);
 
-        $response = $this->get($sale->shareUrl())
-            ->assertOk()
-            ->assertSeeInOrder([
-                "Boleto N°{$idas[0]->id} — Uno Juan",
-                "Boleto N°{$idas[1]->id} — Dos Juana",
-            ]);
+        $this->assertCount(4, $sale->tickets);
+        $this->assertSame($idas->modelKeys(), TicketDelivery::ticketsForSale($sale)->modelKeys());
 
-        foreach ($vueltas as $vuelta) {
-            $response->assertDontSee("Boleto N°{$vuelta->id} —");
-            $response->assertSee("Boleto de vuelta N°{$vuelta->id}");
-        }
+        $rows = TicketDelivery::payload(TicketDelivery::ticketsForSale($sale))['rows'];
+
+        $this->assertSame("Boleto N°{$idas[0]->id} — Uno Juan", $rows[0]['title']);
+        $this->assertSame("Boleto N°{$idas[1]->id} — Dos Juana", $rows[1]['title']);
+        $this->assertSame($idas[0]->fresh()->shareUrl(), $rows[0]['link']);
+        $this->assertSame($idas[0]->fresh()->sharePdfUrl('attachment'), $rows[0]['download']);
     }
 
-    public function test_el_pdf_del_link_de_una_venta_diferida_incluye_todos_los_boletos(): void
+    public function test_se_preselecciona_el_telefono_del_pasajero_despues_el_padron_y_despues_el_primero(): void
     {
-        $this->sellUndatedRoundTrip(['81000001', '81000002']);
+        $this->sellLinkMode(['81000001', '81000002', '81000003'], ['81000001' => '3881111111']);
+        Clients::create(['dni' => '81000002', 'nombre' => 'Juana', 'apellido' => 'Dos', 'telefono' => '3882222222', 'can_buy' => true]);
+
+        $payload = TicketDelivery::payload(TicketDelivery::ticketsForSale(Sale::sole()));
+
+        $this->assertSame(
+            ['543881111111', '543882222222', '543881111111'],
+            array_column($payload['rows'], 'defaultPhone'),
+        );
+        $this->assertSame(
+            ['Uno Juan — 543881111111', 'Juana Dos — 543882222222'],
+            array_column($payload['phones'], 'label'),
+        );
+    }
+
+    public function test_una_venta_sin_telefonos_no_tiene_telefonos_para_elegir(): void
+    {
+        $this->sellLinkMode(['81000001', '81000002']);
+
+        $payload = TicketDelivery::payload(TicketDelivery::ticketsForSale(Sale::sole()));
+
+        $this->assertSame([], $payload['phones']);
+        $this->assertSame([null, null], array_column($payload['rows'], 'defaultPhone'));
+    }
+
+    public function test_el_mensaje_de_whatsapp_viene_de_parametros(): void
+    {
+        Setting::set(Setting::WHATSAPP_MENSAJE, 'Aca va tu boleto: {link} - buscado desde_parametros');
+        $this->sellLinkMode(['81000001']);
+
+        $payload = TicketDelivery::payload(TicketDelivery::ticketsForSale(Sale::sole()));
+
+        $this->assertSame('Aca va tu boleto: {link} - buscado desde_parametros', $payload['template']);
+    }
+
+    // -----------------------------------------------------------------
+    // Vista del modal de entrega
+    // -----------------------------------------------------------------
+
+    public function test_el_modal_muestra_las_acciones_de_cada_boleto_en_orden(): void
+    {
+        $this->sellLinkMode(['81000001', '81000002'], ['81000001' => '3881234567']);
+        $tickets = TicketDelivery::ticketsForSale(Sale::sole());
+
+        $html = $this->renderDeliveryModal($tickets);
+
+        foreach ($tickets as $ticket) {
+            $this->assertStringContainsString("Boleto N°{$ticket->id} — ", $html);
+            $this->assertStringContainsString('href="'.e($ticket->shareUrl()).'"', $html);
+            $this->assertStringContainsString('href="'.e($ticket->sharePdfUrl('attachment')).'"', $html);
+        }
+
+        $this->assertMatchesRegularExpression('/Enviar por WhatsApp.*Ver PDF.*Copiar link.*Descargar PDF/s', $html);
+        $this->assertStringContainsString('Orán L → Salta L', $html);
+        $this->assertStringContainsString('Uno Juan — 543881234567', $html);
+        $this->assertStringContainsString('Otro número…', $html);
+        $this->assertStringContainsString('https://wa.me/', $html);
+    }
+
+    public function test_los_enlaces_del_modal_no_navegan_dentro_del_panel(): void
+    {
+        $ticket = $this->sellLinkMode(['81000001'], ['81000001' => '3881234567']);
+
+        $html = $this->renderDeliveryModal(collect([$ticket]));
+
+        // El panel está en modo SPA: ningún enlace del modal puede llevar
+        // wire:navigate, o la descarga y los links se rompen.
+        $this->assertStringNotContainsString('wire:navigate', $html);
+
+        // "Descargar PDF": descarga directa del navegador.
+        $this->assertMatchesRegularExpression(
+            '/href="'.preg_quote(e($ticket->sharePdfUrl('attachment')), '/').'"[^>]*\sdownload[=\s>]/',
+            $html,
+        );
+
+        // "Ver PDF" y WhatsApp: en otra pestaña.
+        $this->assertStringContainsString('href="'.e($ticket->shareUrl()).'" target="_blank"', $html);
+        $this->assertStringContainsString('x-bind:target="\'_blank\'"', $html);
+    }
+
+    public function test_el_modal_con_varios_boletos_ofrece_enviar_todos(): void
+    {
+        $this->sellLinkMode(['81000001', '81000002']);
+        [$first, $second] = TicketDelivery::ticketsForSale(Sale::sole())->all();
+
+        $html = $this->renderDeliveryModal(collect([$first, $second]));
+
+        $this->assertStringContainsString('Enviar todos a un número', $html);
+        $this->assertStringContainsString('Enviar todos por WhatsApp', $html);
+
+        // Las líneas de "Enviar todos": "Apellido Nombre (N°id): link".
+        $expectedLines = "Uno Juan (N°{$first->id}): {$first->shareUrl()}\nDos Juana (N°{$second->id}): {$second->shareUrl()}";
+        $this->assertStringContainsString(Js::from($expectedLines)->toHtml(), $html);
+    }
+
+    public function test_el_modal_con_un_boleto_no_ofrece_enviar_todos(): void
+    {
+        $ticket = $this->sellLinkMode(['81000001'], ['81000001' => '3881234567']);
+
+        $html = $this->renderDeliveryModal(collect([$ticket]));
+
+        $this->assertStringNotContainsString('Enviar todos a un número', $html);
+        $this->assertStringContainsString('Enviar por WhatsApp', $html);
+    }
+
+    public function test_el_modal_sin_telefonos_muestra_el_campo_del_numero(): void
+    {
+        $ticket = $this->sellLinkMode(['81000001']);
+
+        $html = $this->renderDeliveryModal(collect([$ticket]));
+
+        $this->assertStringNotContainsString('<select', $html);
+        $this->assertStringNotContainsString('Otro número…', $html);
+        $this->assertStringContainsString('type="tel"', $html);
+        $this->assertStringContainsString('Ej: 3881234567', $html);
+    }
+
+    // -----------------------------------------------------------------
+    // Cierre de la venta en modo link
+    // -----------------------------------------------------------------
+
+    public function test_con_modo_link_la_venta_pide_el_modal_con_un_boleto_por_pasajero(): void
+    {
+        $this->sellLinkMode(['81000001', '81000002'], ['81000001' => '3881234567']);
 
         $sale = Sale::sole();
 
-        $captured = null;
-        \Illuminate\Support\Facades\View::composer('tickets.pdf.passenger-tickets', function ($view) use (&$captured): void {
-            $captured = $view->getData()['tickets'];
-        });
+        $this->assertSame([
+            'kind' => TicketDelivery::KIND_SALE,
+            'sale_id' => $sale->id,
+            'ticket_ids' => $sale->tickets()->orderBy('id')->pluck('id')->all(),
+        ], session(TicketDelivery::SESSION_KEY));
 
-        $this->get($sale->sharePdfUrl('attachment'))->assertOk();
+        // Sin pestaña nueva, sin PDF en sesión y sin link de venta.
+        $this->assertNull(session('auto_download_url'));
+        $this->assertNull(session('ticket_pdf_content'));
+        $this->assertNull($sale->fresh()->share_token);
+        $this->assertSame(2, Ticket::query()->whereNotNull('share_token')->count());
 
-        $this->assertNotNull($captured);
-        $this->assertEqualsCanonicalizing($sale->tickets()->pluck('id')->all(), $captured->pluck('id')->all());
-        $this->assertCount(4, $captured);
+        $this->assertSame(TicketResource::getUrl('create'), $this->invokeRedirectUrl());
     }
 
-    public function test_un_diferido_de_un_pasajero_entrega_el_link_de_la_ida(): void
+    public function test_un_diferido_pide_el_modal_solo_con_las_idas(): void
     {
-        $this->sellUndatedRoundTrip(['81000001']);
+        $this->sellUndatedRoundTrip(['81000001', '81000002']);
 
-        $ida = Ticket::query()->where('is_return_leg', false)->sole();
-        $vuelta = Ticket::query()->where('is_return_leg', true)->sole();
+        $idas = Ticket::query()->where('is_return_leg', false)->orderBy('id')->pluck('id')->all();
 
-        $this->assertSame($ida->fresh()->shareUrl(), session('auto_download_url'));
-        $this->assertNull($vuelta->fresh()->share_token, 'La vuelta no recibe link propio.');
+        $this->assertSame($idas, session(TicketDelivery::SESSION_KEY)['ticket_ids']);
+    }
 
-        $this->get($ida->fresh()->shareUrl())
-            ->assertOk()
-            ->assertSee('Asiento ida')
-            ->assertSee("Boleto de vuelta N°{$vuelta->id}");
+    public function test_la_venta_abre_el_modal_de_entrega_al_volver(): void
+    {
+        $this->sellLinkMode(['81000001', '81000002']);
+        $sale = Sale::sole();
+        $pending = session(TicketDelivery::SESSION_KEY);
+
+        Livewire::test(CreateTicket::class)
+            ->assertSet('defaultAction', TicketDeliveryAction::NAME)
+            ->assertSet('defaultActionArguments', $pending)
+            ->mountAction(TicketDeliveryAction::NAME, $pending)
+            ->assertActionMounted(TicketDeliveryAction::NAME)
+            ->assertMountedActionModalSee("Venta N°{$sale->id} realizada correctamente")
+            ->assertMountedActionModalSee('Se vendieron 2 boletos.')
+            ->assertMountedActionModalSee('Nueva venta')
+            ->assertMountedActionModalSee('Ir al inicio');
+    }
+
+    public function test_el_modal_no_se_cierra_con_un_click_afuera_ni_con_escape(): void
+    {
+        $action = TicketDeliveryAction::make();
+
+        $this->assertFalse($action->isModalClosedByClickingAway());
+        $this->assertFalse($action->isModalClosedByEscaping());
+        $this->assertTrue($action->hasModalCloseButton(), 'La X cierra el modal, como "Nueva venta" o "Cerrar".');
+    }
+
+    public function test_la_venta_de_un_pasajero_dice_un_boleto(): void
+    {
+        $this->sellLinkMode(['81000001']);
+        $pending = session(TicketDelivery::SESSION_KEY);
+
+        Livewire::test(CreateTicket::class)
+            ->mountAction(TicketDeliveryAction::NAME, $pending)
+            ->assertMountedActionModalSee('Se vendió 1 boleto.');
+    }
+
+    public function test_sin_pedido_en_la_sesion_la_venta_no_abre_el_modal(): void
+    {
+        $this->sellLinkMode(['81000001']);
+        session()->forget(TicketDelivery::SESSION_KEY);
+
+        Livewire::test(CreateTicket::class)
+            ->assertSet('defaultAction', null);
+    }
+
+    public function test_el_modal_descarta_boletos_de_otra_venta(): void
+    {
+        $ajeno = $this->sellLinkMode(['81000001']);
+
+        $this->sellLinkMode(['81000002'], [], fresh: false);
+        $propio = Ticket::query()->latest('id')->first();
+
+        $this->assertNotSame($ajeno->sale_id, $propio->sale_id);
+
+        $tickets = TicketDeliveryAction::tickets([
+            'kind' => TicketDelivery::KIND_SALE,
+            'sale_id' => $propio->sale_id,
+            'ticket_ids' => [$ajeno->id, $propio->id],
+        ]);
+
+        $this->assertSame([$propio->id], $tickets->modelKeys());
+    }
+
+    public function test_el_modal_descarta_boletos_que_el_usuario_no_puede_ver(): void
+    {
+        $ticket = $this->sellLinkMode(['81000001']);
+
+        $sinPermisos = User::factory()->create();
+        $sinPermisos->syncRoles([]);
+        $sinPermisos->syncPermissions([]);
+        $this->actingAs($sinPermisos->fresh());
+
+        $this->assertCount(0, TicketDeliveryAction::tickets([
+            'kind' => TicketDelivery::KIND_SALE,
+            'sale_id' => $ticket->sale_id,
+            'ticket_ids' => [$ticket->id],
+        ]));
+    }
+
+    // -----------------------------------------------------------------
+    // Panel admin: "Enviar por WhatsApp" y link en el detalle del boleto
+    // -----------------------------------------------------------------
+
+    public function test_enviar_por_whatsapp_en_el_detalle_va_al_telefono_del_pasajero(): void
+    {
+        $ticket = $this->sellLinkMode(['81000001'], ['81000001' => '3881234567']);
+        $this->actingAs($this->makeAdmin());
+
+        Livewire::test(ViewTicket::class, ['record' => $ticket->id])
+            ->assertActionDoesNotExist('ver_link')
+            ->assertActionVisible('enviar_whatsapp')
+            ->assertActionHasUrl('enviar_whatsapp', WhatsAppShare::url('543881234567', $ticket->fresh()->shareUrl()))
+            ->assertActionShouldOpenUrlInNewTab('enviar_whatsapp');
+
+        $this->assertStringContainsString(
+            rawurlencode('Podés acceder a tu(s) boleto(s) desde aquí: '.$ticket->fresh()->shareUrl()),
+            WhatsAppShare::url('543881234567', $ticket->fresh()->shareUrl()),
+        );
+    }
+
+    public function test_enviar_por_whatsapp_usa_el_telefono_del_padron(): void
+    {
+        $ticket = $this->sellLinkMode(['81000001']);
+        Clients::create(['dni' => '81000001', 'nombre' => 'Juan', 'apellido' => 'Uno', 'telefono' => '3882222222', 'can_buy' => true]);
+        $this->actingAs($this->makeAdmin());
+
+        Livewire::test(ViewTicket::class, ['record' => $ticket->id])
+            ->assertActionVisible('enviar_whatsapp')
+            ->assertActionHasUrl('enviar_whatsapp', WhatsAppShare::url('543882222222', $ticket->fresh()->shareUrl()));
+    }
+
+    public function test_enviar_por_whatsapp_no_usa_el_telefono_de_otro_pasajero(): void
+    {
+        $this->sellLinkMode(['81000001', '81000002'], ['81000001' => '3881234567']);
+        $sinTelefono = Ticket::query()->orderByDesc('id')->first();
+        $this->actingAs($this->makeAdmin());
+
+        Livewire::test(ViewTicket::class, ['record' => $sinTelefono->id])
+            ->assertActionHidden('enviar_whatsapp');
+    }
+
+    public function test_enviar_por_whatsapp_oculto_con_el_parametro_activado_o_sin_configurar(): void
+    {
+        $ticket = $this->sellLinkMode(['81000001'], ['81000001' => '3881234567']);
+        $this->actingAs($this->makeAdmin());
+
+        Setting::set(Setting::DESCARGA_AUTOMATICA_PDF, '1');
+        Livewire::test(ViewTicket::class, ['record' => $ticket->id])
+            ->assertActionHidden('enviar_whatsapp');
+
+        Setting::query()->where('key', Setting::DESCARGA_AUTOMATICA_PDF)->delete();
+        Setting::flushCache();
+        Livewire::test(ViewTicket::class, ['record' => $ticket->id])
+            ->assertActionHidden('enviar_whatsapp');
+    }
+
+    public function test_enviar_por_whatsapp_oculto_para_un_boleto_eliminado(): void
+    {
+        $ticket = $this->sellLinkMode(['81000001'], ['81000001' => '3881234567']);
+        $ticket->delete();
+        $this->actingAs($this->makeAdmin());
+
+        Livewire::test(ViewTicket::class, ['record' => $ticket->id])
+            ->assertActionHidden('enviar_whatsapp');
+    }
+
+    public function test_en_modo_link_el_detalle_genera_el_link_y_ofrece_copiarlo(): void
+    {
+        $ticket = $this->sellLinkMode(['81000001']);
+        $ticket->forceFill(['share_token' => null])->saveQuietly();
+        $this->actingAs($this->makeAdmin());
+
+        $component = Livewire::test(ViewTicket::class, ['record' => $ticket->id]);
+
+        $shareUrl = $ticket->fresh()->shareUrl();
+        $this->assertNotNull($ticket->fresh()->share_token, 'El detalle genera el link en modo link.');
+        $this->assertNull($ticket->sale->fresh()->share_token, 'Nunca el link de la venta.');
+
+        $component
+            ->assertSeeHtml(Js::from($shareUrl)->toHtml())
+            ->assertSee('Copiar link')
+            ->assertSee('Abrir PDF')
+            ->assertDontSee('Descargar PDF');
+    }
+
+    /**
+     * Datos con los que se armó el PDF del boleto durante $request.
+     *
+     * @return array<string, mixed>
+     */
+    private function capturePdfData(callable $request): array
+    {
+        $captured = null;
+        View::composer('tickets.pdf.passenger-tickets', function ($view) use (&$captured): void {
+            $captured = $view->getData();
+        });
+
+        $request();
+
+        $this->assertNotNull($captured, 'El link no armó el PDF del boleto.');
+
+        return $captured;
+    }
+
+    /**
+     * @param  Collection<int, Ticket>  $tickets
+     */
+    private function renderDeliveryModal(Collection $tickets): string
+    {
+        return view('filament.tickets.delivery-modal', TicketDelivery::payload($tickets))->render();
+    }
+
+    private function invokeRedirectUrl(): string
+    {
+        $method = new \ReflectionMethod(CreateTicket::class, 'getRedirectUrl');
+
+        return $method->invoke(app(CreateTicket::class));
     }
 
     /**
@@ -555,13 +623,24 @@ class TicketShareLinkModeTest extends TestCase
      * @param  array<int, string>  $dnis
      * @param  array<string, string>  $telefonosPorDni
      */
-    private function sellLinkMode(array $dnis, array $telefonosPorDni = []): Ticket
+    private function sellLinkMode(array $dnis, array $telefonosPorDni = [], bool $fresh = true): Ticket
     {
         Setting::set(Setting::DESCARGA_AUTOMATICA_PDF, '0');
-        $f = $this->makeFixture();
-        $this->actingAs(User::factory()->vendedor()->create());
 
-        $this->invokeHandleRecordCreation($this->salePayload($f, $dnis, $telefonosPorDni));
+        if ($fresh) {
+            $this->fixture = $this->makeFixture();
+            $this->actingAs(User::factory()->vendedor()->create());
+        }
+
+        $payload = $this->salePayload($this->fixture, $dnis, $telefonosPorDni);
+
+        if (! $fresh) {
+            // Otra venta en el mismo viaje: los asientos libres siguientes.
+            $taken = Ticket::query()->count();
+            $payload['seat_ids'] = array_map(fn (int $i): int => $taken + $i + 1, range(0, count($dnis) - 1));
+        }
+
+        $this->invokeHandleRecordCreation($payload);
 
         return Ticket::query()->orderBy('id')->firstOrFail();
     }

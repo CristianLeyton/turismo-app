@@ -41,7 +41,7 @@ trait HasShareToken
     }
 
     /**
-     * URL pública de la página de previsualización del PDF.
+     * URL pública del link del boleto: entrega su PDF en línea.
      */
     public function shareUrl(): string
     {
@@ -49,7 +49,7 @@ trait HasShareToken
     }
 
     /**
-     * URL pública del PDF en sí (inline para embed, attachment para descargar).
+     * URL pública del mismo PDF, inline o como adjunto (descarga).
      */
     public function sharePdfUrl(string $disposition = 'inline'): string
     {

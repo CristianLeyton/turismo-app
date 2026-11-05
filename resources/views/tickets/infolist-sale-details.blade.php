@@ -16,7 +16,7 @@
     $price = $isReturnLegShared ? (float) $record->display_price : (float) ($record?->price ?? 0);
 @endphp
 
-<h2 class="text-2xl font-bold">Detalles de venta</h2>
+<h2 class="text-2xl font-bold mb-4">Detalles de venta</h2>
 
 <div class="rounded-xl border p-5 bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-700 mb-4">
     <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">

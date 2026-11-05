@@ -2,7 +2,9 @@
 
 namespace Tests\Feature;
 
+use App\Filament\Actions\TicketDeliveryAction;
 use App\Filament\Resources\Tickets\Pages\RescheduleTicket;
+use App\Filament\Resources\Tickets\Pages\ViewTicket;
 use App\Filament\Resources\Tickets\TicketResource;
 use App\Models\Bus;
 use App\Models\Location;
@@ -16,6 +18,7 @@ use App\Models\Setting;
 use App\Models\Ticket;
 use App\Models\Trip;
 use App\Models\User;
+use App\Support\TicketDelivery;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
 use Tests\TestCase;
@@ -270,6 +273,76 @@ class RescheduleTicketPageTest extends TestCase
         $this->assertNotNull($ticket->seat_id, 'El boleto debe conservar un asiento.');
         $this->assertSame('1', (string) $ticket->seat->seat_number);
         $this->assertSame(1, $ticket->dateChanges()->count());
+    }
+
+    // ============ Entrega del boleto reprogramado ============
+
+    public function test_con_el_parametro_desactivado_la_reprogramacion_abre_el_modal_en_el_detalle(): void
+    {
+        Setting::set(Setting::DESCARGA_AUTOMATICA_PDF, '0');
+        $this->actingAs($this->admin);
+
+        $ticket = $this->createOneWayTicket('2026-10-01');
+
+        Livewire::test(RescheduleTicket::class, ['record' => $ticket->id])
+            ->set('data.date', '2026-10-05')
+            ->set('data.schedule_id', $ticket->trip->schedule_id)
+            ->call('confirmReschedule')
+            ->assertRedirect(TicketResource::getUrl('view', ['record' => $ticket->id]));
+
+        $pending = session(TicketDelivery::SESSION_KEY);
+
+        $this->assertSame([
+            'kind' => TicketDelivery::KIND_RESCHEDULE,
+            'sale_id' => $ticket->sale_id,
+            'ticket_ids' => [$ticket->id],
+        ], $pending);
+        $this->assertNull(session('ticket_pdf_content'), 'En modo link no se genera PDF en sesión.');
+        $this->assertNotNull($ticket->fresh()->share_token);
+
+        Livewire::test(ViewTicket::class, ['record' => $ticket->id])
+            ->assertSet('defaultAction', TicketDeliveryAction::NAME)
+            ->mountAction(TicketDeliveryAction::NAME, $pending)
+            ->assertMountedActionModalSee("Boleto N°{$ticket->id} reprogramado correctamente")
+            ->assertMountedActionModalSee('Enviar por WhatsApp')
+            ->assertMountedActionModalSee('Cerrar')
+            ->assertMountedActionModalDontSee('Enviar todos a un número')
+            ->assertMountedActionModalDontSee('Nueva venta');
+
+        Setting::flushCache();
+    }
+
+    public function test_el_detalle_sin_pedido_de_entrega_no_abre_el_modal(): void
+    {
+        $this->actingAs($this->admin);
+        $ticket = $this->createOneWayTicket('2026-10-01');
+
+        session()->flash(TicketDelivery::SESSION_KEY, [
+            'kind' => TicketDelivery::KIND_SALE,
+            'sale_id' => $ticket->sale_id,
+            'ticket_ids' => [$ticket->id],
+        ]);
+
+        Livewire::test(ViewTicket::class, ['record' => $ticket->id])
+            ->assertSet('defaultAction', null);
+    }
+
+    public function test_con_el_parametro_activado_la_reprogramacion_entrega_el_pdf(): void
+    {
+        Setting::set(Setting::DESCARGA_AUTOMATICA_PDF, '1');
+        $this->actingAs($this->admin);
+
+        $ticket = $this->createOneWayTicket('2026-10-01');
+
+        Livewire::test(RescheduleTicket::class, ['record' => $ticket->id])
+            ->set('data.date', '2026-10-05')
+            ->set('data.schedule_id', $ticket->trip->schedule_id)
+            ->call('confirmReschedule');
+
+        $this->assertNull(session(TicketDelivery::SESSION_KEY));
+        $this->assertNotNull(session('ticket_pdf_content'));
+
+        Setting::flushCache();
     }
 
     // ============ Fechas cruzadas (ida ≤ vuelta) en el formulario ============

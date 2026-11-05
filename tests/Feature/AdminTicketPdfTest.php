@@ -23,7 +23,8 @@ use Tests\TestCase;
 /**
  * PDF de un boleto para el personal del panel (`admin.boletos.pdf`): sesión
  * del panel + permiso `tickets.view`, boletos eliminados incluidos, sin
- * generar links públicos.
+ * generar links públicos. El detalle del boleto sí genera el link del
+ * boleto en modo link (para "Copiar link" y "Enviar por WhatsApp").
  */
 class AdminTicketPdfTest extends TestCase
 {
@@ -200,34 +201,56 @@ class AdminTicketPdfTest extends TestCase
             Livewire::test(ViewTicket::class, ['record' => $this->ticket->id])
                 ->assertSee('Vista previa')
                 ->assertSeeHtml('admin/boletos/'.$this->ticket->id.'/pdf');
-
-            $this->assertNull($this->ticket->fresh()->share_token);
-            $this->assertNull($this->ticket->sale->fresh()->share_token);
         }
 
         Setting::flushCache();
     }
 
-    public function test_ver_link_crea_el_token_recien_al_hacer_click(): void
+    public function test_con_descarga_automatica_el_detalle_no_crea_links_y_ofrece_descargar(): void
+    {
+        $this->actingAs(User::factory()->vendedor()->create());
+        Setting::set(Setting::DESCARGA_AUTOMATICA_PDF, '1');
+
+        Livewire::test(ViewTicket::class, ['record' => $this->ticket->id])
+            ->assertSee('Descargar PDF')
+            ->assertDontSee('Copiar link')
+            ->assertActionHidden('enviar_whatsapp');
+
+        $this->assertNull($this->ticket->fresh()->share_token);
+        $this->assertNull($this->ticket->sale->fresh()->share_token);
+        Setting::flushCache();
+    }
+
+    public function test_en_modo_link_el_detalle_crea_el_link_del_boleto_y_no_el_de_la_venta(): void
     {
         $this->actingAs(User::factory()->vendedor()->create());
         Setting::set(Setting::DESCARGA_AUTOMATICA_PDF, '0');
 
         Livewire::test(ViewTicket::class, ['record' => $this->ticket->id])
-            ->assertActionVisible('ver_link');
-        $this->assertNull($this->ticket->fresh()->share_token);
-
-        $response = $this->get(route('admin.boletos.link', ['ticket' => $this->ticket->id]));
+            ->assertSee('Copiar link')
+            ->assertDontSee('Descargar PDF');
 
         $token = $this->ticket->fresh()->share_token;
         $this->assertNotNull($token);
-        $response->assertRedirect(route('boletos.share', ['token' => $token]));
+        $this->assertNull($this->ticket->sale->fresh()->share_token);
+
+        // Abrir el detalle de nuevo no cambia el link.
+        Livewire::test(ViewTicket::class, ['record' => $this->ticket->id]);
+        $this->assertSame($token, $this->ticket->fresh()->share_token);
         Setting::flushCache();
     }
 
-    public function test_ver_link_exige_sesion(): void
+    public function test_en_modo_link_un_boleto_eliminado_no_crea_link(): void
     {
-        $this->get(route('admin.boletos.link', ['ticket' => $this->ticket->id]))->assertRedirect();
+        $this->actingAs(User::factory()->vendedor()->create());
+        Setting::set(Setting::DESCARGA_AUTOMATICA_PDF, '0');
+        $this->ticket->delete();
+
+        Livewire::test(ViewTicket::class, ['record' => $this->ticket->id])
+            ->assertSee('Vista previa')
+            ->assertDontSee('Copiar link');
+
         $this->assertNull($this->ticket->fresh()->share_token);
+        Setting::flushCache();
     }
 }

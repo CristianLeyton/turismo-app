@@ -327,7 +327,7 @@ Tras emitir correctamente, el sistema SHALL liberar las reservas temporales de a
 
 #### Scenario: Venta completada sin descarga automática
 - **WHEN** la emisión termina sin errores y el parámetro de descarga automática está desactivado
-- **THEN** las reservas de la sesión en los viajes de la venta se eliminan y no se descarga ningún PDF: se presenta la previsualización con link compartible
+- **THEN** las reservas de la sesión en los viajes de la venta se eliminan, no se descarga ningún PDF y se abre el modal de entrega
 
 #### Scenario: Falla la generación del PDF
 - **WHEN** la emisión se confirmó pero falla la generación del PDF
@@ -338,7 +338,7 @@ Tras emitir correctamente, el sistema SHALL liberar las reservas temporales de a
 - **THEN** las reservas de la otra venta se conservan
 
 ### Requirement: Entrega de los boletos al cerrar la venta
-Tras emitir correctamente, el sistema SHALL entregar los boletos según el parámetro "Descargar PDF automáticamente al vender" (activado por defecto). Activado, abre la descarga en una pestaña nueva y vuelve al inicio del panel. Desactivado, presenta la previsualización con link compartible en lugar de descargar.
+Tras emitir correctamente, el sistema SHALL entregar los boletos según el parámetro "Descargar PDF automáticamente al vender" (activado por defecto). Activado, abre la descarga en una pestaña nueva y vuelve al inicio del panel. Desactivado, se queda en la pantalla de venta y abre el modal de entrega con el link de cada boleto, sin abrir pestañas.
 
 #### Scenario: Descarga automática activada
 - **WHEN** la emisión termina sin errores y el parámetro de descarga automática está activado
@@ -346,22 +346,11 @@ Tras emitir correctamente, el sistema SHALL entregar los boletos según el pará
 
 #### Scenario: Descarga automática desactivada
 - **WHEN** la emisión termina sin errores y el parámetro de descarga automática está desactivado
-- **THEN** no se descarga ningún PDF y se presenta la previsualización con link compartible
+- **THEN** no se descarga ningún PDF, no se abre ninguna pestaña y el vendedor ve el modal de entrega en la pantalla de venta
 
 #### Scenario: Parámetro sin configurar
 - **WHEN** la emisión termina sin errores y nadie cambió el parámetro de descarga automática
 - **THEN** se abre la descarga de los boletos en una pestaña nueva, como con el parámetro activado
-
-### Requirement: Notificación de la entrega por link
-Con el parámetro "Descargar PDF automáticamente al vender" desactivado, el vendedor MUST ver al cerrar la venta una notificación con estas acciones sobre el link entregado: abrir el link, copiar el link, descargar el PDF y, si la venta tiene teléfonos, compartir por WhatsApp.
-
-#### Scenario: Notificación de la entrega por link
-- **WHEN** la emisión termina sin errores con el parámetro desactivado
-- **THEN** el vendedor ve una notificación de venta completada con "Abrir link", "Copiar link" y "Descargar PDF" del link entregado, y "Compartir por WhatsApp" solo si la venta tiene algún teléfono válido
-
-#### Scenario: Copiar el link desde la notificación
-- **WHEN** el vendedor toca "Copiar link" en la notificación
-- **THEN** la URL del link de la venta o del boleto queda en el portapapeles, sin abrir ni descargar nada
 
 ### Requirement: Falla de la entrega sin revertir la venta
 La entrega de los boletos MUST ocurrir después de confirmada la emisión. Si la entrega falla, la venta y sus boletos siguen emitidos y el vendedor ve el error de la entrega.
@@ -369,6 +358,11 @@ La entrega de los boletos MUST ocurrir después de confirmada la emisión. Si la
 #### Scenario: Falla la generación del PDF al entregar
 - **WHEN** la emisión se confirmó pero falla la generación del PDF de los boletos
 - **THEN** la venta y sus boletos quedan emitidos y el vendedor ve que no se pudo generar el PDF
+
+#### Scenario: Falla al preparar los links
+- **GIVEN** el parámetro de descarga automática desactivado
+- **WHEN** la emisión se confirmó pero falla al preparar los links de los boletos
+- **THEN** la venta y sus boletos quedan emitidos, no se abre el modal de entrega y el vendedor ve un aviso de que puede descargar el PDF desde el detalle del boleto
 
 ### Requirement: Cancelación de la venta
 La acción "Cancelar" SHALL pedir confirmación ("Los cambios se perderán"). Al confirmar, MUST liberar las reservas de asientos de la sesión en los viajes de esa venta y volver al inicio del panel.
@@ -422,6 +416,12 @@ La ayuda de los interruptores "Viaje de ida sin fecha" y "Viaje de vuelta sin fe
 El rechazo de una venta sin fecha por DNIs fuera del padrón SHALL mencionar que el pasajero no podría ver su boleto desde el panel de clientes solo cuando el panel está activado. La exigencia del padrón MUST aplicarse siempre, con el panel activado o no.
 
 #### Scenario: Rechazo con el panel desactivado
+- **WHEN** el panel de clientes está desactivado y se emite una venta sin fecha con un DNI fuera del padrón
+- **THEN** la venta se rechaza indicando los DNIs sin registrar, sin mencionar el panel de clientes
+
+#### Scenario: Rechazo con el panel activado
+- **WHEN** el panel de clientes está activado y se emite una venta sin fecha con un DNI fuera del padrón
+- **THEN** la venta se rechaza indicando los DNIs sin registrar y que, sin registro, el pasajero no podría ver su boleto desde el panel de clientes
 
 ### Requirement: Selectores de origen y destino simples
 Con el parámetro "Selectores de origen y destino detallados" apagado, que es su valor por defecto, Origen y Destino del paso "Buscar viaje" SHALL ser selects nativos del navegador, sin buscador, con una lista plana de localidades, solo con su nombre. Los destinos MUST ordenarse por la posición de la parada en su ruta y MUST NOT repetir localidades ni agruparse por sentido.
@@ -474,9 +474,3 @@ El parámetro de los selectores SHALL cambiar solo la presentación. En los dos 
 - **GIVEN** el parámetro apagado
 - **WHEN** el vendedor elige un origen y un destino que tienen un solo horario ofrecible
 - **THEN** ese horario queda preseleccionado
-- **WHEN** el panel de clientes está desactivado y se emite una venta sin fecha con un DNI fuera del padrón
-- **THEN** la venta se rechaza indicando los DNIs sin registrar, sin mencionar el panel de clientes
-
-#### Scenario: Rechazo con el panel activado
-- **WHEN** el panel de clientes está activado y se emite una venta sin fecha con un DNI fuera del padrón
-- **THEN** la venta se rechaza indicando los DNIs sin registrar y que, sin registro, el pasajero no podría ver su boleto desde el panel de clientes

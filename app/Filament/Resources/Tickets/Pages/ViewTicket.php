@@ -2,11 +2,14 @@
 
 namespace App\Filament\Resources\Tickets\Pages;
 
+use App\Filament\Actions\TicketDeliveryAction;
 use App\Filament\Resources\Tickets\TicketResource;
 use App\Models\Setting;
 use App\Models\Ticket;
 use App\Services\TicketPdfService;
 use App\Support\SeatConflict;
+use App\Support\TicketDelivery;
+use App\Support\WhatsAppShare;
 use Filament\Actions\Action;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\ForceDeleteAction;
@@ -22,6 +25,60 @@ use Illuminate\Support\Facades\Hash;
 class ViewTicket extends ViewRecord
 {
     protected static string $resource = TicketResource::class;
+
+    /** Teléfono de "Enviar por WhatsApp", resuelto una vez por request. */
+    private ?string $whatsappPhone = null;
+
+    private bool $isWhatsappPhoneResolved = false;
+
+    /**
+     * En modo link, el boleto vigente tiene su link público desde que se
+     * abre el detalle: lo usan "Copiar link" de la vista previa y "Enviar
+     * por WhatsApp". También abre el modal de entrega si se llega desde una
+     * reprogramación en modo link (pedido en la sesión flash: al recargar
+     * ya no está).
+     */
+    public function mount(int|string $record): void
+    {
+        parent::mount($record);
+
+        if (self::hasShareLink($this->getRecord())) {
+            $this->getRecord()->shareToken();
+        }
+
+        $pending = TicketDelivery::pending();
+
+        if ($pending !== null
+            && $pending['kind'] === TicketDelivery::KIND_RESCHEDULE
+            && $pending['ticket_ids'] === [(int) $this->getRecord()->getKey()]) {
+            $this->defaultAction = TicketDeliveryAction::NAME;
+            $this->defaultActionArguments = $pending;
+        }
+    }
+
+    public function entregaBoletosAction(): Action
+    {
+        return TicketDeliveryAction::make();
+    }
+
+    /**
+     * El boleto se entrega por link: parámetro de descarga automática
+     * desactivado y boleto vigente (el link de uno eliminado da 404).
+     */
+    public static function hasShareLink(Ticket $ticket): bool
+    {
+        return ! Setting::descargaAutomaticaPdf() && ! $ticket->trashed();
+    }
+
+    private function whatsappPhone(Ticket $ticket): ?string
+    {
+        if (! $this->isWhatsappPhoneResolved) {
+            $this->whatsappPhone = TicketDelivery::phoneForTicket($ticket);
+            $this->isWhatsappPhoneResolved = true;
+        }
+
+        return $this->whatsappPhone;
+    }
 
     protected function getHeaderActions(): array
     {
@@ -73,14 +130,16 @@ class ViewTicket extends ViewRecord
                         return false;
                     }
                 }),
-            // Emisión por link: la misma página que recibe el pasajero. Un
-            // boleto eliminado no la tiene (el token ya no resuelve).
-            Action::make('ver_link')
-                ->label('Ver link')
-                ->icon('heroicon-m-link')
-                ->color('gray')
-                ->visible(fn (Ticket $record): bool => ! Setting::descargaAutomaticaPdf() && ! $record->trashed())
-                ->url(fn (Ticket $record): string => route('admin.boletos.link', ['ticket' => $record->id]), shouldOpenInNewTab: true),
+            // Emisión por link: el link del boleto por WhatsApp al teléfono
+            // de su pasajero (o del padrón). Sin teléfono no hay a quién.
+            Action::make('enviar_whatsapp')
+                ->label('Enviar por WhatsApp')
+                ->icon('heroicon-m-paper-airplane')
+                ->color('success')
+                ->visible(fn (Ticket $record): bool => self::hasShareLink($record) && $this->whatsappPhone($record) !== null)
+                ->url(fn (Ticket $record): ?string => $this->whatsappPhone($record) !== null
+                    ? WhatsAppShare::url($this->whatsappPhone($record), $record->shareUrl())
+                    : null, shouldOpenInNewTab: true),
             Action::make('download_pdf')
                 ->label('Descargar')
                 ->icon('heroicon-m-arrow-down-tray')

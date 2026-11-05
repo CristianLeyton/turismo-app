@@ -99,7 +99,7 @@ Las horas de venta después de la salida SHALL ser obligatorias y MUST ser un n�
 - **THEN** el valor se guarda y la venta fuera de término queda sin límite
 
 ### Requirement: Validación del mensaje de WhatsApp
-El mensaje de WhatsApp SHALL ser opcional: vacío, se usa el texto por defecto. Si se carga, MUST incluir `{link}` y tener como máximo 300 caracteres. Mientras el campo está oculto porque la descarga automática está activada, guardar MUST NOT modificar el mensaje guardado.
+El mensaje de WhatsApp SHALL ser opcional: vacío, se usa el texto por defecto "Podés acceder a tu(s) boleto(s) desde aquí: {link}". Si se carga, MUST incluir `{link}` y tener como máximo 300 caracteres. Mientras el campo está oculto porque la descarga automática está activada, guardar MUST NOT modificar el mensaje guardado.
 
 #### Scenario: Mensaje sin el link
 - **WHEN** el administrador carga "Gracias por viajar con nosotros" y guarda
@@ -107,7 +107,7 @@ El mensaje de WhatsApp SHALL ser opcional: vacío, se usa el texto por defecto. 
 
 #### Scenario: Mensaje vacío
 - **WHEN** el administrador borra el mensaje y guarda
-- **THEN** se guarda y al compartir se usa el texto por defecto "Podés acceder a tu boleto desde aquí: {link}"
+- **THEN** se guarda y al compartir se usa el texto por defecto "Podés acceder a tu(s) boleto(s) desde aquí: {link}"
 
 #### Scenario: Campo oculto
 - **GIVEN** el mensaje guardado es "Tu pasaje: {link}"

@@ -5,7 +5,7 @@
 
     /* Resuelve el registro tanto desde el infolist Filament (ViewEntry le
        pasa $getRecord() como closure) como al incluir la vista manualmente
-       con ['record' => $ticket] (p. ej. la página pública /boletos/{token}). */
+       con ['record' => $ticket]. */
     $record = $record ?? null;
     if (! $record && isset($getRecord) && is_callable($getRecord)) {
         $record = $getRecord();

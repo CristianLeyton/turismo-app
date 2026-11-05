@@ -10,6 +10,7 @@ use App\Models\Ticket;
 use App\Models\Trip;
 use App\Services\TicketPdfService;
 use App\Services\TicketRescheduleService;
+use App\Support\TicketDelivery;
 use Filament\Actions\Action;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\Concerns\InteractsWithRecord;
@@ -216,24 +217,10 @@ class RescheduleTicket extends ResourcePage
         // Éxito: entregar el boleto según el parámetro de emisión.
         $freshTicket = $ticket->fresh()->load(['sale', 'passenger', 'trip', 'returnTrip', 'seat']);
 
-        // Flujo "emisión por link": sin PDF en sesión ni descarga; se abre la
-        // página de previsualización compartible (PDF al vuelo) y queda el
-        // acceso a la vista del boleto.
+        // Flujo "emisión por link": sin PDF en sesión ni descarga; el detalle
+        // del boleto abre el modal de entrega (pedido en la sesión flash).
         if (! Setting::descargaAutomaticaPdf()) {
-            $sharePageUrl = $freshTicket->shareUrl();
-
-            Notification::make()
-                ->title('Boleto reprogramado')
-                ->body("Boleto N°{$freshTicket->id}. El link se abrió en otra pestaña.")
-                ->success()
-                ->actions(\App\Support\ShareLinkNotification::actionsFor(
-                    $freshTicket->sale,
-                    $sharePageUrl,
-                    $freshTicket->sharePdfUrl('attachment'),
-                ))
-                ->send();
-
-            $this->js("window.open('{$sharePageUrl}', '_blank');");
+            TicketDelivery::flashForReschedule($freshTicket);
 
             $this->redirect(TicketResource::getUrl('view', ['record' => $freshTicket->id]));
 

@@ -822,6 +822,7 @@ class TicketSettingsTest extends TestCase
         Setting::flushCache();
 
         $this->assertSame(Setting::WHATSAPP_MENSAJE_DEFAULT, Setting::whatsappMensaje());
+        $this->assertSame('Podés acceder a tu(s) boleto(s) desde aquí: {link}', Setting::whatsappMensaje());
     }
 
     public function test_el_mensaje_de_whatsapp_oculto_no_se_pierde_al_guardar(): void

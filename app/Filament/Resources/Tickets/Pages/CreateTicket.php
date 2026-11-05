@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\Tickets\Pages;
 
 use App\Exceptions\DuplicatePassengerOnTripException;
+use App\Filament\Actions\TicketDeliveryAction;
 use App\Filament\Resources\Tickets\TicketResource;
 use App\Models\Passenger;
 use App\Models\PaymentMethod;
@@ -14,7 +15,7 @@ use App\Models\Trip;
 use App\Support\DuplicateTicketNotification;
 use App\Support\SaleCutoff;
 use App\Support\ServiceDays;
-use App\Support\ShareLinkNotification;
+use App\Support\TicketDelivery;
 use App\Support\TripPassengerConflicts;
 use Filament\Actions\Action;
 use Filament\Notifications\Notification;
@@ -161,14 +162,38 @@ class CreateTicket extends CreateRecord
             ->hidden();
     }
 
+    /**
+     * Emisión por link: se vuelve a la venta (vacía) y ahí se abre el modal
+     * de entrega. Con descarga automática, al inicio del panel como siempre.
+     */
     protected function getRedirectUrl(): string
     {
-        // Si hay una descarga de ticket pendiente, será manejada por afterCreate
-        if (session()->has('auto_download_url')) {
-            return url('/admin');
+        if (session()->has(TicketDelivery::SESSION_KEY)) {
+            return TicketResource::getUrl('create');
         }
 
         return url('/admin');
+    }
+
+    /**
+     * Abre el modal de entrega si la venta anterior terminó en modo link
+     * (pedido en la sesión flash: al recargar ya no está).
+     */
+    public function mount(): void
+    {
+        parent::mount();
+
+        $pending = TicketDelivery::pending();
+
+        if ($pending !== null && $pending['kind'] === TicketDelivery::KIND_SALE) {
+            $this->defaultAction = TicketDeliveryAction::NAME;
+            $this->defaultActionArguments = $pending;
+        }
+    }
+
+    public function entregaBoletosAction(): Action
+    {
+        return TicketDeliveryAction::make();
     }
 
     protected function afterCreate(): void
@@ -1212,47 +1237,14 @@ class CreateTicket extends CreateRecord
      * Cierre de venta con el modo "emisión por link"
      * (Setting::DESCARGA_AUTOMATICA_PDF desactivado).
      *
-     * Link permanente para el boleto del pasajero único, o el PDF combinado
-     * de la venta cuando hay varios pasajeros. Sustituye la auto-descarga:
-     * se abre la página de previsualización (misma mecánica window.open de
-     * siempre tras el create) y la notification suma los accesos de
-     * compartir por WhatsApp y descargar el PDF.
+     * No genera ningún PDF: deja en la sesión flash el pedido de abrir el
+     * modal de entrega (un boleto de ida por pasajero) y getRedirectUrl()
+     * vuelve a la venta, donde mount() lo abre.
      */
     private function finishSaleWithShareLink(Sale $sale): void
     {
         try {
-            $ticketsByPassenger = $sale->tickets()->with('passenger')->get()->groupBy('passenger_id');
-
-            // Un pasajero → link del boleto de ida (su PDF incluye la vuelta
-            // si es diferido); varios pasajeros → link de la venta.
-            $shareable = $ticketsByPassenger->count() === 1
-                ? $sale->tickets()->where('is_return_leg', false)->oldest('id')->first() ?? $sale->tickets()->oldest('id')->first()
-                : $sale;
-
-            $sharePageUrl = $shareable->shareUrl();
-
-            // Se abre la página de previsualización tras el create:
-            // despuésCreate la abre en una pestaña nueva (window.open),
-            // reutilizando la mecánica existente.
-            session()->put('auto_download_url', $sharePageUrl);
-
-            $subject = $shareable instanceof \App\Models\Ticket
-                ? "Boleto N°{$shareable->id} para {$shareable->passenger?->full_name}."
-                : "Venta N°{$sale->id} de {$ticketsByPassenger->count()} pasajeros.";
-
-            Notification::make()
-                ->icon('heroicon-m-check-circle')
-                ->title('Boleto(s) vendido(s) correctamente')
-                ->body("{$subject} El link se abrió en otra pestaña.")
-                ->success()
-                ->actions(
-                    ShareLinkNotification::actionsFor(
-                        $sale,
-                        $sharePageUrl,
-                        $shareable->sharePdfUrl('attachment'),
-                    ),
-                )
-                ->send();
+            TicketDelivery::flashForSale($sale);
         } catch (\Throwable $e) {
             logger()->error('Error al armar el link compartible de la venta', [
                 'sale_id' => $sale->id,
@@ -1262,7 +1254,7 @@ class CreateTicket extends CreateRecord
             Notification::make()
                 ->title('Boleto(s) vendido(s) correctamente')
                 ->icon('heroicon-m-exclamation-triangle')
-                ->body('La venta se completó, pero falló al preparar el link del boleto. Podes descargar el PDF desde la vista del boleto.')
+                ->body('La venta se completó, pero falló al preparar el link del boleto. Podés descargar el PDF desde la vista del boleto.')
                 ->warning()
                 ->send();
         }

@@ -271,6 +271,14 @@ class TicketSettingsTest extends TestCase
         $this->assertSame('#c026d3', Setting::primaryColor());
     }
 
+    public function test_los_selectores_detallados_estan_apagados_por_defecto(): void
+    {
+        $this->assertFalse(Setting::selectoresDetallados());
+
+        Setting::set(Setting::SELECTORES_DETALLADOS, '1');
+        $this->assertTrue(Setting::selectoresDetallados());
+    }
+
     // ====================== Líneas de contacto: lectura ======================
 
     public function test_sin_configuracion_no_hay_lineas_de_contacto(): void
@@ -580,6 +588,69 @@ class TicketSettingsTest extends TestCase
         $this->assertTrue(Setting::getBool(Setting::REQUIRE_PASSWORD_TICKET_DELETE));
         $this->assertSame('#c026d3', Setting::primaryColor());
         $this->assertDatabaseMissing('settings', ['key' => Setting::PRIMARY_COLOR]);
+    }
+
+    // ====================== Selectores de origen y destino ======================
+
+    public function test_con_el_permiso_se_ven_los_selectores_apagados_por_defecto_en_venta(): void
+    {
+        $this->actingAs($this->adminWithPermissions(TicketSettings::SALE_SELECTORS_PERMISSION));
+
+        $component = Livewire::test(TicketSettings::class)
+            ->assertSet('data.selectores_detallados', false)
+            ->assertSee('Selectores de origen y destino detallados')
+            ->assertSee('Venta con acompañante')
+            ->assertSee('Venta fuera de término');
+
+        // Es una sección de Venta, no una pestaña nueva.
+        $this->assertSame(
+            ['Venta', 'Boleto', 'Calendario', 'Seguridad'],
+            array_keys($this->tabBadges($component)),
+        );
+    }
+
+    public function test_sin_el_permiso_no_se_ve_la_seccion_de_selectores(): void
+    {
+        $this->actingAs($this->admin);
+
+        $this->assertFalse($this->admin->can(TicketSettings::SALE_SELECTORS_PERMISSION));
+
+        Livewire::test(TicketSettings::class)
+            ->assertDontSee('Selectores de origen y destino detallados');
+    }
+
+    public function test_con_el_permiso_se_prenden_y_apagan_los_selectores_detallados(): void
+    {
+        $this->actingAs($this->adminWithPermissions(TicketSettings::SALE_SELECTORS_PERMISSION));
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.selectores_detallados', true)
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertTrue(Setting::selectoresDetallados());
+
+        Livewire::test(TicketSettings::class)
+            ->assertSet('data.selectores_detallados', true)
+            ->set('data.selectores_detallados', false)
+            ->call('save');
+
+        $this->assertFalse(Setting::selectoresDetallados());
+    }
+
+    public function test_sin_el_permiso_un_pedido_manipulado_no_cambia_los_selectores(): void
+    {
+        $this->actingAs($this->admin);
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.selectores_detallados', true)
+            ->set('data.require_password_ticket_delete', true)
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertTrue(Setting::getBool(Setting::REQUIRE_PASSWORD_TICKET_DELETE));
+        $this->assertFalse(Setting::selectoresDetallados());
+        $this->assertDatabaseMissing('settings', ['key' => Setting::SELECTORES_DETALLADOS]);
     }
 
     private function tabBadges(Testable $component): array

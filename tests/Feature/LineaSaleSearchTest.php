@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Filament\Resources\Tickets\Pages\CreateTicket;
 use App\Filament\Resources\Tickets\Schemas\TicketForm;
 use App\Models\Bus;
 use App\Models\Linea;
@@ -9,8 +10,12 @@ use App\Models\Location;
 use App\Models\Route;
 use App\Models\RouteStop;
 use App\Models\Schedule;
+use App\Models\Setting;
 use App\Models\Trip;
+use App\Models\User;
+use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Livewire\Livewire;
 use ReflectionMethod;
 use Tests\TestCase;
 
@@ -54,6 +59,13 @@ class LineaSaleSearchTest extends TestCase
 
         Schedule::create(['route_id' => $this->regularIda->id, 'name' => 'Mañana', 'departure_time' => '08:00', 'arrival_time' => '12:00', 'is_active' => true]);
         $this->refuerzoSchedule = Schedule::create(['route_id' => $this->refuerzoIda->id, 'name' => 'Refuerzo', 'departure_time' => '15:00', 'arrival_time' => '19:00', 'is_active' => true]);
+    }
+
+    protected function tearDown(): void
+    {
+        Setting::flushCache();
+
+        parent::tearDown();
     }
 
     /**
@@ -112,7 +124,7 @@ class LineaSaleSearchTest extends TestCase
 
     public function test_el_origen_muestra_las_paradas_de_la_linea_sin_repetirlas(): void
     {
-        $options = $this->callPrivate('originOptions', $this->regular->id);
+        $options = $this->callPrivate('originOptions', $this->regular->id, true);
 
         $this->assertSame([
             $this->oran->id => '1 · Orán',
@@ -126,7 +138,7 @@ class LineaSaleSearchTest extends TestCase
         $suelto = Bus::create(['name' => 'Suelto', 'plate' => 'CCC333', 'seat_count' => 10, 'floors' => 1]);
         $this->createRoute($suelto, 'Oran - Pichanal', [$this->oran, $this->pichanal]);
 
-        $options = $this->callPrivate('originOptions', $suelto->id);
+        $options = $this->callPrivate('originOptions', $suelto->id, true);
 
         $this->assertSame([
             $this->oran->id => '1 · Orán',
@@ -136,7 +148,7 @@ class LineaSaleSearchTest extends TestCase
 
     public function test_destino_desde_una_parada_intermedia_se_agrupa_por_sentido(): void
     {
-        $options = $this->callPrivate('destinationOptions', $this->regular->id, $this->pichanal->id);
+        $options = $this->callPrivate('destinationOptions', $this->regular->id, $this->pichanal->id, true);
 
         $this->assertSame([
             'Hacia Salta' => [$this->salta->id => '3 · Salta'],
@@ -146,7 +158,7 @@ class LineaSaleSearchTest extends TestCase
 
     public function test_destino_desde_el_inicio_del_recorrido_tiene_un_solo_grupo(): void
     {
-        $options = $this->callPrivate('destinationOptions', $this->regular->id, $this->oran->id);
+        $options = $this->callPrivate('destinationOptions', $this->regular->id, $this->oran->id, true);
 
         $this->assertSame([
             'Hacia Salta' => [
@@ -158,10 +170,99 @@ class LineaSaleSearchTest extends TestCase
 
     public function test_el_refuerzo_no_duplica_destinos_en_el_grupo_de_su_sentido(): void
     {
-        $options = $this->callPrivate('destinationOptions', $this->refuerzo->id, $this->oran->id);
+        $options = $this->callPrivate('destinationOptions', $this->refuerzo->id, $this->oran->id, true);
 
         $this->assertCount(1, $options);
         $this->assertCount(2, $options['Hacia Salta']);
+    }
+
+    // ====================== Selectores simples (parámetro apagado) ======================
+
+    public function test_el_origen_simple_muestra_las_paradas_de_la_linea_sin_numerar(): void
+    {
+        $options = $this->callPrivate('originOptions', $this->regular->id, false);
+
+        $this->assertSame([
+            $this->oran->id => 'Orán',
+            $this->pichanal->id => 'Pichanal',
+            $this->salta->id => 'Salta',
+        ], $options);
+    }
+
+    public function test_el_origen_simple_incluye_las_paradas_que_solo_tiene_el_refuerzo(): void
+    {
+        $tartagal = Location::create(['name' => 'Tartagal', 'is_active' => true]);
+        $this->createRoute($this->refuerzo, 'Tartagal - Salta (Refuerzo)', [$tartagal, $this->salta]);
+
+        $options = $this->callPrivate('originOptions', $this->regular->id, false);
+
+        $this->assertSame('Tartagal', $options[$tartagal->id] ?? null);
+    }
+
+    public function test_el_destino_simple_es_una_lista_plana_sin_grupos_ni_repetidos(): void
+    {
+        $options = $this->callPrivate('destinationOptions', $this->regular->id, $this->pichanal->id, false);
+
+        $this->assertSame([
+            $this->salta->id => 'Salta',
+            $this->oran->id => 'Orán',
+        ], $options);
+    }
+
+    public function test_el_destino_simple_se_ordena_por_la_posicion_de_la_parada(): void
+    {
+        $options = $this->callPrivate('destinationOptions', $this->refuerzo->id, $this->oran->id, false);
+
+        $this->assertSame([
+            $this->pichanal->id => 'Pichanal',
+            $this->salta->id => 'Salta',
+        ], $options);
+    }
+
+    public function test_los_dos_estilos_ofrecen_las_mismas_localidades(): void
+    {
+        foreach ([$this->oran, $this->pichanal, $this->salta] as $origin) {
+            $detailed = $this->callPrivate('destinationOptions', $this->regular->id, $origin->id, true);
+            $simple = $this->callPrivate('destinationOptions', $this->regular->id, $origin->id, false);
+
+            $detailedIds = collect($detailed)->flatMap(fn (array $group): array => array_keys($group))->unique()->sort()->values()->all();
+            $simpleIds = collect(array_keys($simple))->sort()->values()->all();
+
+            $this->assertSame($detailedIds, $simpleIds, "Origen {$origin->name}");
+        }
+
+        $this->assertSame(
+            array_keys($this->callPrivate('originOptions', $this->regular->id, true)),
+            array_keys($this->callPrivate('originOptions', $this->regular->id, false)),
+        );
+    }
+
+    public function test_el_estilo_de_los_selectores_sigue_el_parametro(): void
+    {
+        $this->assertFalse($this->callPrivate('detailedSelectors'));
+
+        Setting::set(Setting::SELECTORES_DETALLADOS, '1');
+
+        $this->assertTrue($this->callPrivate('detailedSelectors'));
+    }
+
+    public function test_con_el_parametro_apagado_se_preselecciona_el_horario_unico(): void
+    {
+        $this->travelTo(Carbon::parse('2026-10-01 06:00:00'));
+        $this->actingAs(User::factory()->vendedor()->create());
+
+        $suelto = Bus::create(['name' => 'Suelto', 'plate' => 'CCC333', 'seat_count' => 10, 'floors' => 1]);
+        $route = $this->createRoute($suelto, 'Oran - Pichanal', [$this->oran, $this->pichanal]);
+        $schedule = Schedule::create(['route_id' => $route->id, 'name' => 'Única', 'departure_time' => '09:00', 'arrival_time' => '11:00', 'is_active' => true]);
+
+        $this->assertFalse(Setting::selectoresDetallados());
+
+        Livewire::test(CreateTicket::class)
+            ->set('data.bus_id', (string) $suelto->id)
+            ->set('data.departure_date', '2026-10-01')
+            ->set('data.origin_location_id', (string) $this->oran->id)
+            ->set('data.destination_location_id', (string) $this->pichanal->id)
+            ->assertSet('data.schedule_id', $schedule->id);
     }
 
     public function test_la_etiqueta_del_horario_incluye_el_colectivo(): void

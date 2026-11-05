@@ -105,6 +105,13 @@ class Setting extends Model
     public const PANEL_CLIENTES_ACTIVO = 'clients.panel_activo';
 
     /**
+     * Estilo de los selectores Origen y Destino de la venta. Apagado
+     * (default): selects nativos con lista plana. Prendido: select con
+     * buscador, paradas numeradas y destinos agrupados por sentido.
+     */
+    public const SELECTORES_DETALLADOS = 'sales.selectores_detallados';
+
+    /**
      * Color principal de la empresa (hex `#RRGGBB`). De él sale la paleta
      * `primary` de los paneles, la página pública del boleto y los PDFs
      * (ver App\Support\BrandPalette).
@@ -190,6 +197,15 @@ class Setting extends Model
     public static function panelClientesActivo(): bool
     {
         return self::getBool(self::PANEL_CLIENTES_ACTIVO, false);
+    }
+
+    /**
+     * ¿La venta muestra los selectores de origen y destino detallados?
+     * Apagado por defecto: sin configurar, se ven los selects simples.
+     */
+    public static function selectoresDetallados(): bool
+    {
+        return self::getBool(self::SELECTORES_DETALLADOS, false);
     }
 
     /**

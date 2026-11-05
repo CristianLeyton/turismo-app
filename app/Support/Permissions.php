@@ -121,6 +121,7 @@ final class Permissions
                     'manage' => 'Administrar configuración',
                     'client_panel' => 'Activar/desactivar panel de clientes',
                     'appearance' => 'Cambiar apariencia',
+                    'sale_selectors' => 'Configurar selectores de origen y destino',
                 ],
             ],
             'buses' => [

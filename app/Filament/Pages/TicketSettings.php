@@ -50,7 +50,7 @@ class TicketSettings extends Page
      * @var array<string, list<string>>
      */
     public const TAB_FIELDS = [
-        'Venta' => ['permitir_acompanantes', 'venta_limite_horas'],
+        'Venta' => ['permitir_acompanantes', 'venta_limite_horas', 'selectores_detallados'],
         'Boleto' => ['descarga_automatica_pdf', 'whatsapp_mensaje', 'contact_lines'],
         'Calendario' => ['service_weekdays', 'service_exceptions'],
         'Seguridad' => ['require_password_ticket_delete', 'require_password_ticket_reschedule', 'require_password_ticket_edit'],
@@ -63,6 +63,9 @@ class TicketSettings extends Page
 
     /** Permiso para ver la pestaña Apariencia y cambiar el color principal. */
     public const APPEARANCE_PERMISSION = 'settings.appearance';
+
+    /** Permiso para ver y cambiar el estilo de los selectores de origen y destino. */
+    public const SALE_SELECTORS_PERMISSION = 'settings.sale_selectors';
 
     private const PRIMARY_COLOR_INVALID_MESSAGE = 'Elegí un color válido en formato #RRGGBB (por ejemplo, #10288c).';
 
@@ -133,6 +136,7 @@ class TicketSettings extends Page
                 fn (array $exception): bool => $exception['date'] >= $today,
             ))),
             'panel_clientes_activo' => Setting::panelClientesActivo(),
+            'selectores_detallados' => Setting::selectoresDetallados(),
             'primary_color' => Setting::primaryColor(),
         ];
     }
@@ -151,6 +155,14 @@ class TicketSettings extends Page
     protected function canManageAppearance(): bool
     {
         return (bool) Auth::user()?->can(self::APPEARANCE_PERMISSION);
+    }
+
+    /**
+     * ¿Quien usa la página puede cambiar el estilo de los selectores de origen y destino?
+     */
+    protected function canManageSaleSelectors(): bool
+    {
+        return (bool) Auth::user()?->can(self::SALE_SELECTORS_PERMISSION);
     }
 
     public function form(Schema $schema): Schema
@@ -223,6 +235,17 @@ class TicketSettings extends Page
                             'min' => 'La cantidad de horas no puede ser negativa.',
                             'max' => 'La cantidad de horas no puede ser mayor a :max.',
                         ]),
+                ]),
+
+            Section::make('Selectores de origen y destino')
+                ->columnSpanFull()
+                ->visible(fn (): bool => $this->canManageSaleSelectors())
+                ->schema([
+                    Toggle::make('selectores_detallados')
+                        ->label('Selectores de origen y destino detallados')
+                        ->helperText('Apagado, origen y destino se eligen de una lista simple.')
+                        ->hintIcon(Heroicon::OutlinedInformationCircle, tooltip: 'Prendido, cada parada se muestra numerada según el recorrido, los destinos se agrupan por sentido ("Hacia Salta") y la lista tiene buscador cuando hay más de 10 paradas. No cambia qué paradas se pueden vender.')
+                        ->default(false),
                 ]),
         ];
     }
@@ -642,6 +665,15 @@ class TicketSettings extends Page
             Setting::set(
                 Setting::PANEL_CLIENTES_ACTIVO,
                 $data['panel_clientes_activo'] ? '1' : '0',
+            );
+        }
+
+        // Sin el permiso, la sección está oculta: el parámetro queda como
+        // estaba aunque el pedido lo traiga.
+        if ($this->canManageSaleSelectors() && array_key_exists('selectores_detallados', $data)) {
+            Setting::set(
+                Setting::SELECTORES_DETALLADOS,
+                $data['selectores_detallados'] ? '1' : '0',
             );
         }
 

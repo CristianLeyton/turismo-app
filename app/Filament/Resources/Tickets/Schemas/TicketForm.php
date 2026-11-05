@@ -412,13 +412,13 @@ class TicketForm
                                     ->required()
                                     ->disabled(fn (Get $get) => blank($get('bus_id')))
                                     ->placeholder(fn (Get $get) => blank($get('bus_id')) ? 'Seleccione un colectivo primero' : 'Seleccione origen')
-                                    ->native(false)
-                                    // Searchable solo con listas grandes (>10 paradas):
-                                    // con pocas opciones el buscador solo estorba.
-                                    // optionsLimit: como máximo 100 opciones visibles.
-                                    ->searchable(fn (Get $get): bool => count(self::originOptions($get('bus_id'))) > 10)
+                                    // Estilo según Parámetros > Venta: detallado = select con
+                                    // buscador (solo con >10 paradas, con pocas estorba) y
+                                    // paradas numeradas; simple = select nativo, lista plana.
+                                    ->native(fn (): bool => ! self::detailedSelectors())
+                                    ->searchable(fn (Get $get): bool => self::detailedSelectors() && count(self::originOptions($get('bus_id'), true)) > 10)
                                     ->optionsLimit(100)
-                                    ->options(fn (Get $get) => self::originOptions($get('bus_id')))
+                                    ->options(fn (Get $get) => self::originOptions($get('bus_id'), self::detailedSelectors()))
                                     ->live()
                                     ->afterStateUpdated(fn ($set) => [
                                         $set('destination_location_id', null),
@@ -438,13 +438,12 @@ class TicketForm
                                 Select::make('destination_location_id')
                                     ->label('Destino')
                                     ->required()
-                                    ->native(false)
                                     ->disabled(fn (Get $get) => blank($get('origin_location_id')))->placeholder('Seleccione un origen primero')
-                                    // Searchable solo con más de 10 opciones y tope de
-                                    // 100 visibles (mismo criterio que Origen).
-                                    ->searchable(fn (Get $get): bool => count(self::destinationOptions($get('bus_id'), $get('origin_location_id'))) > 10)
+                                    // Mismo criterio de estilo que Origen.
+                                    ->native(fn (): bool => ! self::detailedSelectors())
+                                    ->searchable(fn (Get $get): bool => self::detailedSelectors() && count(self::destinationOptions($get('bus_id'), $get('origin_location_id'), true)) > 10)
                                     ->optionsLimit(100)
-                                    ->options(fn (Get $get) => self::destinationOptions($get('bus_id'), $get('origin_location_id')))
+                                    ->options(fn (Get $get) => self::destinationOptions($get('bus_id'), $get('origin_location_id'), self::detailedSelectors()))
                                     ->live()
                                     ->afterStateUpdated(function (Set $set, Get $get) {
                                         $set('schedule_id', null);
@@ -2739,13 +2738,22 @@ class TicketForm
     }
 
     /**
+     * ¿Origen y Destino se muestran con el estilo detallado (Parámetros > Venta)?
+     */
+    private static function detailedSelectors(): bool
+    {
+        return Setting::selectoresDetallados();
+    }
+
+    /**
      * Opciones del select Origen: las paradas de todas las rutas activas de la
-     * línea del colectivo, sin repetir localidades. Cada parada se numera con su
-     * posición en la primera ruta de la línea que la contiene.
+     * línea del colectivo, sin repetir localidades. En estilo detallado cada
+     * parada se numera con su posición en la primera ruta de la línea que la
+     * contiene; en el simple se muestra solo el nombre.
      *
      * @return array<int, string>
      */
-    private static function originOptions(mixed $busId): array
+    private static function originOptions(mixed $busId, bool $detailed): array
     {
         $lineBusIds = self::lineBusIds($busId);
 
@@ -2768,10 +2776,9 @@ class TicketForm
                     continue;
                 }
 
-                $options[$stop->location_id] = self::stopOptionLabel(
-                    $position + 1,
-                    (string) $stop->location->name,
-                );
+                $options[$stop->location_id] = $detailed
+                    ? self::stopOptionLabel($position + 1, (string) $stop->location->name)
+                    : (string) $stop->location->name;
             }
         }
 
@@ -2780,12 +2787,14 @@ class TicketForm
 
     /**
      * Opciones del select Destino: paradas posteriores al origen en las rutas
-     * activas del colectivo, agrupadas por ruta y numeradas con la posición de
-     * la parada dentro de su ruta (mismo criterio que las opciones de Origen).
+     * activas de la línea del colectivo. En estilo detallado se agrupan por
+     * sentido y se numeran con la posición de la parada dentro de su ruta
+     * (mismo criterio que Origen); en el simple son una lista plana, sin
+     * repetir, ordenada por posición de la parada y luego por ruta.
      *
-     * @return array<string, array<int, string>>
+     * @return array<string, array<int, string>>|array<int, string>
      */
-    private static function destinationOptions(mixed $busId, mixed $originId): array
+    private static function destinationOptions(mixed $busId, mixed $originId, bool $detailed): array
     {
         if (blank($busId) || blank($originId)) {
             return [];
@@ -2816,6 +2825,14 @@ class TicketForm
                 'destination.departure_offset_minutes',
                 'locations.name',
             ]);
+
+        if (! $detailed) {
+            return $rows
+                ->sortBy([['stop_order', 'asc'], ['route_id', 'asc']])
+                ->unique('location_id')
+                ->mapWithKeys(fn ($row): array => [(int) $row->location_id => (string) $row->name])
+                ->all();
+        }
 
         $routeMeta = [];
         $groups = [];

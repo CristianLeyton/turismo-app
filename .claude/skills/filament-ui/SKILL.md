@@ -248,7 +248,7 @@ La página `app/Filament/Pages/TicketSettings.php` junta los parámetros del sis
 
 | Pestaña | Afecta a | Hoy tiene |
 |---|---|---|
-| Venta | Lo que ve y puede hacer el vendedor al vender | Acompañantes, venta fuera de término |
+| Venta | Lo que ve y puede hacer el vendedor al vender | Acompañantes, venta fuera de término, selectores de origen y destino (sección con permiso `settings.sale_selectors`) |
 | Boleto | Lo que recibe el pasajero | PDF automático, mensaje de WhatsApp, líneas de contacto |
 | Calendario | Cuándo hay viajes | Días de la semana, excepciones por fecha |
 | Seguridad | Qué tan protegidas están las acciones | Confirmación de contraseña |

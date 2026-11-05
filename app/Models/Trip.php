@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Exceptions\SeatUnavailableException;
+use App\Support\SeatConflict;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -9,11 +11,10 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Facades\DB;
 
-use App\Models\Seat;
-
 class Trip extends Model
 {
     use SoftDeletes;
+
     protected $fillable = [
         'route_id',        // Agregar esto
         'schedule_id',     // Nuevo
@@ -125,8 +126,8 @@ class Trip extends Model
 
     /**
      * Verificar y reservar asientos usando bloqueo pesimista para evitar condiciones de carrera
-     * 
-     * @param array $seatIds Array de IDs de asientos a reservar
+     *
+     * @param  array  $seatIds  Array de IDs de asientos a reservar
      * @return array ['success' => bool, 'message' => string, 'failed_seats' => array]
      */
     public function reserveSeatsWithLock(array $seatIds): array
@@ -139,7 +140,7 @@ class Trip extends Model
             // Bloquear el viaje actual para evitar modificaciones concurrentes
             $lockedTrip = self::where('id', $this->id)->lockForUpdate()->first();
 
-            if (!$lockedTrip) {
+            if (! $lockedTrip) {
                 return ['success' => false, 'message' => 'Viaje no encontrado', 'failed_seats' => $seatIds];
             }
 
@@ -168,16 +169,16 @@ class Trip extends Model
                 ->toArray();
 
             foreach ($seatIds as $seatId) {
-                if (!in_array($seatId, $availableSeats)) {
+                if (! in_array($seatId, $availableSeats)) {
                     $failedSeats[] = $seatId;
                 }
             }
 
-            if (!empty($failedSeats)) {
+            if (! empty($failedSeats)) {
                 return [
                     'success' => false,
                     'message' => 'Algunos asientos ya no están disponibles',
-                    'failed_seats' => $failedSeats
+                    'failed_seats' => $failedSeats,
                 ];
             }
 
@@ -186,10 +187,13 @@ class Trip extends Model
     }
 
     /**
-     * Crear tickets con bloqueo para evitar duplicados
-     * 
-     * @param array $ticketsData Array de datos para crear tickets
-     * @return array ['success' => bool, 'message' => string, 'tickets' => Collection]
+     * Crear tickets con bloqueo para evitar duplicados. Todo o nada: si algún
+     * asiento no está disponible no se crea ningún boleto.
+     *
+     * @param  array  $ticketsData  Array de datos para crear tickets
+     * @return array ['success' => true, 'message' => string, 'tickets' => Collection]
+     *
+     * @throws SeatUnavailableException
      */
     public function createTicketsWithLock(array $ticketsData): array
     {
@@ -221,8 +225,9 @@ class Trip extends Model
                             $failedTickets[] = [
                                 'index' => $index,
                                 'seat_id' => $ticketData['seat_id'],
-                                'error' => 'Asiento ya no disponible'
+                                'error' => 'Asiento ya no disponible',
                             ];
+
                             continue;
                         }
                     }
@@ -230,12 +235,12 @@ class Trip extends Model
                     $ticket = $this->tickets()->create($ticketData);
                     $createdTickets->push($ticket);
                 } catch (\Illuminate\Database\QueryException $e) {
-                    // Capturar error de constraint unique (duplicate entry)
-                    if ($e->getCode() == 23000 && str_contains($e->getMessage(), 'tickets_trip_seat_unique')) {
+                    // Otro boleto vigente ya ocupa el asiento (índice único).
+                    if (SeatConflict::isActiveSeatViolation($e)) {
                         $failedTickets[] = [
                             'index' => $index,
                             'seat_id' => $ticketData['seat_id'] ?? null,
-                            'error' => 'Asiento acaba de ser vendido por otro usuario'
+                            'error' => 'Asiento acaba de ser vendido por otro usuario',
                         ];
                     } else {
                         // Re-lanzar otros errores de base de datos
@@ -244,22 +249,46 @@ class Trip extends Model
                 }
             }
 
-            if (!empty($failedTickets)) {
-                return [
-                    'success' => false,
-                    'message' => 'Algunos asientos no pudieron ser vendidos',
-                    'tickets' => $createdTickets,
-                    'failed_tickets' => $failedTickets
-                ];
+            // Todo o nada: si algún asiento falló, se revierte la transacción
+            // (y la de la emisión que la contiene) sin dejar boletos parciales.
+            if (! empty($failedTickets)) {
+                throw SeatUnavailableException::forSeatIds(array_column($failedTickets, 'seat_id'));
             }
 
             return [
                 'success' => true,
                 'message' => 'Todos los tickets fueron creados exitosamente',
                 'tickets' => $createdTickets,
-                'failed_tickets' => []
+                'failed_tickets' => [],
             ];
         });
+    }
+
+    /**
+     * Asientos libres para una sesión, con la misma regla que la reserva:
+     * activos del colectivo, sin boleto vigente y sin reserva vigente de otra
+     * sesión. Las reservas propias y las vencidas cuentan como libres.
+     */
+    public function availableSeatsCountForSession(string $sessionId): int
+    {
+        return Seat::query()
+            ->where('bus_id', $this->bus_id)
+            ->where('is_active', true)
+            ->whereNotIn('id', function ($query) {
+                $query->select('seat_id')
+                    ->from('tickets')
+                    ->where('trip_id', $this->id)
+                    ->whereNotNull('seat_id')
+                    ->whereNull('deleted_at');
+            })
+            ->whereNotIn('id', function ($query) use ($sessionId) {
+                $query->select('seat_id')
+                    ->from('seat_reservations')
+                    ->where('trip_id', $this->id)
+                    ->where('expires_at', '>', now())
+                    ->where('user_session_id', '!=', $sessionId);
+            })
+            ->count();
     }
 
     public function remainingSeats(): int
@@ -283,6 +312,7 @@ class Trip extends Model
         if ($this->schedule && $this->schedule->departure_time) {
             return $this->schedule->departure_time;
         }
+
         return $value;
     }
 
@@ -294,17 +324,15 @@ class Trip extends Model
         if ($this->schedule && $this->schedule->arrival_time) {
             return $this->schedule->arrival_time;
         }
+
         return $value;
     }
 
     /**
      * Buscar o crear un viaje para el schedule y fecha dados
      * También valida que el viaje sea válido para el segmento origen-destino
-     * 
-     * @param int $scheduleId
-     * @param string $tripDate Fecha en formato Y-m-d
-     * @param int $originLocationId
-     * @param int $destinationLocationId
+     *
+     * @param  string  $tripDate  Fecha en formato Y-m-d
      * @return array ['trip' => Trip|null, 'available_seats' => int, 'has_enough_seats' => bool, 'message' => string]
      */
     public static function findOrCreateForBooking(
@@ -317,7 +345,7 @@ class Trip extends Model
         $route = $schedule->route;
 
         // Validar que el segmento origen-destino sea válido para esta ruta
-        if (!$route->isValidSegment($originLocationId, $destinationLocationId)) {
+        if (! $route->isValidSegment($originLocationId, $destinationLocationId)) {
             return [
                 'trip' => null,
                 'available_seats' => 0,
@@ -333,7 +361,7 @@ class Trip extends Model
             ->first();
 
         // Solo bloquear nuevas ventas; viajes ya creados siguen operativos
-        if (!$trip && (!$route->is_active || !$schedule->is_active)) {
+        if (! $trip && (! $route->is_active || ! $schedule->is_active)) {
             return [
                 'trip' => null,
                 'available_seats' => 0,
@@ -343,22 +371,22 @@ class Trip extends Model
         }
 
         // Si no existe, crearlo
-        if (!$trip) {
+        if (! $trip) {
             // Preferir el colectivo asignado a la ruta; si no, usar uno de un viaje previo de la ruta; si no, el primer bus disponible
             $busId = $route->bus_id;
 
-            if (!$busId) {
+            if (! $busId) {
                 $busId = $route->trips()
                     ->whereNotNull('bus_id')
                     ->value('bus_id');
             }
 
-            if (!$busId) {
+            if (! $busId) {
                 $bus = \App\Models\Bus::query()
                     ->where('seat_count', '>', 0)
                     ->first();
 
-                if (!$bus) {
+                if (! $bus) {
                     return [
                         'trip' => null,
                         'available_seats' => 0,
@@ -386,19 +414,19 @@ class Trip extends Model
             'has_enough_seats' => true, // Se validará después según pasajeros requeridos
             'message' => $availableSeats > 0
                 ? "Viaje encontrado. Asientos disponibles: {$availableSeats}"
-                : "Viaje encontrado pero no hay asientos disponibles.",
+                : 'Viaje encontrado pero no hay asientos disponibles.',
         ];
     }
 
     /**
      * Obtener todos los asientos del bus organizados por piso para el layout visual
      * Si no tienen row/column configurados, los infiere automáticamente
-     * 
+     *
      * @return array ['floor_1' => [...], 'floor_2' => [...], ...]
      */
     public function getSeatsLayout(): array
     {
-        if (!$this->bus) {
+        if (! $this->bus) {
             return [];
         }
 
@@ -422,9 +450,9 @@ class Trip extends Model
 
         foreach ($allSeats as $seat) {
             $floor = $seat->floor ?? '1';
-            $floorKey = 'floor_' . $floor;
+            $floorKey = 'floor_'.$floor;
 
-            if (!isset($layout[$floorKey])) {
+            if (! isset($layout[$floorKey])) {
                 $layout[$floorKey] = [];
             }
 
@@ -467,7 +495,7 @@ class Trip extends Model
                 'position' => $position ?? 'normal',
                 'seat_type' => $seat->seat_type ?? 'normal',
                 'is_occupied' => in_array($seat->id, $occupiedSeatIds),
-                'is_available' => !in_array($seat->id, $occupiedSeatIds),
+                'is_available' => ! in_array($seat->id, $occupiedSeatIds),
             ];
         }
 
@@ -476,12 +504,12 @@ class Trip extends Model
 
     /**
      * Obtener áreas especiales del layout del bus organizadas por piso
-     * 
+     *
      * @return array ['floor_1' => [...], 'floor_2' => [...], ...]
      */
     public function getLayoutAreas(): array
     {
-        if (!$this->bus) {
+        if (! $this->bus) {
             return [];
         }
 
@@ -490,9 +518,9 @@ class Trip extends Model
 
         foreach ($areas as $area) {
             $floor = $area->floor ?? '1';
-            $floorKey = 'floor_' . $floor;
+            $floorKey = 'floor_'.$floor;
 
-            if (!isset($layoutAreas[$floorKey])) {
+            if (! isset($layoutAreas[$floorKey])) {
                 $layoutAreas[$floorKey] = [];
             }
 
@@ -514,8 +542,6 @@ class Trip extends Model
 
     /**
      * Obtener información completa del layout para el selector de asientos
-     * 
-     * @return array
      */
     public function getFullLayoutData(): array
     {

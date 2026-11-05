@@ -44,6 +44,7 @@ class Route extends Model
         if ($busId === null) {
             return $query;
         }
+
         return $query->where('bus_id', $busId);
     }
 
@@ -99,37 +100,37 @@ class Route extends Model
     }
 
     public function getSegmentStops(int $originId, int $destinationId)
-{
-    $originOrder = $this->stops()
-        ->where('location_id', $originId)
-        ->value('stop_order');
+    {
+        $originOrder = $this->stops()
+            ->where('location_id', $originId)
+            ->value('stop_order');
 
-    $destinationOrder = $this->stops()
-        ->where('location_id', $destinationId)
-        ->value('stop_order');
+        $destinationOrder = $this->stops()
+            ->where('location_id', $destinationId)
+            ->value('stop_order');
 
-    return $this->stops()
-        ->whereBetween('stop_order', [$originOrder, $destinationOrder])
-        ->get();
-}
+        return $this->stops()
+            ->whereBetween('stop_order', [$originOrder, $destinationOrder])
+            ->get();
+    }
 
-public function schedules(): HasMany
-{
-    return $this->hasMany(Schedule::class)
-        ->orderBy('departure_time');
-}
+    public function schedules(): HasMany
+    {
+        return $this->hasMany(Schedule::class)
+            ->orderBy('departure_time');
+    }
 
-public function activeSchedules(): HasMany
-{
-    return $this->hasMany(Schedule::class)
-        ->where('is_active', true)
-        ->orderBy('departure_time');
-}
+    public function activeSchedules(): HasMany
+    {
+        return $this->hasMany(Schedule::class)
+            ->where('is_active', true)
+            ->orderBy('departure_time');
+    }
 
-public function trips(): HasMany
-{
-    return $this->hasMany(Trip::class);
-}
+    public function trips(): HasMany
+    {
+        return $this->hasMany(Trip::class);
+    }
 
     /**
      * Obtener hora de salida de una parada (cuando el colectivo sale de ahí).
@@ -139,7 +140,7 @@ public function trips(): HasMany
     {
         $routeStop = $this->stops()->where('location_id', $locationId)->first();
 
-        if (!$routeStop) {
+        if (! $routeStop) {
             return $schedule->departure_time;
         }
 
@@ -154,7 +155,7 @@ public function trips(): HasMany
     {
         $routeStop = $this->stops()->where('location_id', $locationId)->first();
 
-        if (!$routeStop) {
+        if (! $routeStop) {
             return $schedule->arrival_time;
         }
 

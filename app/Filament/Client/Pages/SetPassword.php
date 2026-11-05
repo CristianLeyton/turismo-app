@@ -10,7 +10,7 @@ use Throwable;
 /**
  * Primera vez en el panel: la contraseña inicial es el DNI (pública para la
  * boletería), así que obligamos a elegir una propia antes de mostrar nada.
- * Se llega por el middleware EnsureClientIdentified, no desde el menú.
+ * Se llega por el middleware EnsureClientPasswordIsSet, no desde el menú.
  */
 class SetPassword extends Page
 {
@@ -18,7 +18,16 @@ class SetPassword extends Page
 
     public ?string $nuevaClave = null;
 
+    public ?string $nombreApp = null;
+
     public ?string $nuevaClaveConfirmacion = null;
+
+    public function mount(): void
+    {
+        // El default de una propiedad de clase no admite llamadas a
+        // funciones (parse error "constant expression"): se resuelve acá.
+        $this->nombreApp = (string) config('app.name');
+    }
 
     public static function getNavigationLabel(): string
     {
@@ -30,9 +39,11 @@ class SetPassword extends Page
         // Primera vez: recibimos al cliente por su nombre en la app.
         $nombre = ClientSession::current()?->nombre;
 
+        $saludo = trim('¡Bienvenido a '.$this->nombreApp);
+
         return filled($nombre)
-            ? '¡Bienvenido a Expresso Sofia, ' . $nombre . '!'
-            : '¡Bienvenido a Expresso Sofia!';
+            ? $saludo.', '.$nombre.'!'
+            : $saludo.'!';
     }
 
     protected function getHeaderActions(): array
@@ -45,12 +56,12 @@ class SetPassword extends Page
                 ->action(function () {
                     ClientSession::logout();
 
-                    $this->redirect(ClientAccess::getUrl(panel: 'clientes'));
+                    $this->redirect(filament()->getPanel('clientes')->getLoginUrl());
                 }),
         ];
     }
 
-    public static function getSlug(\Filament\Panel $panel = null): string
+    public static function getSlug(?\Filament\Panel $panel = null): string
     {
         return 'clave';
     }
@@ -96,7 +107,7 @@ class SetPassword extends Page
 
             Notification::make()
                 ->title('No se pudo guardar la contraseña.')
-                ->body('Ocurrió un problema: ' . $e->getMessage() . '. Probá de nuevo o consultá en boletería.')
+                ->body('Ocurrió un problema: '.$e->getMessage().'. Probá de nuevo o comunicate con nosotros.')
                 ->danger()
                 ->persistent()
                 ->send();

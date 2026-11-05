@@ -2,7 +2,6 @@
 
 namespace Tests\Feature;
 
-use App\Filament\Resources\Clients\ClientsResource;
 use App\Filament\Resources\Clients\Pages\ManageClients;
 use App\Models\Bus;
 use App\Models\Clients;

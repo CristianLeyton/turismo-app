@@ -3,6 +3,7 @@
 namespace App\Support;
 
 use App\Models\Clients;
+use Illuminate\Support\Facades\Auth;
 
 /**
  * Identidad del cliente en el panel público (/clientes).
@@ -11,13 +12,12 @@ use App\Models\Clients;
  * todo el scoping del panel debe consultar acá y nunca confiar en IDs que
  * vengan por la URL o el formulario.
  *
- * Plan A: la sesión se escribe desde el formulario de identificación (DNI).
- * Plan B (futuro): un link firmado escribirá esta misma sesión; el resto del
- * panel no necesita saber cómo se llegó acá.
+ * El cliente se autentica con el login de Filament sobre el guard `client`
+ * (tabla clients); esta clase es una fachada sobre ese guard.
  */
 final class ClientSession
 {
-    public const SESSION_KEY = 'client_panel_dni';
+    public const GUARD = 'client';
 
     /** Normaliza un DNI: sólo dígitos (acepta puntos/espacios del teclado). */
     public static function normalizeDni(?string $dni): string
@@ -25,54 +25,29 @@ final class ClientSession
         return preg_replace('/\D+/', '', (string) $dni);
     }
 
-    /**
-     * Identifica al cliente por DNI y lo deja en la sesión.
-     * Devuelve el cliente o null si el DNI no existe en el padron.
-     */
-    public static function identifyByDni(string $dni): ?Clients
-    {
-        $dni = self::normalizeDni($dni);
-
-        if ($dni === '') {
-            return null;
-        }
-
-        $client = Clients::query()
-            ->where('dni', $dni)
-            ->first();
-
-        if ($client) {
-            session([self::SESSION_KEY => $client->dni]);
-        }
-
-        return $client;
-    }
-
-    /**
-     * Cliente autenticado en la sesión (o null). Si el cliente fue borrado
-     * después de identificarse, la sesión queda inválida.
-     */
+    /** Cliente autenticado en el guard `client` (o null). */
     public static function current(): ?Clients
     {
-        $dni = session(self::SESSION_KEY);
+        $client = Auth::guard(self::GUARD)->user();
 
-        if (! $dni) {
-            return null;
-        }
-
-        return Clients::query()->where('dni', $dni)->first();
+        return $client instanceof Clients ? $client : null;
     }
 
-    /** DNI identificado en la sesión (para scoping directo). */
+    /** DNI del cliente autenticado (para scoping directo). */
     public static function dni(): ?string
     {
-        $dni = session(self::SESSION_KEY);
-
-        return filled($dni) ? Clients::query()->where('dni', $dni)->value('dni') : null;
+        return self::current()?->dni;
     }
 
+    /**
+     * Cierra sólo la sesión del cliente. No invalida la sesión de Laravel
+     * (como hace el logout de Filament) para no cerrar una sesión del panel
+     * de administración abierta en el mismo navegador.
+     */
     public static function logout(): void
     {
-        session()->forget(self::SESSION_KEY);
+        Auth::guard(self::GUARD)->logout();
+
+        session()->regenerateToken();
     }
 }

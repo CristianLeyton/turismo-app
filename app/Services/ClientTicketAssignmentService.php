@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Clients;
 use App\Models\Ticket;
 use App\Support\ClientSession;
+use App\Support\ServiceDays;
 use Carbon\Carbon;
 use Illuminate\Validation\ValidationException;
 
@@ -16,7 +17,7 @@ use Illuminate\Validation\ValidationException;
  *   (búsqueda por DNI del pasajero; nunca por IDs que llegan por URL/form).
  * - Sólo boletos PENDIENTES (trip_id NULL): una vez asignada la fecha, el
  *   cliente queda bloqueado (only el personal reprograma).
- * - La fecha debe ser hoy o futura.
+ * - La fecha debe ser hoy o futura y tener servicio (sin excepciones por permiso).
  * - El tramo ida y la vuelta se asignan por separado (scope "outbound" del
  *   núcleo de TicketRescheduleService, que mueve sólo el boleto en cuestión).
  */
@@ -58,6 +59,15 @@ class ClientTicketAssignmentService
             throw ValidationException::withMessages(['date' => 'La fecha tiene que ser hoy o posterior.']);
         }
 
+        // Días de servicio: el panel de clientes nunca aplica el permiso
+        // `tickets.vender_dia_sin_servicio`, aunque haya un usuario del panel
+        // de administración logueado en el mismo navegador.
+        $serviceDayReason = ServiceDays::blockReason($date, allowBypass: false);
+
+        if ($serviceDayReason !== null) {
+            throw ValidationException::withMessages(['date' => $serviceDayReason]);
+        }
+
         if (blank($data['schedule_id'] ?? null)) {
             throw ValidationException::withMessages(['schedule_id' => 'Elegí un horario.']);
         }
@@ -81,7 +91,7 @@ class ClientTicketAssignmentService
             'date' => self::formatDate($date),
             'schedule_id' => (int) $data['schedule_id'],
             'seat_id' => $seatId,
-        ], null);
+        ], null, allowServiceDayBypass: false);
     }
 
     /**

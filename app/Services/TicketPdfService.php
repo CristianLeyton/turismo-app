@@ -2,13 +2,47 @@
 
 namespace App\Services;
 
-use App\Models\Ticket;
 use App\Models\Sale;
-use Illuminate\Support\Collection;
+use App\Models\Ticket;
 use Barryvdh\DomPDF\Facade\Pdf;
+use Illuminate\Support\Collection;
 
 class TicketPdfService
 {
+    /**
+     * Hojas del PDF (2 boletos por hoja A4). Cada ida de un diferido va en la
+     * misma hoja que su vuelta (misma venta y pasajero), ida primero, en orden
+     * de emisión de las idas. Los boletos sin pareja (sólo ida, o un tramo
+     * cuyo hermano no está) van después, de a dos por hoja.
+     *
+     * @param  Collection<int, \App\Models\Ticket>  $tickets
+     * @return Collection<int, Collection<int, \App\Models\Ticket>>
+     */
+    public static function sheets(Collection $tickets): Collection
+    {
+        $pairs = collect();
+        $singles = collect();
+
+        $tickets->sortBy('id')
+            ->groupBy(fn ($ticket): string => $ticket->sale_id.'-'.$ticket->passenger_id)
+            ->each(function (Collection $passengerTickets) use ($pairs, $singles): void {
+                $outbound = $passengerTickets->first(fn ($ticket): bool => ! $ticket->isReturnLeg() && (bool) $ticket->is_round_trip);
+                $return = $passengerTickets->first(fn ($ticket): bool => $ticket->isReturnLeg());
+
+                if ($outbound && $return) {
+                    $pairs->push(collect([$outbound, $return]));
+                    $passengerTickets = $passengerTickets->reject(fn ($ticket): bool => $ticket->is($outbound) || $ticket->is($return));
+                }
+
+                $passengerTickets->each(fn ($ticket) => $singles->push($ticket));
+            });
+
+        return $pairs
+            ->sortBy(fn (Collection $pair): int => $pair->first()->id)
+            ->values()
+            ->concat($singles->sortBy('id')->values()->chunk(2)->map->values());
+    }
+
     /**
      * Generar PDF para un pasajero con sus boletos de ida y vuelta
      */
@@ -22,15 +56,15 @@ class TicketPdfService
         ];
 
         // Guardar temporalmente y leer el contenido
-        $tempPath = sys_get_temp_dir() . '/ticket_' . uniqid() . '.pdf';
-        
+        $tempPath = sys_get_temp_dir().'/ticket_'.uniqid().'.pdf';
+
         Pdf::loadView('tickets.pdf.passenger-tickets', $data)
             ->setPaper('a4', 'portrait')
             ->save($tempPath);
-        
+
         $content = file_get_contents($tempPath);
         unlink($tempPath); // Eliminar archivo temporal
-        
+
         return $content;
     }
 
@@ -40,26 +74,65 @@ class TicketPdfService
     public function generateAllPassengerTickets(Sale $sale): array
     {
         $pdfs = [];
-        
+
         // Agrupar tickets por pasajero
         $ticketsByPassenger = $sale->tickets()->with(['passenger', 'trip.bus', 'trip.schedule', 'trip.route', 'returnTrip', 'origin', 'destination', 'seat'])->get()->groupBy('passenger_id');
-        
+
         foreach ($ticketsByPassenger as $passengerId => $tickets) {
             $passenger = $tickets->first()->passenger;
             $trip = $tickets->first()->trip;
             $seat = $tickets->first()->seat;
-            
+
             // Crear nombre de archivo personalizado: Boleto_ID_NombreColectivo.pdf
             $ticketId = $tickets->first()->id;
             $colectivo = str_replace(' ', '_', $trip?->bus?->name ?? 'Sin fecha');
 
             $filename = "Boleto_N°{$ticketId}_{$colectivo}.pdf";
             $pdfContent = $this->generatePassengerTickets($sale, $tickets);
-            
+
             $pdfs[$filename] = $pdfContent;
         }
-        
+
         return $pdfs;
+    }
+
+    /**
+     * PDF de un boleto individual y nombre del archivo. Es la única regla
+     * para todos los accesos: hoja de ida y vuelta con los boletos del
+     * pasajero en la venta si `is_round_trip`, hoja individual si no.
+     *
+     * @return array{content: string, filename: string}
+     */
+    public function forTicket(Ticket $ticket): array
+    {
+        $sale = $ticket->sale;
+
+        if ($ticket->is_round_trip) {
+            $passengerTickets = $sale->tickets()
+                ->where('passenger_id', $ticket->passenger_id)
+                ->with(['trip', 'returnTrip', 'origin', 'destination', 'seat'])
+                ->get();
+
+            $content = $this->generateRoundTripTicket($sale, $passengerTickets);
+        } else {
+            $content = $this->generatePassengerTickets($sale, collect([$ticket]));
+        }
+
+        return [
+            'content' => $content,
+            'filename' => self::filenameFor($ticket),
+        ];
+    }
+
+    /**
+     * Nombre del archivo del PDF de un boleto: `Boleto_N°{id}_{colectivo}.pdf`
+     * (`Sin_fecha` cuando no tiene viaje o colectivo).
+     */
+    public static function filenameFor(Ticket $ticket): string
+    {
+        $colectivo = str_replace(' ', '_', $ticket->trip?->bus?->name ?? 'Sin fecha');
+
+        return "Boleto_N°{$ticket->id}_{$colectivo}.pdf";
     }
 
     /**
@@ -76,15 +149,15 @@ class TicketPdfService
         ];
 
         // Guardar temporalmente y leer el contenido
-        $tempPath = sys_get_temp_dir() . '/round_trip_ticket_' . uniqid() . '.pdf';
-        
+        $tempPath = sys_get_temp_dir().'/round_trip_ticket_'.uniqid().'.pdf';
+
         Pdf::loadView('tickets.pdf.passenger-tickets', $data)
             ->setPaper('a4', 'portrait')
             ->save($tempPath);
-        
+
         $content = file_get_contents($tempPath);
         unlink($tempPath); // Eliminar archivo temporal
-        
+
         return $content;
     }
 
@@ -97,5 +170,35 @@ class TicketPdfService
             ->with(['passenger', 'trip.bus', 'trip.schedule', 'trip.route', 'returnTrip', 'origin', 'destination'])
             ->get()
             ->groupBy('passenger_id');
+    }
+
+    /**
+     * PDF combinado de una VENTA completa: todos los boletos juntos con el
+     * MISMO maquetado de la vista individual, pares por hoja (2 por página
+     * A4). Es lo que abre el link shareable de venta multi-pasajero.
+     */
+    public function generateSaleCombinedTickets(Sale $sale): string
+    {
+        $allTickets = $sale->tickets()
+            ->with(['passenger', 'trip.bus', 'trip.schedule', 'trip.route', 'returnTrip', 'origin', 'destination', 'seat'])
+            ->get();
+
+        $data = [
+            'sale' => $sale,
+            'tickets' => $allTickets,
+            'passenger' => $allTickets->first()?->passenger,
+            'hasChild' => $allTickets->contains('travels_with_child', true),
+        ];
+
+        $tempPath = sys_get_temp_dir().'/sale_combined_'.uniqid().'.pdf';
+
+        Pdf::loadView('tickets.pdf.passenger-tickets', $data)
+            ->setPaper('a4', 'portrait')
+            ->save($tempPath);
+
+        $content = file_get_contents($tempPath);
+        unlink($tempPath);
+
+        return $content;
     }
 }

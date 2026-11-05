@@ -6,14 +6,16 @@ use App\Filament\Resources\Tickets\TicketResource;
 use App\Models\Setting;
 use App\Models\Ticket;
 use App\Services\TicketPdfService;
+use App\Support\SeatConflict;
 use Filament\Actions\Action;
 use Filament\Actions\DeleteAction;
-use Filament\Actions\EditAction;
 use Filament\Actions\ForceDeleteAction;
 use Filament\Actions\RestoreAction;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
+use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ViewRecord;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 
@@ -47,7 +49,38 @@ class ViewTicket extends ViewRecord
                 withReason: true,
             ),
             self::configurePasswordConfirmation(ForceDeleteAction::make()),
-            RestoreAction::make(),
+            RestoreAction::make()
+                // Un solo boleto vigente por viaje y asiento: si el asiento se
+                // revendió mientras el boleto estaba dado de baja, la base
+                // rechaza la restauración y se informa en vez de un error 500.
+                ->using(function (Ticket $record, RestoreAction $action): bool {
+                    try {
+                        return (bool) $record->restore();
+                    } catch (QueryException $e) {
+                        if (! SeatConflict::isActiveSeatViolation($e)) {
+                            throw $e;
+                        }
+
+                        Notification::make()
+                            ->title('No se pudo restaurar el boleto')
+                            ->body('El asiento '.($record->seat?->seat_number ?? $record->seat_id).' ya está ocupado por otro boleto vigente en este viaje. Reprogramá el boleto o liberá el asiento antes de restaurarlo.')
+                            ->danger()
+                            ->persistent()
+                            ->send();
+
+                        $action->cancel();
+
+                        return false;
+                    }
+                }),
+            // Emisión por link: la misma página que recibe el pasajero. Un
+            // boleto eliminado no la tiene (el token ya no resuelve).
+            Action::make('ver_link')
+                ->label('Ver link')
+                ->icon('heroicon-m-link')
+                ->color('gray')
+                ->visible(fn (Ticket $record): bool => ! Setting::descargaAutomaticaPdf() && ! $record->trashed())
+                ->url(fn (Ticket $record): string => route('admin.boletos.link', ['ticket' => $record->id]), shouldOpenInNewTab: true),
             Action::make('download_pdf')
                 ->label('Descargar')
                 ->icon('heroicon-m-arrow-down-tray')
@@ -56,28 +89,11 @@ class ViewTicket extends ViewRecord
                     ['title' => 'Descargar boleto']
                 )
                 ->action(function (Ticket $record) {
-
-                    $pdfService = new TicketPdfService;
-                    $sale = $record->sale;
-
-                    if ($record->is_round_trip) {
-                        $passengerTickets = $sale->tickets()
-                            ->where('passenger_id', $record->passenger_id)
-                            ->with(['trip', 'returnTrip', 'origin', 'destination', 'seat'])
-                            ->get();
-
-                        $pdfContent = $pdfService->generateRoundTripTicket($sale, $passengerTickets);
-                    } else {
-                        $pdfContent = $pdfService->generatePassengerTickets($sale, collect([$record]));
-                    }
-
-                    $ticketId = $record->id;
-                    $colectivo = str_replace(' ', '_', $record->trip?->bus?->name ?? 'Sin fecha');
-                    $filename = "Boleto_N°{$ticketId}_{$colectivo}.pdf";
+                    $pdf = (new TicketPdfService)->forTicket($record);
 
                     return response()->streamDownload(
-                        fn () => print ($pdfContent),
-                        $filename,
+                        fn () => print ($pdf['content']),
+                        $pdf['filename'],
                         ['Content-Type' => 'application/pdf']
                     );
                 }),

@@ -1,0 +1,99 @@
+# Spec Delta
+
+## Purpose
+
+Define cómo se presenta y se guarda la página Configuración > Parámetros: agrupación en pestañas, qué texto se muestra, cómo se informan los errores de validación y las reglas de los parámetros que no pertenecen a otra capacidad.
+
+## ADDED Requirements
+
+### Requirement: Acceso a la página de parámetros
+La página "Parámetros", con tilde, SHALL figurar en el grupo "Configuración" del menú. Solo un usuario con el permiso `settings.manage` MUST poder verla en el menú y abrirla.
+
+#### Scenario: Administrador con permiso
+- **WHEN** un usuario con `settings.manage` abre el menú Configuración
+- **THEN** ve "Parámetros" y puede abrir la página
+
+#### Scenario: Usuario sin permiso
+- **WHEN** un usuario sin `settings.manage` intenta abrir la página
+- **THEN** no la ve en el menú y el acceso se rechaza
+
+### Requirement: Parámetros agrupados en pestañas
+La página SHALL organizar los parámetros en cuatro pestañas, en este orden: "Venta" (venta con acompañante y venta fuera de término), "Boleto" (descarga automática del PDF, mensaje de WhatsApp y líneas de contacto), "Calendario" (días de la semana con servicio y excepciones por fecha) y "Seguridad" (confirmación de contraseña al borrar, reprogramar y editar boletos). Un único botón "Guardar cambios" MUST guardar las cuatro pestañas.
+
+#### Scenario: Abrir la página
+- **WHEN** el administrador abre Parámetros
+- **THEN** ve las pestañas Venta, Boleto, Calendario y Seguridad, en ese orden, con la pestaña Venta abierta
+
+#### Scenario: Guardar desde otra pestaña
+- **WHEN** el administrador cambia un parámetro de Venta, pasa a la pestaña Seguridad, cambia otro y toca "Guardar cambios"
+- **THEN** se guardan los dos cambios
+
+### Requirement: Texto visible limitado a lo esencial
+Cada sección y cada campo SHALL mostrar como texto visible a lo sumo una oración, y solo cuando sin ella el administrador podría configurar algo mal. La información complementaria (ejemplos, formato de carga, permisos que dejan saltear una regla) MUST ir en un ícono de información con tooltip y MUST NOT ser necesaria para configurar bien el parámetro.
+
+#### Scenario: Confirmación de contraseña
+- **WHEN** el administrador abre la pestaña Seguridad
+- **THEN** la sección explica una sola vez que se pide la contraseña de quien ejecuta la acción y que, si no coincide, la acción no se ejecuta, y los tres interruptores no repiten esa explicación
+
+#### Scenario: Información de permisos
+- **WHEN** el administrador abre la pestaña Calendario
+- **THEN** la aclaración sobre el permiso "Vender en días sin servicio" está en un tooltip y no como texto visible
+
+### Requirement: Guardado todo o nada
+Al tocar "Guardar cambios", la página SHALL guardar todos los parámetros solo si todos son válidos. Si algún campo, de cualquier pestaña, no es válido, MUST NOT guardarse ningún parámetro.
+
+#### Scenario: Un error en otra pestaña
+- **WHEN** el administrador cambia las horas de venta a 8, carga un teléfono de contacto inválido y guarda
+- **THEN** no se guarda ningún cambio y las horas de venta siguen con el valor anterior
+
+### Requirement: Errores visibles en las pestañas
+Cuando el guardado falla por validación, la página SHALL abrir la pestaña que contiene el primer campo con error y desplazarse hasta él. Toda pestaña con campos inválidos MUST mostrar un indicador rojo con la cantidad de errores, que desaparece cuando se vuelve a guardar sin errores en esa pestaña.
+
+#### Scenario: Errores en dos pestañas
+- **WHEN** el administrador guarda con un teléfono inválido en Boleto y sin ningún día de servicio en Calendario
+- **THEN** se abre la pestaña Boleto en el teléfono inválido, y las pestañas Boleto y Calendario muestran un indicador rojo con 1 error cada una
+
+#### Scenario: Error corregido
+- **WHEN** después de ese error el administrador corrige los dos campos y guarda
+- **THEN** los indicadores desaparecen y la configuración se guarda
+
+### Requirement: Aviso de guardado fallido
+Cuando el guardado falla por validación, la página SHALL mostrar una notificación de error que diga que no se guardó ningún cambio y nombre las pestañas que tienen errores.
+
+#### Scenario: Notificación con pestañas
+- **WHEN** el guardado falla con errores en las pestañas Boleto y Calendario
+- **THEN** aparece una notificación de error que dice que no se guardaron los cambios y pide revisar Boleto y Calendario
+
+### Requirement: Mensajes de validación en español
+Todo error de validación de la página SHALL mostrarse en español rioplatense con voseo (por ejemplo, "Ingresá…", "Elegí…") y MUST NOT mostrarse en inglés.
+
+#### Scenario: Valor fuera de rango
+- **WHEN** el administrador carga 800 en las horas de venta y guarda
+- **THEN** el campo muestra un mensaje en español que indica que el máximo es 720 horas
+
+### Requirement: Validación de las horas de venta fuera de término
+Las horas de venta después de la salida SHALL ser obligatorias y MUST ser un número entero entre 0 y 720. Un valor con decimales MUST rechazarse en lugar de redondearse.
+
+#### Scenario: Valor con decimales
+- **WHEN** el administrador carga 2,5 horas y guarda
+- **THEN** el campo muestra que la cantidad de horas debe ser un número entero y no se guarda nada
+
+#### Scenario: Sin límite
+- **WHEN** el administrador carga 0 y guarda
+- **THEN** el valor se guarda y la venta fuera de término queda sin límite
+
+### Requirement: Validación del mensaje de WhatsApp
+El mensaje de WhatsApp SHALL ser opcional: vacío, se usa el texto por defecto. Si se carga, MUST incluir `{link}` y tener como máximo 300 caracteres. Mientras el campo está oculto porque la descarga automática está activada, guardar MUST NOT modificar el mensaje guardado.
+
+#### Scenario: Mensaje sin el link
+- **WHEN** el administrador carga "Gracias por viajar con nosotros" y guarda
+- **THEN** el campo muestra que el mensaje tiene que incluir {link} y no se guarda nada
+
+#### Scenario: Mensaje vacío
+- **WHEN** el administrador borra el mensaje y guarda
+- **THEN** se guarda y al compartir se usa el texto por defecto "Tu boleto: {link}"
+
+#### Scenario: Campo oculto
+- **GIVEN** el mensaje guardado es "Tu pasaje: {link}"
+- **WHEN** el administrador activa la descarga automática del PDF y guarda
+- **THEN** el mensaje guardado sigue siendo "Tu pasaje: {link}" y vuelve a verse al desactivar la descarga automática

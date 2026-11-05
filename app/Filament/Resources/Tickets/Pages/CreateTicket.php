@@ -2,54 +2,40 @@
 
 namespace App\Filament\Resources\Tickets\Pages;
 
+use App\Exceptions\DuplicatePassengerOnTripException;
 use App\Filament\Resources\Tickets\TicketResource;
 use App\Models\Passenger;
 use App\Models\PaymentMethod;
+use App\Models\Sale;
+use App\Models\SeatReservation;
 use App\Models\Setting;
 use App\Models\Ticket;
 use App\Models\Trip;
-use App\Models\Route;
-use App\Models\Sale;
-use App\Services\TicketPdfService;
+use App\Support\DuplicateTicketNotification;
 use App\Support\SaleCutoff;
-use Filament\Resources\Pages\CreateRecord;
-use Illuminate\Support\Facades\Auth;
+use App\Support\ServiceDays;
+use App\Support\ShareLinkNotification;
+use App\Support\TripPassengerConflicts;
 use Filament\Actions\Action;
 use Filament\Notifications\Notification;
-use Illuminate\Database\Eloquent\Model;
-use Filament\Forms\Contracts\HasForms;
-use Filament\Forms\Concerns\InteractsWithForms;
-use Filament\Schemas\Components\Utilities\Get;
-use Filament\Support\Icons\Heroicon;
+use Filament\Resources\Pages\CreateRecord;
+use Filament\Support\Enums\Width;
 use Illuminate\Contracts\Support\Htmlable;
-use Illuminate\Support\Facades\Log;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\ValidationException;
 
 class CreateTicket extends CreateRecord
 {
     protected static string $resource = TicketResource::class;
 
     /*     protected static ?string $title = ' '; //alt + 255 */
-    protected ?string $heading = 'Vender boleto';
-    protected static ?string $breadcrumb = 'Vender';
+    protected ?string $heading = '';
 
-    /**
-     * Limpiar reservaciones cuando el componente se destruye (navegación fuera)
-     * Solo se ejecuta si el usuario confirma salir con unsavedChangesAlerts()
-     */
-    public function __destruct()
-    {
-        try {
-            // Solo limpiar si no estamos en una solicitud AJAX/Livewire normal
-            // Esto evita limpiar al cambiar entre pasos del wizard
-            if (!request()->ajax() && !request()->hasHeader('X-Livewire')) {
-                $sessionId = session()->getId();
-                \App\Models\SeatReservation::where('user_session_id', $sessionId)->delete();
-            }
-        } catch (\Exception $e) {
-            // Ignorar errores en la destrucción del componente
-        }
-    }
+    protected static ?string $breadcrumb = 'Vender';
 
     protected static bool $canCreateAnother = false;
 
@@ -57,7 +43,85 @@ class CreateTicket extends CreateRecord
 
     public array $return_seat_ids = [];
 
-    public function getTitle(): string | Htmlable
+    public const DUPLICATE_PASSENGER_ACTION = 'duplicatePassenger';
+
+    /**
+     * Pasos con asientos y el campo que guarda la selección de cada uno.
+     *
+     * @var array<string, string>
+     */
+    private const SEAT_STEPS = [
+        'seat_ids' => 'Asientos (Ida)',
+        'return_seat_ids' => 'Asientos (Vuelta)',
+    ];
+
+    /**
+     * Al presionar "Finalizar" el asistente valida todos los pasos. Si fallan
+     * los asientos (p. ej. la reserva venció y se liberaron), el error queda
+     * en un campo oculto de un paso anterior y no se ve: se avisa con una
+     * notificación que explica el problema y cómo volver a elegirlos.
+     */
+    protected function onValidationError(ValidationException $exception): void
+    {
+        parent::onValidationError($exception);
+
+        $failedSeatFields = collect(array_keys(self::SEAT_STEPS))
+            ->filter(fn (string $field): bool => array_key_exists("data.{$field}", $exception->errors()))
+            ->values();
+
+        if ($failedSeatFields->isEmpty()) {
+            return;
+        }
+
+        $this->notifySeatsNeedReselection($failedSeatFields->all());
+    }
+
+    /**
+     * @param  list<string>  $failedSeatFields  'seat_ids' y/o 'return_seat_ids'.
+     */
+    private function notifySeatsNeedReselection(array $failedSeatFields): void
+    {
+        $isOnlyReturn = $failedSeatFields === ['return_seat_ids'];
+        $legs = count($failedSeatFields) > 1 ? '' : ($isOnlyReturn ? ' de vuelta' : ' de ida');
+        $step = self::SEAT_STEPS[$failedSeatFields[0]];
+
+        Notification::make()
+            ->title("Faltan los asientos{$legs}")
+            ->body("La reserva de los asientos venció y se liberaron. Presioná «Anterior» hasta el paso «{$step}», elegí los asientos de nuevo y volvé a finalizar la venta.")
+            ->icon('heroicon-m-clock')
+            ->warning()
+            ->persistent()
+            ->send();
+    }
+
+    /**
+     * Modal del paso "Pasajeros": algún DNI de la venta ya tiene boleto en
+     * el viaje. Muestra una tarjeta por persona (quién, qué boleto, tramo,
+     * asiento y salida) con "Ver boleto" en otra pestaña, y "Volver a
+     * pasajeros", que cierra el modal sin tocar la venta. Los conflictos se
+     * recalculan con los DNI y viajes recibidos.
+     */
+    public function duplicatePassengerAction(): Action
+    {
+        $conflicts = fn (array $arguments) => TripPassengerConflicts::find(
+            (array) ($arguments['dnis'] ?? []),
+            (array) ($arguments['tripIds'] ?? []),
+        );
+
+        return Action::make(self::DUPLICATE_PASSENGER_ACTION)
+            ->modalHeading(fn (array $arguments): string => DuplicateTicketNotification::title($conflicts($arguments)))
+            ->modalDescription(DuplicateTicketNotification::HINT)
+            ->modalIcon('heroicon-o-identification')
+            ->modalIconColor('danger')
+            ->modalWidth(Width::TwoExtraLarge)
+            ->modalContent(fn (array $arguments) => view('filament.tickets.duplicate-passenger-modal', [
+                'rows' => DuplicateTicketNotification::rows($conflicts($arguments)),
+            ]))
+            ->modalSubmitAction(false)
+            ->modalCancelActionLabel('Volver a pasajeros');
+    }
+
+    public function getTitle(): string|Htmlable
     {
         return __('');
     }
@@ -71,23 +135,19 @@ class CreateTicket extends CreateRecord
             ->modalHeading('Los cambios se perderán')
             ->modalDescription('¿Desea continuar?')
             ->action(function () {
-                // Limpiar todas las reservaciones de esta sesión al cancelar
-                $sessionId = session()->getId();
-                \App\Models\SeatReservation::where('user_session_id', $sessionId)->delete();
+                $this->releaseSaleReservations();
 
                 // Redirigir al admin
                 $this->redirect(url('/admin'));
             })
             ->modalCancelAction(
-                fn(Action $action) =>
-                $action
+                fn (Action $action) => $action
                     ->label('Cancelar')
                     ->color('gray')
             )
 
             ->modalSubmitAction(
-                fn(Action $action) =>
-                $action
+                fn (Action $action) => $action
                     ->label('Aceptar')
                     ->color('primary')
             )
@@ -107,6 +167,7 @@ class CreateTicket extends CreateRecord
         if (session()->has('auto_download_url')) {
             return url('/admin');
         }
+
         return url('/admin');
     }
 
@@ -139,13 +200,13 @@ class CreateTicket extends CreateRecord
             $trip = Trip::find($data['trip_id']);
             if ($trip) {
                 $seatIds = $data['seat_ids'];
-                if (!is_array($seatIds)) {
+                if (! is_array($seatIds)) {
                     $seatIds = json_decode($seatIds, true) ?? [];
                 }
 
                 // Verificar disponibilidad final
                 $reservationResult = $trip->reserveSeatsWithLock($seatIds);
-                if (!$reservationResult['success']) {
+                if (! $reservationResult['success']) {
                     $failedSeats = $reservationResult['failed_seats'];
                     $seatNumbers = [];
 
@@ -159,7 +220,7 @@ class CreateTicket extends CreateRecord
                     Notification::make()
                         ->icon('heroicon-m-exclamation-triangle')
                         ->title('Asientos de ida no disponibles')
-                        ->body('Los siguientes asientos de este viaje ya fueron vendidos: ' . implode(', ', $seatNumbers) . '. Por favor, seleccione otros asientos.')
+                        ->body('Los siguientes asientos de este viaje ya fueron vendidos: '.implode(', ', $seatNumbers).'. Por favor, seleccione otros asientos.')
                         ->warning()
                         ->persistent()
                         ->send();
@@ -178,12 +239,10 @@ class CreateTicket extends CreateRecord
                             ->persistent()
                             ->send();
 
+                        $this->releaseSaleReservations($data);
+
                         // Cancelar la creación del registro
                         $this->halt();
-
-                        // Limpiar reservaciones de esta sesión
-                        $sessionId = session()->getId();
-                        \App\Models\SeatReservation::where('user_session_id', $sessionId)->delete();
 
                         return $data;
                     }
@@ -196,13 +255,13 @@ class CreateTicket extends CreateRecord
             $returnTrip = Trip::find($data['return_trip_id']);
             if ($returnTrip) {
                 $returnSeatIds = $data['return_seat_ids'];
-                if (!is_array($returnSeatIds)) {
+                if (! is_array($returnSeatIds)) {
                     $returnSeatIds = json_decode($returnSeatIds, true) ?? [];
                 }
 
                 // Verificar disponibilidad final de vuelta
                 $returnReservationResult = $returnTrip->reserveSeatsWithLock($returnSeatIds);
-                if (!$returnReservationResult['success']) {
+                if (! $returnReservationResult['success']) {
                     $failedSeats = $returnReservationResult['failed_seats'];
                     $seatNumbers = [];
 
@@ -216,7 +275,7 @@ class CreateTicket extends CreateRecord
                     Notification::make()
                         ->title('Asientos de vuelta no disponibles')
                         ->icon('heroicon-m-exclamation-triangle')
-                        ->body('Los siguientes asientos de vuelta ya fueron vendidos: ' . implode(', ', $seatNumbers) . '. Por favor, seleccione otros asientos.')
+                        ->body('Los siguientes asientos de vuelta ya fueron vendidos: '.implode(', ', $seatNumbers).'. Por favor, seleccione otros asientos.')
                         ->warning()
                         ->persistent()
                         ->send();
@@ -235,12 +294,10 @@ class CreateTicket extends CreateRecord
                             /* ->persistent() */
                             ->send();
 
+                        $this->releaseSaleReservations($data);
+
                         // Cancelar la creación del registro
                         $this->halt();
-
-                        // Limpiar reservaciones de esta sesión
-                        $sessionId = session()->getId();
-                        \App\Models\SeatReservation::where('user_session_id', $sessionId)->delete();
 
                         return $data;
                     }
@@ -290,13 +347,13 @@ class CreateTicket extends CreateRecord
 
             if ($bannedClients->isNotEmpty()) {
                 $details = $bannedClients
-                    ->map(fn (\App\Models\Clients $client) => "{$client->nombre} {$client->apellido} (DNI {$client->dni})" . (filled($client->comments) ? " - Motivo: {$client->comments}" : ''))
+                    ->map(fn (\App\Models\Clients $client) => "{$client->nombre} {$client->apellido} (DNI {$client->dni})".(filled($client->comments) ? " - Motivo: {$client->comments}" : ''))
                     ->implode('; ');
 
                 Notification::make()
                     ->title('No se puede completar la venta')
                     ->icon('heroicon-m-shield-exclamation')
-                    ->body('Hay pasajeros con prohibición de compra: ' . $details)
+                    ->body('Hay pasajeros con prohibición de compra: '.$details)
                     ->danger()
                     ->persistent()
                     ->send();
@@ -325,10 +382,16 @@ class CreateTicket extends CreateRecord
             if ($unregistered->isNotEmpty()) {
                 $details = $unregistered->implode(', ');
 
+                // La consecuencia para el pasajero solo aplica con el panel
+                // de clientes activo; la exigencia del padrón, siempre.
+                $panelConsequence = Setting::panelClientesActivo()
+                    ? ' Si no, el pasajero no podría ver su boleto desde el panel de clientes.'
+                    : '';
+
                 Notification::make()
                     ->title('No se puede completar la venta')
                     ->icon('heroicon-m-shield-exclamation')
-                    ->body("Los boletos sin fecha sólo se venden a pasajeros registrados en el padrón de clientes. DNIs sin registrar: {$details}. Si no, el pasajero no podría ver su boleto desde el panel de clientes. Registralo en Clientes (o con la acción «Crear cliente» del pasajero) y volvé a intentar la venta.")
+                    ->body("Los boletos sin fecha sólo se venden a pasajeros registrados en el padrón de clientes. DNIs sin registrar: {$details}.{$panelConsequence} Registralo en Clientes (o con la acción «Crear cliente» del pasajero) y volvé a intentar la venta.")
                     ->danger()
                     ->persistent()
                     ->send();
@@ -408,156 +471,103 @@ class CreateTicket extends CreateRecord
             );
         }
 
+        // 0.e Días de servicio: cada tramo con fecha tiene que caer en un día
+        // con servicio, salvo con el permiso `tickets.vender_dia_sin_servicio`.
+        // Los tramos sin fecha no tienen viaje y no se evalúan.
+        if (filled($data['trip_id'] ?? null)) {
+            $this->assertServiceDay(Trip::find($data['trip_id']), 'ida');
+        }
+
+        if ((bool) ($data['is_round_trip'] ?? false) && filled($data['return_trip_id'] ?? null)) {
+            $this->assertServiceDay(Trip::find($data['return_trip_id']), 'vuelta');
+        }
+
+        // 0.f Una persona por venta y por viaje: sin DNI repetidos dentro de
+        // la venta (adultos y menores) y sin DNI que ya tengan boleto en el
+        // viaje de ida o de vuelta. Sin excepciones por permiso. Se repite
+        // dentro de la transacción, con los viajes bloqueados.
+        $this->assertDistinctSaleDnis($data);
+        $this->assertNoPassengerAlreadyOnSaleTrips($data);
+
         try {
-            // 1. Crear la venta usando el método del modelo
-            $sale = Sale::createNew(Auth::id());
+            // Emisión atómica: la venta, los pasajeros y los boletos de los dos
+            // tramos se confirman juntos o no se crea nada. Los viajes quedan
+            // bloqueados hasta el commit (las verificaciones con bloqueo de
+            // Trip corren como savepoints de esta transacción).
+            $firstTicket = DB::transaction(function () use ($data): Model {
+                $this->lockSaleTrips($data);
 
-            // 2. Crear todos los pasajeros (adultos y menores)
-            $allPassengers = collect();
-            $adultPassengers = collect();
+                $conflicts = TripPassengerConflicts::find(
+                    TripPassengerConflicts::saleDnis($data['passengers'] ?? []),
+                    TripPassengerConflicts::saleTripIds($data),
+                );
 
-            foreach ($data['passengers'] as $index => $passengerData) {
-                // Crear pasajero adulto
-                $adultPassenger = Passenger::create([
-                    'first_name' => $passengerData['first_name'],
-                    'last_name' => $passengerData['last_name'],
-                    'dni' => $passengerData['dni'],
-                    'phone_number' => $passengerData['phone_number'] ?? null,
-                    'email' => $passengerData['email'] ?? null,
-                    'passenger_type' => 'adult',
-                ]);
+                if ($conflicts->isNotEmpty()) {
+                    throw new DuplicatePassengerOnTripException($conflicts);
+                }
 
-                $allPassengers->push($adultPassenger);
-                $adultPassengers->push($adultPassenger);
+                // 1. Crear la venta usando el método del modelo
+                $sale = Sale::createNew(Auth::id());
 
-                // Crear pasajero del menor si existe
-                if ($passengerData['travels_with_child'] && isset($passengerData['child_data'])) {
-                    $childPassenger = Passenger::create([
-                        'first_name' => $passengerData['child_data']['first_name'],
-                        'last_name' => $passengerData['child_data']['last_name'],
-                        'dni' => $passengerData['child_data']['dni'],
-                        'parent_passenger_id' => $adultPassenger->id,
-                        'passenger_type' => 'child',
+                // 2. Crear todos los pasajeros (adultos y menores)
+                $allPassengers = collect();
+                $adultPassengers = collect();
+
+                foreach ($data['passengers'] as $index => $passengerData) {
+                    // Crear pasajero adulto
+                    $adultPassenger = Passenger::create([
+                        'first_name' => $passengerData['first_name'],
+                        'last_name' => $passengerData['last_name'],
+                        'dni' => $passengerData['dni'],
+                        'phone_number' => $passengerData['phone_number'] ?? null,
+                        'email' => $passengerData['email'] ?? null,
+                        'passenger_type' => 'adult',
                     ]);
-                    $allPassengers->push($childPassenger);
-                }
-            }
 
-            // 2.b Crear de una: los tramos vendidos sin fecha (permiso
-            // `tickets.vender_sin_fecha`) NO resuelven viaje ni reservan asiento.
-            // Quedan como boletos pendientes (trip_id NULL) listos para la
-            // asignaciones posterior via tickets.reschedule.
-            $sellWithoutDateIda = (bool) ($data['sell_without_date_ida'] ?? false);
-            $sellWithoutDateVuelta = (bool) ($data['sell_without_date_vuelta'] ?? false);
+                    $allPassengers->push($adultPassenger);
+                    $adultPassengers->push($adultPassenger);
 
-            if ($sellWithoutDateIda || $sellWithoutDateVuelta) {
-                return $this->createPendingTickets($sale, $data, $adultPassengers, $sellWithoutDateIda, $sellWithoutDateVuelta);
-            }
-
-            // 3. Preparar datos de tickets con validación de asientos
-            $trip = Trip::findOrFail($data['trip_id']);
-            $seatIds = $data['seat_ids'] ?? [];
-            if (!is_array($seatIds)) {
-                if (is_string($seatIds)) {
-                    $seatIds = json_decode($seatIds, true) ?? [];
-                } else {
-                    $seatIds = [];
-                }
-            }
-
-            // Validar y reservar asientos antes de crear tickets
-            $reservationResult = $trip->reserveSeatsWithLock($seatIds);
-            if (!$reservationResult['success']) {
-                $failedSeatIds = $reservationResult['failed_seats'];
-                $seatNumbers = [];
-
-                foreach ($failedSeatIds as $seatId) {
-                    $seat = \App\Models\Seat::find($seatId);
-                    if ($seat) {
-                        $seatNumbers[] = $seat->seat_number;
+                    // Crear pasajero del menor si existe
+                    // ?? false: con el parámetro "venta con acompañante" desactivado
+                    // los switches no existen en el estado del pasajero.
+                    if (($passengerData['travels_with_child'] ?? false) && isset($passengerData['child_data'])) {
+                        $childPassenger = Passenger::create([
+                            'first_name' => $passengerData['child_data']['first_name'],
+                            'last_name' => $passengerData['child_data']['last_name'],
+                            'dni' => $passengerData['child_data']['dni'],
+                            'parent_passenger_id' => $adultPassenger->id,
+                            'passenger_type' => 'child',
+                        ]);
+                        $allPassengers->push($childPassenger);
                     }
                 }
 
-                Notification::make()
-                    ->title('Asientos de ida no disponibles')
-                    ->icon('heroicon-m-exclamation-triangle')
-                    ->body('Los siguientes asientos fueron vendidos mientras completaba el formulario: ' . implode(', ', $seatNumbers) . '. Por favor, seleccione otros asientos.')
-                    ->warning()
-                    ->persistent()
-                    ->send();
+                // 2.b Crear de una: los tramos vendidos sin fecha (permiso
+                // `tickets.vender_sin_fecha`) NO resuelven viaje ni reservan asiento.
+                // Quedan como boletos pendientes (trip_id NULL) listos para la
+                // asignaciones posterior via tickets.reschedule.
+                $sellWithoutDateIda = (bool) ($data['sell_without_date_ida'] ?? false);
+                $sellWithoutDateVuelta = (bool) ($data['sell_without_date_vuelta'] ?? false);
 
-                throw new \Exception('Algunos asientos seleccionados ya no están disponibles.');
-            }
-
-            // 4. Crear tickets de ida usando el método con bloqueo
-            $ticketsData = [];
-            foreach ($adultPassengers as $index => $passenger) {
-                $seatId = $seatIds[$index] ?? null;
-                $passengerData = $data['passengers'][$index] ?? [];
-                $travelsWithChild = $passengerData['travels_with_child'] ?? false;
-                $travelsWithPets = $passengerData['travels_with_pets'] ?? false;
-                $petNames = $passengerData['pet_data']['pet_names'] ?? null;
-                $petCount = $passengerData['pet_data']['pet_count'] ?? null;
-
-                $ticketsData[] = [
-                    'sale_id' => $sale->id,
-                    'trip_id' => $data['trip_id'],
-                    'seat_id' => $seatId,
-                    'passenger_id' => $passenger->id,
-                    'is_round_trip' => $data['is_round_trip'] ?? false,
-                    'return_trip_id' => $data['return_trip_id'] ?? null,
-                    'travels_with_child' => $travelsWithChild,
-                    'travels_with_pets' => $travelsWithPets,
-                    'pet_names' => $petNames,
-                    'pet_count' => $petCount,
-                    'origin_location_id' => $data['origin_location_id'],
-                    'destination_location_id' => $data['destination_location_id'],
-                    'price' => $passengerData['price'] ?? 0,
-                    'payment_method' => $passengerData['payment_method'] ?? null,
-                ];
-            }
-
-            $result = $trip->createTicketsWithLock($ticketsData);
-            if (!$result['success']) {
-                $failedTickets = $result['failed_tickets'];
-                $seatNumbers = [];
-
-                foreach ($failedTickets as $failedTicket) {
-                    if (isset($failedTicket['seat_id'])) {
-                        $seat = \App\Models\Seat::find($failedTicket['seat_id']);
-                        if ($seat) {
-                            $seatNumbers[] = $seat->seat_number;
-                        }
-                    }
+                if ($sellWithoutDateIda || $sellWithoutDateVuelta) {
+                    return $this->createPendingTickets($sale, $data, $adultPassengers, $sellWithoutDateIda, $sellWithoutDateVuelta);
                 }
 
-                Notification::make()
-                    ->title('No se pudo completar la venta')
-                    ->icon('heroicon-m-x-circle')
-                    ->body('Los siguientes asientos fueron vendidos en el último momento: ' . implode(', ', $seatNumbers) . '. Por favor, intente nuevamente con otros asientos.')
-                    ->danger()
-                    ->persistent()
-                    ->send();
-
-                throw new \Exception('No se pudieron vender todos los asientos seleccionados.');
-            }
-
-            // 5. Crear tickets de VUELTA (solo para adultos) si aplica
-            if ($data['is_round_trip'] ?? false) {
-                $returnTrip = Trip::findOrFail($data['return_trip_id']);
-                $returnSeatIds = $data['return_seat_ids'] ?? [];
-                if (!is_array($returnSeatIds)) {
-                    if (is_string($returnSeatIds)) {
-                        $returnSeatIds = json_decode($returnSeatIds, true) ?? [];
+                // 3. Preparar datos de tickets con validación de asientos
+                $trip = Trip::findOrFail($data['trip_id']);
+                $seatIds = $data['seat_ids'] ?? [];
+                if (! is_array($seatIds)) {
+                    if (is_string($seatIds)) {
+                        $seatIds = json_decode($seatIds, true) ?? [];
                     } else {
-                        $returnSeatIds = [];
+                        $seatIds = [];
                     }
                 }
 
-                // Validar y reservar asientos de vuelta
-                $returnReservationResult = $returnTrip->reserveSeatsWithLock($returnSeatIds);
-                if (!$returnReservationResult['success']) {
-                    $failedSeatIds = $returnReservationResult['failed_seats'];
+                // Validar y reservar asientos antes de crear tickets
+                $reservationResult = $trip->reserveSeatsWithLock($seatIds);
+                if (! $reservationResult['success']) {
+                    $failedSeatIds = $reservationResult['failed_seats'];
                     $seatNumbers = [];
 
                     foreach ($failedSeatIds as $seatId) {
@@ -568,84 +578,129 @@ class CreateTicket extends CreateRecord
                     }
 
                     Notification::make()
-                        ->title('Asientos de vuelta no disponibles')
+                        ->title('Asientos de ida no disponibles')
                         ->icon('heroicon-m-exclamation-triangle')
-                        ->body('Los siguientes asientos de vuelta fueron vendidos: ' . implode(', ', $seatNumbers) . '. Por favor, seleccione otros asientos.')
+                        ->body('Los siguientes asientos fueron vendidos mientras completaba el formulario: '.implode(', ', $seatNumbers).'. Por favor, seleccione otros asientos.')
                         ->warning()
                         ->persistent()
                         ->send();
 
-                    throw new \Exception('Algunos asientos de vuelta seleccionados ya no están disponibles.');
+                    throw new \Exception('Algunos asientos seleccionados ya no están disponibles.');
                 }
 
-                // Crear tickets de vuelta
-                $returnTicketsData = [];
+                // 4. Crear tickets de ida usando el método con bloqueo
+                $ticketsData = [];
                 foreach ($adultPassengers as $index => $passenger) {
-                    $seatId = $returnSeatIds[$index] ?? null;
+                    $seatId = $seatIds[$index] ?? null;
                     $passengerData = $data['passengers'][$index] ?? [];
                     $travelsWithChild = $passengerData['travels_with_child'] ?? false;
                     $travelsWithPets = $passengerData['travels_with_pets'] ?? false;
                     $petNames = $passengerData['pet_data']['pet_names'] ?? null;
                     $petCount = $passengerData['pet_data']['pet_count'] ?? null;
 
-                    $returnTicketsData[] = [
+                    $ticketsData[] = [
                         'sale_id' => $sale->id,
-                        'trip_id' => $data['return_trip_id'],
+                        'trip_id' => $data['trip_id'],
                         'seat_id' => $seatId,
                         'passenger_id' => $passenger->id,
-                        'is_round_trip' => true,
+                        'is_round_trip' => $data['is_round_trip'] ?? false,
+                        'is_return_leg' => false,
+                        'return_trip_id' => $data['return_trip_id'] ?? null,
                         'travels_with_child' => $travelsWithChild,
                         'travels_with_pets' => $travelsWithPets,
                         'pet_names' => $petNames,
                         'pet_count' => $petCount,
-                        'origin_location_id' => $data['destination_location_id'],
-                        'destination_location_id' => $data['origin_location_id'],
-                        'price' => 0, // Return trip price is already captured on the outbound ticket
+                        'origin_location_id' => $data['origin_location_id'],
+                        'destination_location_id' => $data['destination_location_id'],
+                        'price' => $passengerData['price'] ?? 0,
                         'payment_method' => $passengerData['payment_method'] ?? null,
                     ];
                 }
 
-                $returnResult = $returnTrip->createTicketsWithLock($returnTicketsData);
-                if (!$returnResult['success']) {
-                    $failedTickets = $returnResult['failed_tickets'];
-                    $seatNumbers = [];
+                $result = $trip->createTicketsWithLock($ticketsData);
 
-                    foreach ($failedTickets as $failedTicket) {
-                        if (isset($failedTicket['seat_id'])) {
-                            $seat = \App\Models\Seat::find($failedTicket['seat_id']);
+                // 5. Crear tickets de VUELTA (solo para adultos) si aplica
+                if ($data['is_round_trip'] ?? false) {
+                    $returnTrip = Trip::findOrFail($data['return_trip_id']);
+                    $returnSeatIds = $data['return_seat_ids'] ?? [];
+                    if (! is_array($returnSeatIds)) {
+                        if (is_string($returnSeatIds)) {
+                            $returnSeatIds = json_decode($returnSeatIds, true) ?? [];
+                        } else {
+                            $returnSeatIds = [];
+                        }
+                    }
+
+                    // Validar y reservar asientos de vuelta
+                    $returnReservationResult = $returnTrip->reserveSeatsWithLock($returnSeatIds);
+                    if (! $returnReservationResult['success']) {
+                        $failedSeatIds = $returnReservationResult['failed_seats'];
+                        $seatNumbers = [];
+
+                        foreach ($failedSeatIds as $seatId) {
+                            $seat = \App\Models\Seat::find($seatId);
                             if ($seat) {
                                 $seatNumbers[] = $seat->seat_number;
                             }
                         }
+
+                        Notification::make()
+                            ->title('Asientos de vuelta no disponibles')
+                            ->icon('heroicon-m-exclamation-triangle')
+                            ->body('Los siguientes asientos de vuelta fueron vendidos: '.implode(', ', $seatNumbers).'. Por favor, seleccione otros asientos.')
+                            ->warning()
+                            ->persistent()
+                            ->send();
+
+                        throw new \Exception('Algunos asientos de vuelta seleccionados ya no están disponibles.');
                     }
 
-                    Notification::make()
-                        ->title('No se pudo completar la venta de vuelta')
-                        ->icon('heroicon-m-x-circle')
-                        ->body('Los siguientes asientos de vuelta fueron vendidos en el último momento: ' . implode(', ', $seatNumbers) . '. Por favor, intente nuevamente con otros asientos.')
-                        ->danger()
-                        ->persistent()
-                        ->send();
+                    // Crear tickets de vuelta
+                    $returnTicketsData = [];
+                    foreach ($adultPassengers as $index => $passenger) {
+                        $seatId = $returnSeatIds[$index] ?? null;
+                        $passengerData = $data['passengers'][$index] ?? [];
+                        $travelsWithChild = $passengerData['travels_with_child'] ?? false;
+                        $travelsWithPets = $passengerData['travels_with_pets'] ?? false;
+                        $petNames = $passengerData['pet_data']['pet_names'] ?? null;
+                        $petCount = $passengerData['pet_data']['pet_count'] ?? null;
 
-                    throw new \Exception('No se pudieron vender todos los asientos de vuelta seleccionados.');
+                        $returnTicketsData[] = [
+                            'sale_id' => $sale->id,
+                            'trip_id' => $data['return_trip_id'],
+                            'seat_id' => $seatId,
+                            'passenger_id' => $passenger->id,
+                            'is_round_trip' => true,
+                            'is_return_leg' => true,
+                            'travels_with_child' => $travelsWithChild,
+                            'travels_with_pets' => $travelsWithPets,
+                            'pet_names' => $petNames,
+                            'pet_count' => $petCount,
+                            'origin_location_id' => $data['destination_location_id'],
+                            'destination_location_id' => $data['origin_location_id'],
+                            'price' => 0, // Return trip price is already captured on the outbound ticket
+                            'payment_method' => $passengerData['payment_method'] ?? null,
+                        ];
+                    }
+
+                    $returnResult = $returnTrip->createTicketsWithLock($returnTicketsData);
                 }
-            }
 
-            // 6. Recalcular el total de la venta
-            $sale->recalculateTotal();
+                // 6. Recalcular el total de la venta
+                $sale->recalculateTotal();
 
-            // 7. Limpiar todas las reservaciones de esta sesión (venta completada exitosamente)
-            $sessionId = session()->getId();
-            \App\Models\SeatReservation::where('user_session_id', $sessionId)->delete();
+                return $result['tickets']->first();
+            });
+        } catch (DuplicatePassengerOnTripException $e) {
+            // Sin liberar reservas: el vendedor vuelve a la venta con sus
+            // asientos para corregir los datos del pasajero.
+            DuplicateTicketNotification::send($e->conflicts(), 'Volver a la venta');
 
-            // 8. Generar y descargar PDFs automáticamente
-            $this->generateAndDownloadTickets($sale);
+            $this->halt();
 
-            return $result['tickets']->first();
+            return $data;
         } catch (\Exception $e) {
-            // Limpiar reservaciones de esta sesión en caso de error
-            $sessionId = session()->getId();
-            \App\Models\SeatReservation::where('user_session_id', $sessionId)->delete();
+            $this->releaseSaleReservations($data);
 
             // Manejar errores y mostrar notificación adecuada
             Notification::make()
@@ -658,6 +713,106 @@ class CreateTicket extends CreateRecord
             // Relanzar la excepción para que Filament maneje el error
             throw $e;
         }
+
+        // Entrega, después del commit: un fallo al generar el PDF o el link
+        // no anula lo emitido (generateAndDownloadTickets maneja sus errores).
+        $this->releaseSaleReservations($data);
+        $this->generateAndDownloadTickets($firstTicket->sale);
+
+        return $firstTicket;
+    }
+
+    /**
+     * Bloquea los viajes de la venta (ida y vuelta) en orden de id, para que
+     * dos ventas de ida y vuelta cruzadas no se bloqueen mutuamente.
+     */
+    private function lockSaleTrips(array $data): void
+    {
+        $tripIds = collect([$data['trip_id'] ?? null, ($data['is_round_trip'] ?? false) ? ($data['return_trip_id'] ?? null) : null])
+            ->filter()
+            ->map(fn ($id): int => (int) $id)
+            ->unique()
+            ->sort()
+            ->values();
+
+        if ($tripIds->isNotEmpty()) {
+            Trip::query()->whereIn('id', $tripIds)->orderBy('id')->lockForUpdate()->get();
+        }
+    }
+
+    /**
+     * Guard final: una venta no puede cargar el mismo DNI dos veces, sumando
+     * pasajeros adultos y menores acompañantes.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    private function assertDistinctSaleDnis(array $data): void
+    {
+        $passengers = $data['passengers'] ?? [];
+        $repeated = TripPassengerConflicts::repeatedDnis(
+            array_column(TripPassengerConflicts::saleDniSlots(is_array($passengers) ? $passengers : []), 'dni'),
+        );
+
+        if ($repeated === []) {
+            return;
+        }
+
+        Notification::make()
+            ->title('No se puede completar la venta')
+            ->icon('heroicon-m-identification')
+            ->body('Hay DNI cargados en más de un pasajero de la venta: '.implode(', ', $repeated).'. Corregí los datos e intentá de nuevo.')
+            ->danger()
+            ->persistent()
+            ->send();
+
+        $this->halt();
+    }
+
+    /**
+     * Guard final: ningún DNI de la venta (adulto o menor) puede tener ya un
+     * boleto activo en el viaje de ida o en el de vuelta. Ningún permiso lo
+     * exceptúa.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    private function assertNoPassengerAlreadyOnSaleTrips(array $data): void
+    {
+        $conflicts = TripPassengerConflicts::find(
+            TripPassengerConflicts::saleDnis($data['passengers'] ?? []),
+            TripPassengerConflicts::saleTripIds($data),
+        );
+
+        if ($conflicts->isEmpty()) {
+            return;
+        }
+
+        DuplicateTicketNotification::send($conflicts, 'Volver a la venta');
+
+        $this->halt();
+    }
+
+    /**
+     * Guard final de días de servicio (App\Support\ServiceDays): la fecha del
+     * viaje del tramo tiene que tener servicio, salvo con el permiso
+     * `tickets.vender_dia_sin_servicio`.
+     */
+    private function assertServiceDay(?Trip $trip, string $leg): void
+    {
+        $reason = ServiceDays::blockReason($trip?->trip_date);
+
+        if ($reason === null) {
+            return;
+        }
+
+        Notification::make()
+            ->title('Día sin servicio')
+            ->icon('heroicon-m-calendar-days')
+            ->danger()
+            ->persistent()
+            ->body("Tramo de {$leg}: {$reason}")
+            ->send();
+
+        $this->halt();
     }
 
     /**
@@ -703,7 +858,7 @@ class CreateTicket extends CreateRecord
      *  - Ambos tramos sin fecha: un ticket por pasajero (round trip) o dos
      *    (ida y vuelta separados), todos pendientes.
      *  - Sólo ida sin fecha: tickets sin viaje, is_round_trip=false.
-    *  - Mixto (ida con fecha + vuelta sin fecha): ida normal (con viaje y
+     *  - Mixto (ida con fecha + vuelta sin fecha): ida normal (con viaje y
      *    asiento via createTicketsWithLock) + vuelta pendiente is_return_leg=true.
      */
     private function createPendingTickets(Sale $sale, array $data, Collection $adultPassengers, bool $idaSinFecha, bool $vueltaSinFecha): Model
@@ -721,6 +876,7 @@ class CreateTicket extends CreateRecord
                     'seat_id' => null,
                     'passenger_id' => $passenger->id,
                     'is_round_trip' => $isRoundTrip,
+                    'is_return_leg' => false,
                     // Modo mixto invertido (ida sin fecha + vuelta CON fecha):
                     // la vuelta ya resolvió su viaje al emitirse, así que la ida
                     // debe quedar ligada a él. Sin esto, el detalle/PDF no
@@ -763,7 +919,7 @@ class CreateTicket extends CreateRecord
                 Notification::make()
                     ->title('Asientos de ida no disponibles')
                     ->icon('heroicon-m-exclamation-triangle')
-                    ->body('Los asientos de ida ya fueron vendidos: ' . implode(', ', $seatNumbers) . '. Por favor, seleccione otros.')
+                    ->body('Los asientos de ida ya fueron vendidos: '.implode(', ', $seatNumbers).'. Por favor, seleccione otros.')
                     ->warning()
                     ->persistent()
                     ->send();
@@ -795,27 +951,6 @@ class CreateTicket extends CreateRecord
             }
 
             $result = $trip->createTicketsWithLock($ticketsData);
-            if (! $result['success']) {
-                $seatNumbers = [];
-                foreach ($result['failed_tickets'] as $failedTicket) {
-                    if (isset($failedTicket['seat_id'])) {
-                        $seat = \App\Models\Seat::find($failedTicket['seat_id']);
-                        if ($seat) {
-                            $seatNumbers[] = $seat->seat_number;
-                        }
-                    }
-                }
-
-                Notification::make()
-                    ->title('No se pudo completar la venta')
-                    ->icon('heroicon-m-x-circle')
-                    ->body('Los asientos de ida fueron vendidos en el último momento: ' . implode(', ', $seatNumbers) . '. Por favor, intente nuevamente.')
-                    ->danger()
-                    ->persistent()
-                    ->send();
-
-                throw new \Exception('No se pudieron vender todos los asientos seleccionados.');
-            }
         }
 
         // ---- Vuelta ----
@@ -825,15 +960,15 @@ class CreateTicket extends CreateRecord
                 foreach ($adultPassengers as $index => $passenger) {
                     $passengerData = $data['passengers'][$index] ?? [];
 
-                $sale->addTicket([
-                    'trip_id' => null,
-                    'seat_id' => null,
-                    'passenger_id' => $passenger->id,
-                    'is_round_trip' => true,
-                    'is_return_leg' => true,
-                    'return_trip_id' => null,
-                    'bus_id' => $data['bus_id'], // Se exige arriba; acarrea el colectivo para la asignación posterior.
-                    'travels_with_child' => $passengerData['travels_with_child'] ?? false,
+                    $sale->addTicket([
+                        'trip_id' => null,
+                        'seat_id' => null,
+                        'passenger_id' => $passenger->id,
+                        'is_round_trip' => true,
+                        'is_return_leg' => true,
+                        'return_trip_id' => null,
+                        'bus_id' => $data['bus_id'], // Se exige arriba; acarrea el colectivo para la asignación posterior.
+                        'travels_with_child' => $passengerData['travels_with_child'] ?? false,
                         'travels_with_pets' => $passengerData['travels_with_pets'] ?? false,
                         'pet_names' => $passengerData['pet_data']['pet_names'] ?? null,
                         'pet_count' => $passengerData['pet_data']['pet_count'] ?? null,
@@ -879,6 +1014,7 @@ class CreateTicket extends CreateRecord
                         'seat_id' => $returnSeatIds[$index] ?? null,
                         'passenger_id' => $passenger->id,
                         'is_round_trip' => true,
+                        'is_return_leg' => true,
                         'travels_with_child' => $passengerData['travels_with_child'] ?? false,
                         'travels_with_pets' => $passengerData['travels_with_pets'] ?? false,
                         'pet_names' => $passengerData['pet_data']['pet_names'] ?? null,
@@ -891,26 +1027,12 @@ class CreateTicket extends CreateRecord
                 }
 
                 $returnResult = $returnTrip->createTicketsWithLock($returnTicketsData);
-                if (! $returnResult['success']) {
-                    Notification::make()
-                        ->title('No se pudo completar la venta de vuelta')
-                        ->icon('heroicon-m-x-circle')
-                        ->body('Los asientos de vuelta fueron vendidos en el último momento. Por favor, intente nuevamente.')
-                        ->danger()
-                        ->persistent()
-                        ->send();
-
-                    throw new \Exception('No se pudieron vender todos los asientos de vuelta seleccionados.');
-                }
             }
         }
 
-        // ---- Reservas, PDF y respuesta (mismo contrato que el flujo normal) ----
-        $sessionId = session()->getId();
-        \App\Models\SeatReservation::where('user_session_id', $sessionId)->delete();
-
+        // La liberación de reservas y la entrega (PDF o link) las hace
+        // handleRecordCreation después del commit.
         $sale->recalculateTotal();
-        $this->generateAndDownloadTickets($sale);
 
         return $sale->tickets()->oldest('id')->first();
     }
@@ -921,6 +1043,15 @@ class CreateTicket extends CreateRecord
     private function generateAndDownloadTickets(Sale $sale): void
     {
         try {
+            // Flujo "emisión por link": no se genera ni descarga ningún PDF
+            // acá; se presenta la página de previsualización compartible y
+            // el PDF se genera al vuelo cuando se consulta o se descarga.
+            if (! Setting::descargaAutomaticaPdf()) {
+                $this->finishSaleWithShareLink($sale);
+
+                return;
+            }
+
             $ticketsByPassenger = $sale->tickets()
                 ->with(['passenger', 'trip', 'returnTrip', 'origin', 'destination', 'seat'])
                 ->get()
@@ -946,7 +1077,7 @@ class CreateTicket extends CreateRecord
                 ];
 
                 // Generar PDF
-                $dompdf = new \Dompdf\Dompdf();
+                $dompdf = new \Dompdf\Dompdf;
                 $dompdf->loadHtml(view('tickets.pdf.passenger-tickets', $data)->render());
                 $dompdf->setPaper('A4', 'portrait');
                 $dompdf->render();
@@ -997,7 +1128,7 @@ class CreateTicket extends CreateRecord
                     ];
 
                     // Generar PDF individual usando la vista existente
-                    $dompdf = new \Dompdf\Dompdf();
+                    $dompdf = new \Dompdf\Dompdf;
                     $dompdf->loadHtml(view('tickets.pdf.passenger-tickets', $data)->render());
                     $dompdf->setPaper('A4', 'portrait');
                     $dompdf->render();
@@ -1005,18 +1136,18 @@ class CreateTicket extends CreateRecord
 
                     $downloads[] = [
                         'filename' => $filename,
-                        'content' => base64_encode($pdfContent)
+                        'content' => base64_encode($pdfContent),
                     ];
                 }
 
                 // Generar PDF combinado usando todos los tickets juntos
-                $combinedFilename = "Boletos_N°" . implode('_', $ticketNumbers) . ".pdf";
+                $combinedFilename = 'Boletos_N°'.implode('_', $ticketNumbers).'.pdf';
                 $combinedContent = $this->generateCombinedPDF($sale, $ticketsByPassenger);
 
                 // Agregar el PDF combinado a la lista de descargas
                 $downloads[] = [
                     'filename' => $combinedFilename,
-                    'content' => base64_encode($combinedContent)
+                    'content' => base64_encode($combinedContent),
                 ];
 
                 // Guardar todos los PDFs en sesión para descarga múltiple
@@ -1039,7 +1170,7 @@ class CreateTicket extends CreateRecord
             logger()->error('Error al generar PDFs de tickets', [
                 'sale_id' => $sale->id,
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
             ]);
 
             Notification::make()
@@ -1069,12 +1200,72 @@ class CreateTicket extends CreateRecord
             'hasChild' => $allTickets->contains('travels_with_child', true),
         ];
 
-        $dompdf = new \Dompdf\Dompdf();
+        $dompdf = new \Dompdf\Dompdf;
         $dompdf->loadHtml(view('tickets.pdf.passenger-tickets', $data)->render());
         $dompdf->setPaper('A4', 'portrait');
         $dompdf->render();
 
         return $dompdf->output();
+    }
+
+    /**
+     * Cierre de venta con el modo "emisión por link"
+     * (Setting::DESCARGA_AUTOMATICA_PDF desactivado).
+     *
+     * Link permanente para el boleto del pasajero único, o el PDF combinado
+     * de la venta cuando hay varios pasajeros. Sustituye la auto-descarga:
+     * se abre la página de previsualización (misma mecánica window.open de
+     * siempre tras el create) y la notification suma los accesos de
+     * compartir por WhatsApp y descargar el PDF.
+     */
+    private function finishSaleWithShareLink(Sale $sale): void
+    {
+        try {
+            $ticketsByPassenger = $sale->tickets()->with('passenger')->get()->groupBy('passenger_id');
+
+            // Un pasajero → link del boleto de ida (su PDF incluye la vuelta
+            // si es diferido); varios pasajeros → link de la venta.
+            $shareable = $ticketsByPassenger->count() === 1
+                ? $sale->tickets()->where('is_return_leg', false)->oldest('id')->first() ?? $sale->tickets()->oldest('id')->first()
+                : $sale;
+
+            $sharePageUrl = $shareable->shareUrl();
+
+            // Se abre la página de previsualización tras el create:
+            // despuésCreate la abre en una pestaña nueva (window.open),
+            // reutilizando la mecánica existente.
+            session()->put('auto_download_url', $sharePageUrl);
+
+            $subject = $shareable instanceof \App\Models\Ticket
+                ? "Boleto N°{$shareable->id} para {$shareable->passenger?->full_name}."
+                : "Venta N°{$sale->id} de {$ticketsByPassenger->count()} pasajeros.";
+
+            Notification::make()
+                ->icon('heroicon-m-check-circle')
+                ->title('Boleto(s) vendido(s) correctamente')
+                ->body("{$subject} El link se abrió en otra pestaña.")
+                ->success()
+                ->actions(
+                    ShareLinkNotification::actionsFor(
+                        $sale,
+                        $sharePageUrl,
+                        $shareable->sharePdfUrl('attachment'),
+                    ),
+                )
+                ->send();
+        } catch (\Throwable $e) {
+            logger()->error('Error al armar el link compartible de la venta', [
+                'sale_id' => $sale->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            Notification::make()
+                ->title('Boleto(s) vendido(s) correctamente')
+                ->icon('heroicon-m-exclamation-triangle')
+                ->body('La venta se completó, pero falló al preparar el link del boleto. Podes descargar el PDF desde la vista del boleto.')
+                ->warning()
+                ->send();
+        }
     }
 
     /**
@@ -1101,7 +1292,7 @@ class CreateTicket extends CreateRecord
                 <p>Los archivos se descargarán automáticamente. Si no se descargan, haz clic en los enlaces:</p>
             </div>
             <div class='files'>
-                " . implode('', array_map(function ($download) {
+                ".implode('', array_map(function ($download) {
             return "<div class='file'>
                         <strong>{$download['filename']}</strong>
                         <br><a href='data:application/pdf;base64,{$download['content']}' 
@@ -1110,19 +1301,20 @@ class CreateTicket extends CreateRecord
                             📥 Descargar
                         </a>
                     </div>";
-        }, $downloads)) . "
+        }, $downloads)).'
             </div>
             <script>
                 // Descargar automáticamente cada archivo
                 setTimeout(function() {
-                    " . implode('', array_map(function ($download) {
+                    '.implode('', array_map(function ($download) {
             $filename = str_replace([' ', '-'], ['_', '_'], $download['filename']);
+
             return "
                     const link{$filename} = document.createElement('a');
                     link{$filename}.href = 'data:application/pdf;base64,{$download['content']}';
                     link{$filename}.download = '{$download['filename']}';
                     link{$filename}.click();";
-        }, $downloads)) . "
+        }, $downloads)).'
                 }, 1000);
                 
                 // Cerrar la ventana después de 5 segundos
@@ -1131,7 +1323,7 @@ class CreateTicket extends CreateRecord
                 }, 5000);
             </script>
         </body>
-        </html>";
+        </html>';
     }
 
     public function searchTrip(): void
@@ -1171,7 +1363,7 @@ class CreateTicket extends CreateRecord
                 $destinationId
             );
 
-            if (!$result['trip']) {
+            if (! $result['trip']) {
                 Notification::make()
                     ->title('Error al buscar viaje')
                     ->icon('heroicon-m-x-circle')
@@ -1183,6 +1375,7 @@ class CreateTicket extends CreateRecord
                 $existingData = $this->data ?? [];
                 $existingData['trip_id'] = null;
                 $this->form->fill($existingData);
+
                 return;
             }
 
@@ -1205,6 +1398,7 @@ class CreateTicket extends CreateRecord
                     'trip_search_status' => 'insufficient_seats',
                     'trip_available_seats' => $availableSeats,
                 ]));
+
                 return;
             }
 
@@ -1227,7 +1421,7 @@ class CreateTicket extends CreateRecord
             Notification::make()
                 ->title('Error')
                 ->icon('heroicon-m-x-circle')
-                ->body('Error al buscar viaje: ' . $e->getMessage())
+                ->body('Error al buscar viaje: '.$e->getMessage())
                 ->danger()
                 ->send();
         }
@@ -1245,14 +1439,14 @@ class CreateTicket extends CreateRecord
             Notification::make()
                 ->icon('heroicon-m-exclamation-triangle')
                 ->title('Conflicto de reservación')
-                ->body($message . '. Por favor, seleccione otros asientos.')
+                ->body($message.'. Por favor, seleccione otros asientos.')
                 ->warning()
                 /* ->persistent() */
                 ->send();
 
             // Limpiar asientos no válidos de la selección actual
             $currentSeatIds = $this->data['seat_ids'] ?? [];
-            if (!is_array($currentSeatIds)) {
+            if (! is_array($currentSeatIds)) {
                 if (is_string($currentSeatIds)) {
                     $currentSeatIds = json_decode($currentSeatIds, true) ?? [];
                 } else {
@@ -1291,7 +1485,7 @@ class CreateTicket extends CreateRecord
         } catch (\Exception $e) {
             Log::error('Error en handleSeatReservationConflict', [
                 'error' => $e->getMessage(),
-                'data' => $data
+                'data' => $data,
             ]);
 
             Notification::make()
@@ -1317,7 +1511,7 @@ class CreateTicket extends CreateRecord
 
                     // Obtener asientos actualmente seleccionados
                     $currentSeatIds = $this->data['seat_ids'] ?? [];
-                    if (!is_array($currentSeatIds)) {
+                    if (! is_array($currentSeatIds)) {
                         if (is_string($currentSeatIds)) {
                             $currentSeatIds = json_decode($currentSeatIds, true) ?? [];
                         } else {
@@ -1333,7 +1527,7 @@ class CreateTicket extends CreateRecord
 
                     // Si se eliminaron algunos asientos de la selección, notificar al usuario
                     $removedSeats = array_diff($currentSeatIds, $validSelectedSeats);
-                    if (!empty($removedSeats)) {
+                    if (! empty($removedSeats)) {
                         $removedSeatNumbers = [];
                         foreach ($removedSeats as $seatId) {
                             $seat = \App\Models\Seat::find($seatId);
@@ -1345,7 +1539,7 @@ class CreateTicket extends CreateRecord
                         Notification::make()
                             ->title('Asientos de ida no disponibles')
                             ->icon('heroicon-m-exclamation-triangle')
-                            ->body('Los siguientes asientos fueron vendidos: ' . implode(', ', $removedSeatNumbers) . '. Su selección ha sido actualizada.')
+                            ->body('Los siguientes asientos fueron vendidos: '.implode(', ', $removedSeatNumbers).'. Su selección ha sido actualizada.')
                             ->warning()
                             ->persistent()
                             ->send();
@@ -1391,7 +1585,7 @@ class CreateTicket extends CreateRecord
 
                     // Obtener asientos actualmente seleccionados para vuelta
                     $currentSeatIds = $this->data['return_seat_ids'] ?? [];
-                    if (!is_array($currentSeatIds)) {
+                    if (! is_array($currentSeatIds)) {
                         if (is_string($currentSeatIds)) {
                             $currentSeatIds = json_decode($currentSeatIds, true) ?? [];
                         } else {
@@ -1407,7 +1601,7 @@ class CreateTicket extends CreateRecord
 
                     // Si se eliminaron algunos asientos de la selección de vuelta, notificar
                     $removedSeats = array_diff($currentSeatIds, $validSelectedSeats);
-                    if (!empty($removedSeats)) {
+                    if (! empty($removedSeats)) {
                         $removedSeatNumbers = [];
                         foreach ($removedSeats as $seatId) {
                             $seat = \App\Models\Seat::find($seatId);
@@ -1419,7 +1613,7 @@ class CreateTicket extends CreateRecord
                         Notification::make()
                             ->title('Asientos de vuelta no disponibles')
                             ->icon('heroicon-m-exclamation-triangle')
-                            ->body('Los siguientes asientos de vuelta fueron vendidos: ' . implode(', ', $removedSeatNumbers) . '. Su selección ha sido actualizada.')
+                            ->body('Los siguientes asientos de vuelta fueron vendidos: '.implode(', ', $removedSeatNumbers).'. Su selección ha sido actualizada.')
                             ->warning()
                             ->persistent()
                             ->send();
@@ -1460,7 +1654,7 @@ class CreateTicket extends CreateRecord
             Notification::make()
                 ->title('Error al actualizar disponibilidad')
                 ->icon('heroicon-m-x-circle')
-                ->body('No se pudo actualizar la disponibilidad de asientos: ' . $e->getMessage())
+                ->body('No se pudo actualizar la disponibilidad de asientos: '.$e->getMessage())
                 ->danger()
                 ->send();
         }
@@ -1503,7 +1697,7 @@ class CreateTicket extends CreateRecord
                 $originId // Destino de vuelta = origen de ida
             );
 
-            if (!$result['trip']) {
+            if (! $result['trip']) {
                 Notification::make()
                     ->title('Error al buscar viaje de vuelta')
                     ->icon('heroicon-m-x-circle')
@@ -1515,6 +1709,7 @@ class CreateTicket extends CreateRecord
                 $existingData = $this->data ?? [];
                 $existingData['return_trip_id'] = null;
                 $this->form->fill($existingData);
+
                 return;
             }
 
@@ -1537,6 +1732,7 @@ class CreateTicket extends CreateRecord
                     'return_trip_search_status' => 'insufficient_seats',
                     'return_trip_available_seats' => $availableSeats,
                 ]));
+
                 return;
             }
 
@@ -1558,10 +1754,50 @@ class CreateTicket extends CreateRecord
             Notification::make()
                 ->title('Error')
                 ->icon('heroicon-m-x-circle')
-                ->body('Error al buscar viaje de vuelta: ' . $e->getMessage())
+                ->body('Error al buscar viaje de vuelta: '.$e->getMessage())
                 ->danger()
                 ->send();
         }
+    }
+
+    /**
+     * Viajes de esta venta con reservas posibles: los actuales de cada tramo y
+     * aquellos en los que se eligieron los asientos (por si el viaje cambió).
+     *
+     * @return array<int>
+     */
+    public function saleTripIds(?array $data = null): array
+    {
+        $data = $data ?? $this->data ?? [];
+
+        return collect([
+            $data['trip_id'] ?? null,
+            $data['return_trip_id'] ?? null,
+            $data['reserved_trip_id'] ?? null,
+            $data['reserved_return_trip_id'] ?? null,
+        ])
+            ->filter(fn ($tripId) => filled($tripId))
+            ->map(fn ($tripId) => (int) $tripId)
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Libera las reservas de la sesión solo en los viajes de esta venta: las
+     * de otras ventas en curso de la misma sesión (otras pestañas) se conservan.
+     *
+     * @param  array<string, mixed>|null  $data  Datos de la emisión; sin ellos, el estado del formulario.
+     */
+    public function releaseSaleReservations(?array $data = null): void
+    {
+        $tripIds = $this->saleTripIds($data);
+
+        if ($tripIds === []) {
+            return;
+        }
+
+        SeatReservation::releaseBySession(session()->getId(), $tripIds);
     }
 
     /**

@@ -204,4 +204,39 @@ class TicketDeleteReasonTest extends TestCase
         $response->assertSee('Motivo:');
         $response->assertDontSee('Venta duplicada');
     }
+
+    // ====================== Restauración ======================
+
+    public function test_restaurar_un_boleto_con_el_asiento_libre_lo_restaura(): void
+    {
+        $this->actingAs($this->admin);
+
+        $ticket = $this->createOneWayTicket();
+        $ticket->delete();
+
+        Livewire::test(ViewTicket::class, ['record' => $ticket->id])
+            ->callAction('restore');
+
+        $this->assertFalse($ticket->fresh()->trashed());
+    }
+
+    public function test_restaurar_un_boleto_cuyo_asiento_se_revendio_se_rechaza_con_mensaje(): void
+    {
+        $this->actingAs($this->admin);
+
+        $ticket = $this->createOneWayTicket();
+        $ticket->delete();
+
+        // El mismo asiento del mismo viaje se vendió a otro pasajero.
+        $resold = $ticket->replicate(['share_token', 'active_seat_guard', 'deleted_at', 'deletion_reason']);
+        $resold->save();
+        $this->assertSame([$ticket->trip_id, $ticket->seat_id], [$resold->trip_id, $resold->seat_id]);
+
+        Livewire::test(ViewTicket::class, ['record' => $ticket->id])
+            ->callAction('restore')
+            ->assertNotified('No se pudo restaurar el boleto');
+
+        $this->assertTrue($ticket->fresh()->trashed(), 'El boleto debe seguir dado de baja.');
+        $this->assertFalse($resold->fresh()->trashed());
+    }
 }

@@ -24,3 +24,7 @@
 Homestead.json
 Homestead.yaml
 Thumbs.db
+.agents
+/.opencode
+/.freebuff
+/.claude/settings.local.json

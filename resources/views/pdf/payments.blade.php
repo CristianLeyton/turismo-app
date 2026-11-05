@@ -1,3 +1,8 @@
+{{-- Colores de marca: paleta del color de la empresa en hex (dompdf no
+     entiende var() ni oklch). Se calcula acá si quien renderiza no la pasa. --}}
+@php
+    $brand = $brand ?? \App\Support\BrandPalette::currentAsHex();
+@endphp
 <!DOCTYPE html>
 <html lang="es">
 
@@ -27,7 +32,7 @@
         .title {
             font-size: 14px;
             font-weight: bold;
-            color: #c026d3;
+            color: {{ $brand[600] }};
         }
 
         .subtitle {

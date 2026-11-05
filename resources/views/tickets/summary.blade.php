@@ -57,9 +57,9 @@
         <div class="flex flex-col md:flex-row md:justify-between gap-4">
             <div>
                 <h2 class="text-2xl font-bold text-gray-900 dark:text-gray-100">
-                    <span class="text-fuchsia-600">{{ $originLocation?->name ?? 'Origen' }} </span>
+                    <span class="text-primary-600 dark:text-primary-400">{{ $originLocation?->name ?? 'Origen' }} </span>
                     →
-                    <span class="text-fuchsia-600">{{ $destinationLocation?->name ?? 'Destino' }}</span>
+                    <span class="text-primary-600 dark:text-primary-400">{{ $destinationLocation?->name ?? 'Destino' }}</span>
                 </h2>
 
 
@@ -83,13 +83,13 @@
                 @if ($busName)
                     <p class="text-sm text-gray-600 dark:text-gray-400">
                         <strong class="font-semibold">Colectivo:</strong>
-                        <span class="text-fuchsia-600 dark:text-fuchsia-400">{{ $busName }}</span>
+                        <span class="text-primary-600 dark:text-primary-400">{{ $busName }}</span>
                     </p>
                 @endif
 
                 <p class="text-sm text-gray-600 dark:text-gray-400">
                     <span class="font-semibold"> Ruta: </span>
-                    <span class="text-fuchsia-600 dark:text-fuchsia-400">
+                    <span class="text-primary-600 dark:text-primary-400">
                         {{ $route?->name ?? 'No especificada' }}
                     </span>
                 </p>
@@ -99,7 +99,7 @@
                 <div class="text-sm text-gray-500 dark:text-gray-400 uppercase">
                     Pasajeros
                 </div>
-                <div class="text-3xl font-bold text-fuchsia-600 dark:text-fuchsia-400">
+                <div class="text-3xl font-bold text-primary-600 dark:text-primary-400">
                     {{ $get('passengers_count') }}
                 </div>
             </div>
@@ -121,10 +121,10 @@
 
                 @if ($returnTrip?->bus)
                     <br> <span class="font-semibold">Colectivo:</span>
-                    <span class="text-fuchsia-600 dark:text-fuchsia-400">{{ $returnTrip->bus->name }}</span>
+                    <span class="text-primary-600 dark:text-primary-400">{{ $returnTrip->bus->name }}</span>
                 @endif
                 <br> <span class="font-semibold">Ruta:</span>
-                <span class="text-fuchsia-600 dark:text-fuchsia-400">
+                <span class="text-primary-600 dark:text-primary-400">
                     {{ $returnRoute?->name ?? 'No especificada' }}</span>
             </div>
         @endif
@@ -203,7 +203,7 @@
                         class="self-start md:self-center
                                  px-3 py-1 rounded-full text-xs font-medium
                                  bg-gray-100 dark:bg-gray-800
-                                 text-fuchsia-600 dark:text-fuchsia-400">
+                                 text-primary-600 dark:text-primary-400">
                         Adulto
                     </span>
                 </div>
@@ -211,16 +211,16 @@
                 {{-- Menor acompañante --}}
                 @if (!empty($passenger['travels_with_child']) && !empty($passenger['child_data']))
                     <div
-                        class="border-l-4 border-fuchsia-500 pl-4 py-2 my-2
+                        class="border-l-4 border-primary-500 pl-4 py-2 my-2
                                 bg-gray-50 dark:bg-gray-800 rounded">
                         <div
-                            class="text-sm font-semibold text-fuchsia-600 dark:text-fuchsia-400 flex flex-row justify-between gap-3 mb-1 flex-nowrap">
+                            class="text-sm font-semibold text-primary-600 dark:text-primary-400 flex flex-row justify-between gap-3 mb-1 flex-nowrap">
                             <span> Acompañante </span>
                             <span
                                 class="self-start md:self-center
                                  px-3 py-1 rounded-full text-xs font-medium
                                  bg-gray-100 dark:bg-gray-900
-                                 text-fuchsia-600 dark:text-fuchsia-400 mr-3">
+                                 text-primary-600 dark:text-primary-400 mr-3">
                                 Menor
                             </span>
                         </div>
@@ -306,7 +306,7 @@
                             <div class="text-sm text-gray-500 dark:text-gray-400 mb-1">
                                 Precio
                             </div>
-                            <div class="text-lg font-semibold text-fuchsia-600 dark:text-fuchsia-400">
+                            <div class="text-lg font-semibold text-primary-600 dark:text-primary-400">
                                 ${{ isset($passenger['price']) && is_numeric($passenger['price'])
                                     ? number_format($passenger['price'], 2, ',', '.')
                                     : 'No especificado' }}

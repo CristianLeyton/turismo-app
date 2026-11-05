@@ -66,6 +66,7 @@ class Schedule extends Model
         if ($this->name) {
             return "{$this->name} ({$this->formatted_departure_time} - {$this->formatted_arrival_time})";
         }
+
         return "{$this->formatted_departure_time} - {$this->formatted_arrival_time}";
     }
 }

@@ -1,3 +1,8 @@
+{{-- Colores de marca: paleta del color de la empresa en hex (dompdf no
+     entiende var() ni oklch). Se calcula acá si quien renderiza no la pasa. --}}
+@php
+    $brand = $brand ?? \App\Support\BrandPalette::currentAsHex();
+@endphp
 <!DOCTYPE html>
 <html lang="es">
 
@@ -37,8 +42,8 @@
             font-weight: bold;
         }
 
-        .text-fuchsia {
-            color: #c026d3;
+        .text-brand {
+            color: {{ $brand[600] }};
         }
 
         .trip-sub {
@@ -64,7 +69,7 @@
         .stats-value {
             font-size: 26px;
             font-weight: bold;
-            color: #c026d3;
+            color: {{ $brand[600] }};
             line-height: 1;
         }
 
@@ -140,8 +145,8 @@
 
 
         .badge-seat {
-            background: #f5d0fe;
-            color: #86198f;
+            background: {{ $brand[200] }};
+            color: {{ $brand[800] }};
         }
 
         .badge-location {
@@ -195,11 +200,11 @@
                 <td style="vertical-align: top; width: 75%;">
 
                     <div class="trip-title">
-                        <span class="text-fuchsia">
+                        <span class="text-brand">
                             {{ $firstStop?->location->name ?? 'Origen' }}
                         </span>
                         >
-                        <span class="text-fuchsia">
+                        <span class="text-brand">
                             {{ $lastStop?->location->name ?? 'Destino' }}
                         </span>
                     </div>
@@ -212,7 +217,7 @@
 
                     {{--                 <div class="trip-sub">
                     <strong>Ruta:</strong>
-                    <span class="text-fuchsia">
+                    <span class="text-brand">
                         {{ $trip->route?->name ?? 'No especificada' }}
                     </span>
                 </div> --}}

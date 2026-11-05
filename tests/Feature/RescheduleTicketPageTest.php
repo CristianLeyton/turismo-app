@@ -12,11 +12,11 @@ use App\Models\RouteStop;
 use App\Models\Sale;
 use App\Models\Schedule;
 use App\Models\Seat;
+use App\Models\Setting;
 use App\Models\Ticket;
 use App\Models\Trip;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Auth;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -106,6 +106,44 @@ class RescheduleTicketPageTest extends TestCase
             'destination_location_id' => $salta->id,
             'price' => 100,
         ]);
+    }
+
+    public function test_reprogramar_a_un_viaje_donde_el_dni_ya_viaja_muestra_la_alerta_de_duplicado(): void
+    {
+        $this->actingAs($this->admin);
+
+        $ticket = $this->createOneWayTicket();
+        $targetTrip = Trip::create([
+            'route_id' => $ticket->trip->route_id,
+            'schedule_id' => $ticket->trip->schedule_id,
+            'bus_id' => $ticket->trip->bus_id,
+            'trip_date' => '2026-10-05',
+        ]);
+        $otherPassenger = Passenger::create(['first_name' => 'Juana', 'last_name' => 'Rendida', 'dni' => '45678912', 'passenger_type' => 'adult']);
+        $other = Ticket::create([
+            'sale_id' => Sale::create(['user_id' => $this->admin->id, 'sale_date' => now(), 'total_amount' => 100])->id,
+            'trip_id' => $targetTrip->id,
+            'seat_id' => Seat::where('bus_id', $targetTrip->bus_id)->where('seat_number', '4')->first()->id,
+            'passenger_id' => $otherPassenger->id,
+            'is_round_trip' => false,
+            'origin_location_id' => $ticket->origin_location_id,
+            'destination_location_id' => $ticket->destination_location_id,
+            'price' => 100,
+        ]);
+
+        $originalTripId = (int) $ticket->trip_id;
+        $conflicts = \App\Support\TripPassengerConflicts::find(['45678912'], [$targetTrip->id]);
+
+        Livewire::test(RescheduleTicket::class, ['record' => $ticket->id])
+            ->set('data.date', '2026-10-05')
+            ->set('data.schedule_id', $ticket->trip->schedule_id)
+            ->set('data.seat_ids', [Seat::where('bus_id', $targetTrip->bus_id)->where('seat_number', '2')->first()->id])
+            ->call('confirmReschedule')
+            ->assertNotified(\App\Support\DuplicateTicketNotification::make($conflicts, 'Volver'))
+            ->assertNoRedirect();
+
+        $this->assertSame($originalTripId, (int) $ticket->refresh()->trip_id, 'El boleto no debe moverse.');
+        $this->assertSame([$other->id], $conflicts->map(fn (array $conflict): int => $conflict['ticket']->id)->all());
     }
 
     public function test_la_pagina_renderiza_para_admin(): void
@@ -309,6 +347,39 @@ class RescheduleTicketPageTest extends TestCase
         $this->assertSame('2026-10-15', $f['outbound']->trip->trip_date->format('Y-m-d'));
         $this->assertSame('2026-10-20', $f['returnTicket']->trip->trip_date->format('Y-m-d'));
         $this->assertSame((int) $f['returnTicket']->trip_id, (int) $f['outbound']->return_trip_id);
+    }
+
+    public function test_sin_permiso_el_calendario_deshabilita_el_dia_sin_servicio_y_no_reprograma(): void
+    {
+        $this->actingAs($this->admin);
+
+        $ticket = $this->createOneWayTicket();
+
+        Setting::set(Setting::SERVICE_EXCEPTIONS, json_encode([
+            ['date' => '2026-10-07', 'has_service' => false, 'reason' => 'Paro'],
+        ]));
+
+        $component = Livewire::test(RescheduleTicket::class, ['record' => $ticket->id]);
+
+        // El calendario recibe la fecha sin servicio entre las deshabilitadas.
+        $component->assertSeeHtml('2026-10-07');
+
+        $originalTripId = (int) $ticket->trip_id;
+
+        $component
+            ->set('data.date', '2026-10-07')
+            ->set('data.schedule_id', $ticket->trip->schedule_id)
+            ->set('data.seat_ids', [$ticket->seat_id])
+            ->call('confirmReschedule')
+            ->assertNotified(
+                \Filament\Notifications\Notification::make()
+                    ->title('No se pudo reprogramar')
+                    ->body('El 07/10/2026 es un día sin servicio (Paro). Elegí otra fecha.')
+                    ->danger()
+                    ->persistent(),
+            );
+
+        $this->assertSame($originalTripId, (int) $ticket->refresh()->trip_id, 'El boleto no debe moverse.');
     }
 
     public function test_el_tramo_de_vuelta_se_rotula_y_se_acota_contra_la_ida(): void

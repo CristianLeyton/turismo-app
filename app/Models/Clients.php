@@ -2,20 +2,51 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Model;
+use Filament\Models\Contracts\FilamentUser;
+use Filament\Models\Contracts\HasName;
+use Filament\Panel;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasManyThrough;
+use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Foundation\Auth\User as Authenticatable;
 
-class Clients extends Model
+/**
+ * Cliente del padrón. También es el usuario autenticable del panel de
+ * clientes (guard `client`): entra con su DNI y su contraseña.
+ */
+class Clients extends Authenticatable implements FilamentUser, HasName
 {
     use HasFactory, SoftDeletes;
 
     protected $fillable = ['dni', 'nombre', 'apellido', 'telefono', 'can_buy', 'comments', 'password', 'must_change_password'];
 
     /** Nunca se serializa en JSON/arrays de la UI. */
-    protected $hidden = ['password'];
+    protected $hidden = ['password', 'remember_token'];
+
+    /**
+     * Sin contraseña indicada (alta rápida desde la venta, por ejemplo), la
+     * inicial es el DNI y el primer ingreso obliga a elegir una propia.
+     */
+    protected static function booted(): void
+    {
+        static::creating(function (Clients $client): void {
+            if (blank($client->getAttributes()['password'] ?? null)) {
+                $client->password = $client->dni;
+                $client->must_change_password = true;
+            }
+        });
+    }
+
+    public function canAccessPanel(Panel $panel): bool
+    {
+        return $panel->getId() === 'clientes';
+    }
+
+    public function getFilamentName(): string
+    {
+        return trim("{$this->nombre} {$this->apellido}");
+    }
 
     protected $casts = [
         // Se asigna texto plano y se guarda ya hasheado (bcrypt).

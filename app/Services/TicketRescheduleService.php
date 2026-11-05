@@ -2,13 +2,18 @@
 
 namespace App\Services;
 
+use App\Exceptions\DuplicatePassengerOnTripException;
+use App\Models\Bus;
+use App\Models\Schedule;
 use App\Models\Seat;
 use App\Models\SeatReservation;
-use App\Models\Schedule;
 use App\Models\Setting;
 use App\Models\Ticket;
 use App\Models\TicketDateChange;
 use App\Models\Trip;
+use App\Support\SeatConflict;
+use App\Support\ServiceDays;
+use App\Support\TripPassengerConflicts;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -89,11 +94,13 @@ class TicketRescheduleService
      *
      * @param  Ticket  $ticket  Boleto a mover (ida, o el tramo de vuelta del pasajero)
      * @param  array{scope: string, date: string, schedule_id: int, seat_id: int, return_date?: ?string, return_schedule_id?: ?int, return_seat_id?: ?int}  $data
+     * @param  bool  $allowServiceDayBypass  false en el panel de clientes: el permiso
+     *                                       `tickets.vender_dia_sin_servicio` nunca aplica.
      * @return array{ticket: Ticket, changes: array<int, array<string, mixed>>, moved_return: bool}
      *
      * @throws ValidationException
      */
-    public function rescheduleForActor(Ticket $ticket, array $data, ?int $actorId): array
+    public function rescheduleForActor(Ticket $ticket, array $data, ?int $actorId, bool $allowServiceDayBypass = true): array
     {
         $this->assertTicketIsReschedulable($ticket);
 
@@ -117,6 +124,14 @@ class TicketRescheduleService
         $isReturnLegTicket = $ticket->isReturnLeg();
         if ($isReturnLegTicket) {
             $scope = 'outbound'; // mueve únicamente este registro
+        }
+
+        // Días de servicio: la fecha confirmada (aunque sea la misma que ya
+        // tenía el boleto) tiene que tener servicio, salvo con el permiso.
+        $this->assertServiceDay($data['date'] ?? null, 'date', $allowServiceDayBypass);
+
+        if ($scope === 'both') {
+            $this->assertServiceDay($data['return_date'] ?? null, 'return_date', $allowServiceDayBypass);
         }
 
         // ---- Resolución de viajes destino ----
@@ -235,7 +250,7 @@ class TicketRescheduleService
 
         if ($outboundArrival && $returnDeparture && $returnDeparture->lte($outboundArrival)) {
             throw ValidationException::withMessages([
-                'return_schedule_id' => 'El viaje de vuelta (' . $returnDeparture->format('d/m/Y H:i') . ') debe ser posterior al viaje de ida (' . $outboundArrival->format('d/m/Y H:i') . '). Por favor seleccione una fecha congruente.',
+                'return_schedule_id' => 'El viaje de vuelta ('.$returnDeparture->format('d/m/Y H:i').') debe ser posterior al viaje de ida ('.$outboundArrival->format('d/m/Y H:i').'). Por favor seleccione una fecha congruente.',
             ]);
         }
 
@@ -248,6 +263,16 @@ class TicketRescheduleService
                 if (! $mainTicket || $mainTicket->trashed()) {
                     throw ValidationException::withMessages(['ticket' => 'El boleto fue eliminado mientras se procesaba el cambio.']);
                 }
+
+                // Una persona por viaje: antes de mover ningún tramo.
+                $returnTicketToMove = $hasReturnMove && ! $isReturnLegTicket
+                    ? $this->findReturnLegTicket($mainTicket)
+                    : null;
+
+                $this->assertPassengerNotOnTargetTrips($mainTicket, [
+                    [$isReturnLegTicket ? null : $mainTicket, $isReturnLegTicket ? null : $newOutboundTrip],
+                    [$isReturnLegTicket ? $mainTicket : $returnTicketToMove, $hasReturnMove ? $newReturnTrip : null],
+                ]);
 
                 $movedReturn = false;
 
@@ -396,6 +421,50 @@ class TicketRescheduleService
     }
 
     /**
+     * Una persona por viaje: el pasajero del boleto (o su menor) no puede
+     * tener otro boleto activo en un viaje destino. Solo se controlan los
+     * tramos que cambian de viaje; los boletos que se mueven no cuentan.
+     * Bloquea los viajes destino (por id) para que el control sea definitivo.
+     *
+     * @param  array<int, array{0: ?Ticket, 1: ?Trip}>  $moves  Pares [boleto que se mueve, viaje destino].
+     *
+     * @throws DuplicatePassengerOnTripException
+     */
+    private function assertPassengerNotOnTargetTrips(Ticket $ticket, array $moves): void
+    {
+        $movingTicketIds = [];
+        $targetTripIds = [];
+
+        foreach ($moves as [$movingTicket, $targetTrip]) {
+            if (! $movingTicket || ! $targetTrip) {
+                continue;
+            }
+
+            $movingTicketIds[] = (int) $movingTicket->id;
+
+            if ((int) ($movingTicket->trip_id ?? 0) !== (int) $targetTrip->id) {
+                $targetTripIds[] = (int) $targetTrip->id;
+            }
+        }
+
+        if ($targetTripIds === []) {
+            return;
+        }
+
+        sort($targetTripIds);
+        Trip::query()->whereIn('id', $targetTripIds)->orderBy('id')->lockForUpdate()->get();
+
+        $passenger = $ticket->passenger()->with('children')->first();
+        $dnis = collect([$passenger?->dni])->merge($passenger?->children->pluck('dni') ?? [])->all();
+
+        $conflicts = TripPassengerConflicts::find($dnis, $targetTripIds, $movingTicketIds);
+
+        if ($conflicts->isNotEmpty()) {
+            throw new DuplicatePassengerOnTripException($conflicts, 'schedule_id');
+        }
+    }
+
+    /**
      * Mover un ticket a otro viaje dentro de la transacción activa.
      */
     private function moveLeg(Ticket $ticket, Trip $toTrip, ?Seat $toSeat, ?int $excludeTicketId): bool
@@ -481,7 +550,7 @@ class TicketRescheduleService
             $seat = Seat::find($seatId);
 
             throw ValidationException::withMessages([
-                'seat_id' => 'El asiento ' . ($seat?->seat_number ?? $seatId) . ' no está disponible en el viaje destino. Elegí otro.',
+                'seat_id' => 'El asiento '.($seat?->seat_number ?? $seatId).' no está disponible en el viaje destino. Elegí otro.',
             ]);
         }
     }
@@ -516,10 +585,11 @@ class TicketRescheduleService
         }
 
         // Los boletos vendidos con colectivo obligatorio llevan bus_id desde
-        // la venta: el horario elegido debe ser de una ruta del mismo
-        // colectivo. Los boletos viejos (sólo trip_id) no se restringen:
-        // la reprogramación histórica permite cambiar de colectivo.
-        if (filled($ticket?->bus_id) && (int) $route->bus_id !== (int) $ticket->bus_id) {
+        // la venta: el horario elegido debe ser de una ruta de un colectivo de
+        // la misma línea (o del mismo colectivo, si no tiene línea). Los boletos
+        // viejos (sólo trip_id) no se restringen: la reprogramación histórica
+        // permite cambiar de colectivo.
+        if (filled($ticket?->bus_id) && ! in_array((int) $route->bus_id, Bus::idsInSameLineAs($ticket->bus_id), true)) {
             throw ValidationException::withMessages([
                 $field => 'El horario elegido no corresponde al colectivo del boleto.',
             ]);
@@ -612,17 +682,30 @@ class TicketRescheduleService
         // operación les asigna su primera fecha/horario y asiento.
     }
 
+    /**
+     * Rechaza una fecha sin servicio (App\Support\ServiceDays).
+     *
+     * @throws ValidationException
+     */
+    private function assertServiceDay(mixed $date, string $field, bool $allowBypass): void
+    {
+        $reason = ServiceDays::blockReason($date, $allowBypass);
+
+        if ($reason !== null) {
+            throw ValidationException::withMessages([$field => $reason]);
+        }
+    }
+
     private function validatePermissions(): void
     {
-        //En realidad quiero validar si tiene permiso de reprogramar boletos    
+        // En realidad quiero validar si tiene permiso de reprogramar boletos
         if (! Auth::check() || ! Auth::user()->can('tickets.reschedule')) {
             throw ValidationException::withMessages(['user' => 'No tienes permisos para reprogramar boletos.']);
         }
-    } 
+    }
 
     private function isUniqueSeatViolation(QueryException $e): bool
     {
-        return $e->getCode() == 23000
-            && str_contains($e->getMessage(), 'tickets_trip_seat_unique');
+        return SeatConflict::isActiveSeatViolation($e);
     }
 }

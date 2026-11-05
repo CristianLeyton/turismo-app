@@ -1,5 +1,5 @@
 <div>
     <h1 class="logo-personalizado">
-        Expresso Sofia
+        {{ config('app.name') }}
     </h1>
 </div>

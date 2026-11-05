@@ -2,8 +2,10 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Model;
+use App\Support\SeatConflict;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\QueryException;
 
 class SeatReservation extends Model
 {
@@ -39,12 +41,20 @@ class SeatReservation extends Model
             ];
         }
 
+        // Una reserva vencida no ocupa el asiento: se elimina para que el índice
+        // único (viaje, asiento) no bloquee la nueva, haya corrido o no la limpieza.
+        static::query()
+            ->where('trip_id', $tripId)
+            ->whereIn('seat_id', $seatIds)
+            ->where('expires_at', '<=', now())
+            ->delete();
+
         try {
             static::insert($reservations);
+
             return ['success' => true, 'expires_at' => $expiresAt];
-        } catch (\Illuminate\Database\QueryException $e) {
-            // Error de constraint unique - asiento ya reservado
-            if ($e->getCode() == 23000 && str_contains($e->getMessage(), 'unique_trip_seat_reservation')) {
+        } catch (QueryException $e) {
+            if (SeatConflict::isReservationViolation($e)) {
                 return ['success' => false, 'message' => 'Algunos asientos ya están reservados por otro usuario'];
             }
             throw $e;
@@ -52,11 +62,16 @@ class SeatReservation extends Model
     }
 
     /**
-     * Liberar todas las reservas de una sesión
+     * Liberar las reservas de una sesión: todas, o solo las de los viajes indicados.
+     *
+     * @param  array<int>|null  $tripIds
      */
-    public static function releaseBySession(string $sessionId): void
+    public static function releaseBySession(string $sessionId, ?array $tripIds = null): void
     {
-        static::where('user_session_id', $sessionId)->delete();
+        static::query()
+            ->where('user_session_id', $sessionId)
+            ->when($tripIds !== null, fn ($query) => $query->whereIn('trip_id', $tripIds))
+            ->delete();
     }
 
     /**
@@ -68,19 +83,24 @@ class SeatReservation extends Model
         $deletedCount = static::where('expires_at', '<', $nowWithOffset)->delete();
 
         if ($deletedCount > 0) {
-            \Log::info("CleanupExpired: Eliminadas {$deletedCount} reservas expiradas. Hora UTC: " . now()->format('Y-m-d H:i:s'));
+            \Log::info("CleanupExpired: Eliminadas {$deletedCount} reservas expiradas. Hora UTC: ".now()->format('Y-m-d H:i:s'));
         }
 
         return $deletedCount;
     }
 
     /**
-     * Extender tiempo de reservas de una sesión
+     * Extender las reservas vigentes de una sesión: todas, o solo las de los
+     * viajes indicados. Las ya vencidas no se renuevan.
+     *
+     * @param  array<int>|null  $tripIds
      */
-    public static function extendReservationTime(string $sessionId, int $minutes = 5): int
+    public static function extendReservationTime(string $sessionId, int $minutes = 5, ?array $tripIds = null): int
     {
-        return static::where('user_session_id', $sessionId)
-            ->where('expires_at', '>', now()) // Solo extender las que aún no expiraron
+        return static::query()
+            ->where('user_session_id', $sessionId)
+            ->where('expires_at', '>', now())
+            ->when($tripIds !== null, fn ($query) => $query->whereIn('trip_id', $tripIds))
             ->update(['expires_at' => now()->addMinutes($minutes)]);
     }
 

@@ -1,0 +1,288 @@
+# Spec Delta
+
+## Purpose
+
+Emisión de boletos desde el panel de administración: cómo un vendedor busca un viaje, elige asientos, carga pasajeros y genera una venta con sus boletos, incluyendo ida y vuelta, venta sin fecha y venta fuera de término.
+
+## ADDED Requirements
+
+### Requirement: Wizard de venta en pasos secuenciales
+El sistema SHALL emitir boletos mediante un asistente con los pasos, en orden: "Buscar viaje", "Asientos (Ida)", "Asientos (Vuelta)", "Pasajeros" y "Resumen". Los pasos MUST completarse en orden, sin saltear ninguno. El paso de asientos de ida se omite si la ida se vende sin fecha, y el de vuelta se muestra solo en ventas de ida y vuelta con fecha de vuelta.
+
+#### Scenario: Venta solo ida con fecha
+- **WHEN** el vendedor arma una venta de solo ida con fecha
+- **THEN** el asistente muestra "Buscar viaje", "Asientos (Ida)", "Pasajeros" y "Resumen"
+
+#### Scenario: Ida y vuelta con ambas fechas
+- **WHEN** el vendedor activa "Diferido" y elige fecha y horario de vuelta
+- **THEN** el asistente incluye además el paso "Asientos (Vuelta)"
+
+#### Scenario: Intento de saltear un paso
+- **WHEN** el vendedor intenta avanzar a un paso posterior sin completar el actual
+- **THEN** el asistente no lo permite
+
+### Requirement: Cantidad de pasajeros por venta
+El sistema SHALL permitir entre 1 y 4 pasajeros por venta (por defecto 1). Al cambiar la cantidad, la lista de pasajeros MUST ajustarse a exactamente esa cantidad, y se descartan el viaje buscado y la configuración de ida y vuelta.
+
+#### Scenario: Cantidad fuera de rango
+- **WHEN** se envía una cantidad distinta de 1, 2, 3 o 4
+- **THEN** el sistema rechaza el valor con el mensaje "La cantidad de pasajeros debe ser entre 1 y 4"
+
+#### Scenario: Reducir pasajeros
+- **WHEN** el vendedor tenía 3 pasajeros cargados y cambia la cantidad a 2
+- **THEN** se conservan los 2 primeros pasajeros y se descarta el tercero
+
+### Requirement: Colectivo obligatorio
+Toda venta MUST tener un colectivo seleccionado, también cuando algún tramo se vende sin fecha. Por defecto se preselecciona el primer colectivo por nombre. Cambiar el colectivo reinicia origen, destino, horario, viaje e ida y vuelta.
+
+#### Scenario: Emisión sin colectivo
+- **WHEN** llega una emisión sin colectivo, aunque los tramos vayan sin fecha
+- **THEN** la venta se rechaza con "Seleccione el colectivo antes de completar la venta." y no se crea nada
+
+### Requirement: Horarios ofrecidos para el tramo de ida
+El sistema SHALL ofrecer como horarios de ida solo los activos de rutas activas del colectivo elegido en los que origen y destino forman un tramo válido de la ruta. MUST excluir los bloqueados por el corte de venta y ordenarlos por nombre en orden natural. Si hay un único horario posible, queda preseleccionado.
+
+#### Scenario: Un único horario disponible
+- **WHEN** para el colectivo, origen, destino y fecha elegidos existe un solo horario ofrecible
+- **THEN** ese horario queda seleccionado automáticamente
+
+#### Scenario: Ningún horario disponible
+- **WHEN** no hay horarios ofrecibles para la combinación elegida
+- **THEN** el selector muestra "No hay horarios disponibles para esta ruta"
+
+### Requirement: Fechas de viaje seleccionables
+Los selectores de fecha de ida y de vuelta MUST deshabilitar todos los domingos, salvo el domingo 2026-09-13. La fecha mínima de ida es hoy, o un año atrás si al usuario no se le aplica el corte de venta. La fecha mínima de vuelta es la fecha de ida.
+
+#### Scenario: Domingo
+- **WHEN** el vendedor abre el calendario de ida
+- **THEN** los domingos aparecen deshabilitados, excepto el 13/09/2026
+
+### Requirement: Resolución del viaje para la venta
+Al buscar un tramo, el sistema SHALL reutilizar el viaje existente para ese horario y fecha. Si no existe, lo crea, salvo que la ruta o el horario estén inactivos. El viaje creado usa el colectivo de la ruta, si no el de un viaje previo de la ruta y si no el primer colectivo con asientos. Rutas u horarios inactivos solo bloquean viajes nuevos.
+
+#### Scenario: Ruta inactiva sin viaje previo
+- **WHEN** se busca un horario de una ruta inactiva para una fecha que no tiene viaje creado
+- **THEN** la búsqueda falla con "Esta ruta u horario no está disponible para nuevas ventas."
+
+#### Scenario: Ruta inactiva con viaje ya creado
+- **WHEN** el viaje para ese horario y fecha ya existía
+- **THEN** se reutiliza normalmente
+
+#### Scenario: Tramo inválido
+- **WHEN** origen y destino no forman un tramo válido de la ruta del horario
+- **THEN** la búsqueda falla con "El segmento origen-destino no es válido para esta ruta."
+
+### Requirement: Disponibilidad suficiente para avanzar
+El paso "Buscar viaje" MUST impedir avanzar si el viaje de ida (o el de vuelta, en ida y vuelta con fecha) tiene menos asientos libres que pasajeros. Los asientos libres se calculan como la capacidad del colectivo menos los boletos vigentes con asiento en ese viaje.
+
+#### Scenario: Asientos insuficientes
+- **WHEN** el viaje tiene 2 asientos libres y la venta es de 3 pasajeros
+- **THEN** se avisa "El viaje tiene 2 asiento(s) disponible(s), pero necesita 3." y el asistente no avanza
+
+### Requirement: Corte de venta por fecha anterior
+Sin el permiso "Vender después del límite de salida" (`tickets.vender_pasado_limite`), el sistema MUST rechazar la venta de un tramo cuyo viaje es de un día anterior a hoy. La regla queda desactivada cuando el límite de horas configurado es 0.
+
+#### Scenario: Viaje de ayer sin permiso
+- **WHEN** un vendedor sin el permiso intenta vender un tramo de un viaje de ayer, con el límite de horas mayor que 0
+- **THEN** la venta se bloquea con un mensaje que indica que la fecha es anterior a hoy
+
+#### Scenario: Límite en cero
+- **WHEN** el límite de horas configurado es 0
+- **THEN** se permite vender viajes de días anteriores sin el permiso
+
+### Requirement: Corte de venta por horas desde la salida
+Sin el permiso `tickets.vender_pasado_limite`, el sistema MUST rechazar la venta de un tramo cuando ya pasaron más horas que el límite configurado desde la salida del colectivo en la parada donde sube el pasajero: el origen en la ida y el destino de la ida en la vuelta. El límite por defecto es 5 horas; 0 lo desactiva.
+
+#### Scenario: Pasado el límite
+- **WHEN** el límite es 5 horas y el colectivo salió de la parada de subida hace 6 horas
+- **THEN** un vendedor sin permiso no puede vender ese tramo
+
+#### Scenario: Dentro del límite
+- **WHEN** el colectivo salió de la parada de subida hace 4 horas, con límite de 5
+- **THEN** la venta se permite
+
+#### Scenario: Con permiso
+- **WHEN** un usuario con el permiso vende un tramo fuera del límite
+- **THEN** la venta se permite
+
+#### Scenario: Parada de subida sin elegir
+- **WHEN** todavía no hay parada de subida definida
+- **THEN** solo se controla la fecha, no las horas
+
+### Requirement: Puntos de control del corte de venta
+El corte de venta MUST aplicarse de forma idéntica en tres puntos: al avanzar del paso "Buscar viaje", al listar horarios (los bloqueados no aparecen) y al emitir. Ningún rol del sistema trae el permiso por defecto. El corte aplica solo a ventas nuevas, no a la edición de boletos existentes.
+
+#### Scenario: Horario vencido en el listado
+- **WHEN** un vendedor sin permiso abre los horarios de hoy y uno salió hace más horas que el límite
+- **THEN** ese horario no aparece entre las opciones
+
+#### Scenario: Emisión forzada
+- **WHEN** se fuerza la emisión de un tramo fuera de término sin el permiso
+- **THEN** la emisión se rechaza con el título "Venta fuera de término"
+
+### Requirement: Venta de ida y vuelta ("Diferido")
+Con el interruptor "Diferido", el sistema SHALL vender ida y vuelta, siendo la vuelta el tramo inverso (destino → origen). Activarlo exige el tramo de ida completo y disponible, y una ruta activa que contenga ambas paradas. La fecha de vuelta MUST ser igual o posterior a la de ida.
+
+#### Scenario: Ida incompleta
+- **WHEN** el vendedor activa "Diferido" sin haber completado los datos de la ida
+- **THEN** se avisa "Complete todos los campos del viaje de ida antes de activar Diferido." y el interruptor vuelve a apagarse
+
+#### Scenario: Sin ruta de vuelta
+- **WHEN** no existe ninguna ruta activa con ambas paradas
+- **THEN** se avisa "Ruta de vuelta inexistente" y el interruptor vuelve a apagarse
+
+#### Scenario: Fecha de vuelta anterior
+- **WHEN** la fecha de vuelta es anterior a la de ida
+- **THEN** se rechaza con "La fecha de vuelta debe ser igual o posterior a la fecha de ida."
+
+### Requirement: Horarios ofrecidos para el tramo de vuelta
+Los horarios de vuelta SHALL incluir los horarios activos de rutas activas de cualquier colectivo donde el tramo inverso es válido, no solo los del colectivo de la ida. Si la vuelta es el mismo día que la ida, MUST ofrecer solo horarios con salida posterior a la del horario de ida. También se aplica el corte de venta usando como parada de subida el destino de la ida.
+
+#### Scenario: Vuelta en otro colectivo
+- **WHEN** otro colectivo tiene un horario activo que recorre el tramo inverso
+- **THEN** ese horario aparece entre las opciones de vuelta
+
+#### Scenario: Vuelta el mismo día
+- **WHEN** la ida sale a las 08:00 y la vuelta es el mismo día
+- **THEN** solo se ofrecen horarios de vuelta con salida posterior a las 08:00
+
+### Requirement: Selección exacta de asientos por tramo
+En cada paso de asientos el vendedor MUST elegir exactamente un asiento por pasajero. Al avanzar, el sistema verifica que ninguno se haya vendido ni esté reservado por otra sesión. Si alguno ya no está disponible, informa sus números y no avanza.
+
+#### Scenario: Cantidad incorrecta
+- **WHEN** hay 2 pasajeros y se eligió 1 asiento de ida
+- **THEN** se avisa "Debe seleccionar exactamente 2 asiento(s) de ida." y no se avanza
+
+#### Scenario: Asiento vendido mientras se elegía
+- **WHEN** al avanzar, uno de los asientos elegidos ya fue vendido
+- **THEN** se informa el número de asiento y el vendedor debe elegir otro
+
+### Requirement: Datos obligatorios del pasajero
+Por cada pasajero se MUST cargar DNI numérico de 7 u 8 dígitos, apellido y nombre de 2 a 80 caracteres (letras, espacios, apóstrofo o guion). El teléfono es opcional; si se carga, MUST tener entre 7 y 12 dígitos. El DNI se valida al completarlo, no solo al avanzar.
+
+#### Scenario: DNI corto
+- **WHEN** el DNI tiene 6 dígitos
+- **THEN** se rechaza con "El DNI debe tener entre 7 y 8 dígitos."
+
+#### Scenario: Nombre con números
+- **WHEN** el nombre contiene dígitos
+- **THEN** se rechaza con "El nombre solo puede contener letras y espacios."
+
+### Requirement: Autocompletado desde el padrón de clientes
+Cuando el DNI cargado tiene al menos 7 dígitos y coincide con un cliente del padrón, el sistema SHALL completar apellido y nombre, y el teléfono si el del cliente tiene entre 7 y 12 dígitos. Con menos de 7 dígitos no se busca ni se valida.
+
+#### Scenario: DNI del padrón
+- **WHEN** se ingresa el DNI de un cliente registrado
+- **THEN** apellido, nombre y teléfono se completan con los datos del cliente
+
+### Requirement: Bloqueo de clientes con prohibición de compra
+El sistema MUST rechazar la venta si algún pasajero tiene un DNI de un cliente marcado sin permiso de compra. El control se hace al validar el DNI y otra vez al emitir. El mensaje incluye nombre, DNI y el motivo, si está cargado.
+
+#### Scenario: Pasajero baneado
+- **WHEN** un pasajero tiene el DNI de un cliente marcado sin permiso de compra
+- **THEN** la venta no se emite y el mensaje muestra nombre, DNI y motivo del bloqueo
+
+### Requirement: Acompañantes del pasajero
+Si la configuración permite acompañantes y el pasajero tiene DNI, nombre y apellido, el vendedor SHALL poder indicar que viaja con un menor o con mascotas, pero no ambos. El menor exige apellido, nombre y DNI. Las mascotas exigen descripción y cantidad de 1 a 5.
+
+#### Scenario: Menor y mascotas a la vez
+- **WHEN** el vendedor marca "¿Viaja con mascotas?" con "¿Viaja con un menor?" ya marcado
+- **THEN** se desmarca el menor y se borran sus datos
+
+#### Scenario: Acompañantes desactivados
+- **WHEN** la configuración no permite acompañantes
+- **THEN** las opciones de menor y mascotas no se muestran
+
+### Requirement: Menor acompañante sin asiento ni boleto propio
+Un menor acompañante SHALL registrarse como pasajero vinculado al adulto, pero MUST NOT ocupar asiento ni generar boleto propio. Su presencia queda marcada en el boleto del adulto.
+
+#### Scenario: Adulto con menor
+- **WHEN** se emite una venta de 1 pasajero que viaja con un menor
+- **THEN** se crean dos pasajeros (adulto y menor), pero un solo boleto de ida con un solo asiento
+
+### Requirement: Precio y método de pago por pasajero
+Cada pasajero MUST tener precio (entre 0 y 999999) y un método de pago activo. Al emitir, el sistema rechaza métodos inexistentes o inactivos. Quien tiene el permiso `payment_methods.create` puede crear un método de pago nuevo desde el mismo selector, que queda activo y seleccionado.
+
+#### Scenario: Método inactivo
+- **WHEN** se emite una venta con un método de pago inactivo
+- **THEN** se rechaza con "Hay un método de pago inválido o inactivo en la venta. Recargá el formulario e intentá de nuevo."
+
+### Requirement: Venta sin fecha
+Con el permiso `tickets.vender_sin_fecha`, el vendedor SHALL poder vender la ida, la vuelta o ambas sin fecha ni horario. Esos tramos quedan como boletos pendientes, sin viaje ni asiento, que conservan el colectivo. Las opciones solo se muestran si el usuario tiene el permiso y al menos un rol lo tiene asignado.
+
+#### Scenario: Sin permiso
+- **WHEN** un vendedor sin el permiso fuerza una venta sin fecha
+- **THEN** se rechaza con "No tenés permiso para vender boletos sin fecha/horario."
+
+#### Scenario: Ningún rol con el permiso
+- **WHEN** ningún rol tiene asignado el permiso, aunque el usuario sea superadministrador
+- **THEN** las opciones de venta sin fecha no se muestran
+
+#### Scenario: Solo ida sin fecha
+- **WHEN** se vende solo ida sin fecha
+- **THEN** se crea un boleto pendiente por pasajero, sin viaje ni asiento, que no es de ida y vuelta
+
+### Requirement: Venta sin fecha solo a pasajeros del padrón
+Si algún tramo se vende sin fecha, todos los pasajeros MUST estar registrados en el padrón de clientes. El control se hace al validar el DNI y otra vez al emitir. Las ventas con fecha no tienen esta exigencia.
+
+#### Scenario: DNI fuera del padrón
+- **WHEN** en una venta sin fecha un pasajero tiene un DNI no registrado
+- **THEN** la venta se rechaza indicando los DNIs sin registrar
+
+#### Scenario: Venta con fecha
+- **WHEN** la venta es con fecha y el DNI no está en el padrón
+- **THEN** la venta se emite normalmente
+
+### Requirement: Ventas mixtas con un tramo sin fecha
+En ida y vuelta con un solo tramo sin fecha, el tramo con fecha SHALL emitirse con viaje y asiento, y el otro como boleto pendiente. Con la vuelta pendiente, la ida queda sin viaje de vuelta y la vuelta queda marcada como tramo de vuelta. Con la ida pendiente, la ida MUST quedar ligada al viaje de vuelta ya emitido.
+
+#### Scenario: Ida con fecha, vuelta pendiente
+- **WHEN** se vende ida con fecha y vuelta sin fecha
+- **THEN** la ida tiene viaje y asiento, y la vuelta es un boleto pendiente marcado como tramo de vuelta, con precio 0
+
+#### Scenario: Ida pendiente, vuelta con fecha
+- **WHEN** se vende ida sin fecha y vuelta con fecha
+- **THEN** el boleto de ida pendiente queda ligado al viaje de vuelta emitido
+
+### Requirement: Estructura de la venta emitida
+Al emitir, el sistema SHALL crear una venta con el usuario vendedor y la fecha y hora de emisión. Por cada pasajero adulto y por cada tramo crea un boleto. El total de la venta MUST ser la suma de los precios de sus boletos.
+
+#### Scenario: Dos pasajeros solo ida
+- **WHEN** se emite una venta de 2 pasajeros, solo ida, con precios 1000 y 1500
+- **THEN** se crea una venta con 2 boletos y total 2500
+
+### Requirement: Boletos de vuelta
+En ida y vuelta, el precio completo SHALL quedar en el boleto de ida, y el boleto de vuelta MUST tener precio 0 y origen y destino invertidos. El boleto de ida con vuelta fechada guarda la referencia al viaje de vuelta. Los boletos de vuelta repiten el método de pago y los acompañantes del pasajero.
+
+#### Scenario: Ida y vuelta con fechas
+- **WHEN** se emite ida y vuelta de 1 pasajero, Salta → Cafayate, a 5000
+- **THEN** el boleto de ida (Salta → Cafayate) vale 5000 y referencia al viaje de vuelta, y el de vuelta (Cafayate → Salta) vale 0
+
+### Requirement: Identificación del tramo de vuelta
+Un boleto se considera tramo de vuelta si está marcado explícitamente como tal o, por convención histórica, si es de ida y vuelta, no tiene viaje de vuelta y su precio es 0. Al crear un boleto que cumple la convención histórica, el sistema MUST marcarlo explícitamente como tramo de vuelta.
+
+#### Scenario: Boleto histórico sin marca
+- **WHEN** un boleto anterior a la marca explícita es de ida y vuelta, sin viaje de vuelta y con precio 0
+- **THEN** el sistema lo trata como tramo de vuelta
+
+#### Scenario: Creación con precio 0 sin viaje de vuelta
+- **WHEN** se crea un boleto de ida y vuelta, sin viaje de vuelta y con precio 0, aunque se indique que no es tramo de vuelta
+- **THEN** queda marcado como tramo de vuelta
+
+### Requirement: Cierre de una venta exitosa
+Tras emitir correctamente, el sistema SHALL liberar todas las reservas temporales de asientos de la sesión del vendedor y entregar los boletos según el parámetro "Descargar PDF automáticamente al vender" (activado por defecto). Activado, abre la descarga en una pestaña nueva y vuelve al inicio del panel. Desactivado, presenta la previsualización con link compartible en lugar de descargar.
+
+#### Scenario: Venta completada con descarga automática
+- **WHEN** la emisión termina sin errores y el parámetro de descarga automática está activado
+- **THEN** las reservas de la sesión se eliminan y se abre la descarga de los boletos en otra pestaña
+
+#### Scenario: Venta completada sin descarga automática
+- **WHEN** la emisión termina sin errores y el parámetro de descarga automática está desactivado
+- **THEN** las reservas de la sesión se eliminan y no se descarga ningún PDF: se presenta la previsualización con link compartible
+
+### Requirement: Cancelación de la venta
+La acción "Cancelar" SHALL pedir confirmación ("Los cambios se perderán"). Al confirmar, MUST liberar todas las reservas de asientos de la sesión y volver al inicio del panel.
+
+#### Scenario: Cancelar con asientos elegidos
+- **WHEN** el vendedor con asientos reservados confirma "Cancelar"
+- **THEN** sus reservas se liberan y vuelve al inicio del panel

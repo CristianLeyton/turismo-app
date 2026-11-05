@@ -385,3 +385,5 @@ Diff: `3e9c297` — edición de boletos con historial (`docs/changelog.md`).
 | Cachés | Config/route/view cacheados contra los archivos viejos. |
 | `composer install` | **No hace falta**: `composer.lock` no cambió. |
 | Migración de settings | **No hace falta**: la clave nueva (`tickets.require_password_edit`) se crea al primer guardado y su default es "apagado". |
+
+TEST DE DEPLOY

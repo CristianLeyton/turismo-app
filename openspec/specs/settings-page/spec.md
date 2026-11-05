@@ -18,7 +18,7 @@ La página "Parámetros", con tilde, SHALL figurar en el grupo "Configuración" 
 - **THEN** no la ve en el menú y el acceso se rechaza
 
 ### Requirement: Parámetros agrupados en pestañas
-La página SHALL organizar los parámetros en pestañas, en este orden: "Venta" (acompañantes y venta fuera de término), "Boleto" (PDF automático, WhatsApp y líneas de contacto), "Calendario" (días con servicio y excepciones), "Seguridad" (confirmación de contraseña), "Clientes" (panel de clientes), esta solo con el permiso del panel de clientes, y "Apariencia" (color principal), esta solo con el permiso de apariencia. Un único botón "Guardar cambios" MUST guardar todas las pestañas visibles.
+La página SHALL organizar los parámetros en pestañas, en este orden: "Venta" (acompañantes, venta fuera de término y, con su permiso, selectores de origen y destino), "Boleto" (PDF automático, WhatsApp y líneas de contacto), "Calendario" (días con servicio y excepciones), "Seguridad" (confirmación de contraseña), "Clientes" (panel de clientes), esta solo con el permiso del panel de clientes, y "Apariencia" (color principal), esta solo con el permiso de apariencia. Un único botón "Guardar cambios" MUST guardar todas las pestañas visibles.
 
 #### Scenario: Abrir la página
 - **WHEN** un administrador sin el permiso del panel de clientes ni el de apariencia abre Parámetros
@@ -39,6 +39,10 @@ La página SHALL organizar los parámetros en pestañas, en este orden: "Venta" 
 #### Scenario: Guardar desde otra pestaña
 - **WHEN** el administrador cambia un parámetro de Venta, pasa a la pestaña Seguridad, cambia otro y toca "Guardar cambios"
 - **THEN** se guardan los dos cambios
+
+#### Scenario: Pestaña Venta con el permiso de los selectores
+- **WHEN** un usuario con `settings.manage` y con el permiso de los selectores de origen y destino abre la pestaña Venta
+- **THEN** ve las secciones de acompañantes, venta fuera de término y selectores de origen y destino
 
 ### Requirement: Texto visible limitado a lo esencial
 Cada sección y cada campo SHALL mostrar como texto visible a lo sumo una oración, y solo cuando sin ella el administrador podría configurar algo mal. La información complementaria (ejemplos, formato de carga, permisos que dejan saltear una regla) MUST ir en un ícono de información con tooltip y MUST NOT ser necesaria para configurar bien el parámetro.
@@ -168,3 +172,27 @@ Solo un usuario con el permiso "Cambiar apariencia" del módulo Configuración M
 #### Scenario: Permiso no asignado por defecto
 - **WHEN** se sincronizan los permisos y roles del sistema
 - **THEN** el rol Administrador no recibe el permiso de apariencia, y se lo puede asignar desde la matriz de roles
+
+### Requirement: Elegir el estilo de los selectores de origen y destino
+La pestaña "Venta" SHALL ofrecer el interruptor "Selectores de origen y destino detallados", que muestra el valor guardado y, sin configurar, aparece apagado. Solo un usuario con el permiso "Configurar selectores de origen y destino" del módulo Configuración MUST ver la sección y cambiar el parámetro. Si quien guarda no tiene el permiso, el parámetro MUST quedar como estaba, aunque el pedido traiga otro valor.
+
+#### Scenario: Prender los selectores detallados
+- **WHEN** un usuario con el permiso prende "Selectores de origen y destino detallados" y guarda
+- **THEN** el parámetro queda prendido y la venta muestra los selectores detallados
+
+#### Scenario: Valor inicial
+- **WHEN** nadie configuró el parámetro y un usuario con el permiso abre la pestaña Venta
+- **THEN** el interruptor aparece apagado
+
+#### Scenario: Sin el permiso
+- **WHEN** un usuario con `settings.manage` pero sin el permiso de los selectores abre la pestaña Venta
+- **THEN** no ve la sección de los selectores de origen y destino
+
+#### Scenario: Pedido manipulado
+- **GIVEN** el parámetro apagado
+- **WHEN** un usuario sin el permiso de los selectores guarda Parámetros enviando el parámetro prendido
+- **THEN** los demás parámetros se guardan y el parámetro sigue apagado
+
+#### Scenario: Permiso no asignado por defecto
+- **WHEN** se sincronizan los permisos y roles del sistema
+- **THEN** el rol Administrador no recibe el permiso de los selectores, y se lo puede asignar desde la matriz de roles

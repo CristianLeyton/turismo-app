@@ -18,7 +18,7 @@ La página "Parámetros", con tilde, SHALL figurar en el grupo "Configuración" 
 - **THEN** no la ve en el menú y el acceso se rechaza
 
 ### Requirement: Parámetros agrupados en pestañas
-La página SHALL organizar los parámetros en pestañas, en este orden: "Venta" (acompañantes, venta fuera de término y, con su permiso, selectores de origen y destino), "Boleto" (PDF automático, WhatsApp y líneas de contacto), "Calendario" (días con servicio y excepciones), "Seguridad" (confirmación de contraseña), "Clientes" (panel de clientes), esta solo con el permiso del panel de clientes, y "Apariencia" (color principal), esta solo con el permiso de apariencia. Un único botón "Guardar cambios" MUST guardar todas las pestañas visibles.
+La página SHALL organizar los parámetros en pestañas, en este orden: "Venta" (acompañantes, venta fuera de término y, con su permiso, selectores de origen y destino), "Boleto" (con su permiso, emisión al finalizar la venta con el PDF automático y el mensaje de WhatsApp; y líneas de contacto), "Calendario" (días con servicio y excepciones), "Seguridad" (confirmación de contraseña), "Clientes" (panel de clientes), esta solo con el permiso del panel de clientes, y "Apariencia" (color principal), esta solo con el permiso de apariencia. Un único botón "Guardar cambios" MUST guardar todas las pestañas visibles.
 
 #### Scenario: Abrir la página
 - **WHEN** un administrador sin el permiso del panel de clientes ni el de apariencia abre Parámetros
@@ -43,6 +43,14 @@ La página SHALL organizar los parámetros en pestañas, en este orden: "Venta" 
 #### Scenario: Pestaña Venta con el permiso de los selectores
 - **WHEN** un usuario con `settings.manage` y con el permiso de los selectores de origen y destino abre la pestaña Venta
 - **THEN** ve las secciones de acompañantes, venta fuera de término y selectores de origen y destino
+
+#### Scenario: Pestaña Boleto con el permiso de emisión
+- **WHEN** un usuario con `settings.manage` y con el permiso de emisión abre la pestaña Boleto
+- **THEN** ve las secciones "Emisión al finalizar la venta" y "Líneas de contacto"
+
+#### Scenario: Pestaña Boleto sin el permiso de emisión
+- **WHEN** un usuario con `settings.manage` pero sin el permiso de emisión abre la pestaña Boleto
+- **THEN** ve solo la sección "Líneas de contacto"
 
 ### Requirement: Texto visible limitado a lo esencial
 Cada sección y cada campo SHALL mostrar como texto visible a lo sumo una oración, y solo cuando sin ella el administrador podría configurar algo mal. La información complementaria (ejemplos, formato de carga, permisos que dejan saltear una regla) MUST ir en un ícono de información con tooltip y MUST NOT ser necesaria para configurar bien el parámetro.
@@ -196,3 +204,25 @@ La pestaña "Venta" SHALL ofrecer el interruptor "Selectores de origen y destino
 #### Scenario: Permiso no asignado por defecto
 - **WHEN** se sincronizan los permisos y roles del sistema
 - **THEN** el rol Administrador no recibe el permiso de los selectores, y se lo puede asignar desde la matriz de roles
+
+### Requirement: Permiso para configurar la emisión al finalizar la venta
+Solo un usuario con el permiso "Configurar emisión al finalizar la venta" del módulo Configuración MUST ver la sección "Emisión al finalizar la venta" y cambiar el interruptor "Descargar PDF automáticamente al vender" y el mensaje de WhatsApp. Si quien guarda no tiene el permiso, los dos MUST quedar como estaban, aunque el pedido traiga otros valores o no los traiga.
+
+#### Scenario: Cambiar la emisión con el permiso
+- **GIVEN** la descarga automática activada
+- **WHEN** un usuario con el permiso desactiva "Descargar PDF automáticamente al vender", carga "Tu pasaje: {link}" como mensaje y guarda
+- **THEN** la descarga automática queda desactivada y el mensaje guardado es "Tu pasaje: {link}"
+
+#### Scenario: Guardar sin el permiso conserva la emisión por link
+- **GIVEN** la descarga automática desactivada y el mensaje "Tu pasaje: {link}"
+- **WHEN** un usuario sin el permiso de emisión cambia las horas de venta a 8 y guarda
+- **THEN** las horas de venta quedan en 8, la descarga automática sigue desactivada y el mensaje sigue siendo "Tu pasaje: {link}"
+
+#### Scenario: Pedido manipulado
+- **GIVEN** la descarga automática desactivada y el mensaje "Tu pasaje: {link}"
+- **WHEN** un usuario sin el permiso de emisión guarda Parámetros enviando la descarga automática activada y el mensaje "Otro: {link}"
+- **THEN** los demás parámetros se guardan, la descarga automática sigue desactivada y el mensaje sigue siendo "Tu pasaje: {link}"
+
+#### Scenario: Permiso no asignado por defecto
+- **WHEN** se sincronizan los permisos y roles del sistema
+- **THEN** el rol Administrador no recibe el permiso de emisión, y se lo puede asignar desde la matriz de roles

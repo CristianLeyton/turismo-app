@@ -653,6 +653,89 @@ class TicketSettingsTest extends TestCase
         $this->assertDatabaseMissing('settings', ['key' => Setting::SELECTORES_DETALLADOS]);
     }
 
+    // ====================== Emisión al finalizar la venta ======================
+
+    public function test_con_el_permiso_de_emision_la_pestana_boleto_muestra_emision_y_contacto(): void
+    {
+        $this->actingAs($this->adminWithPermissions(TicketSettings::TICKET_EMISSION_PERMISSION));
+
+        Livewire::test(TicketSettings::class)
+            ->assertSee('Emisión al finalizar la venta')
+            ->assertSee('Descargar PDF automáticamente al vender')
+            ->assertSee('Líneas de contacto');
+    }
+
+    public function test_sin_el_permiso_de_emision_la_pestana_boleto_muestra_solo_contacto(): void
+    {
+        $this->actingAs($this->admin);
+
+        $this->assertFalse($this->admin->can(TicketSettings::TICKET_EMISSION_PERMISSION));
+
+        $component = Livewire::test(TicketSettings::class)
+            ->assertDontSee('Emisión al finalizar la venta')
+            ->assertDontSee('Descargar PDF automáticamente al vender')
+            ->assertDontSee('Texto del mensaje de WhatsApp')
+            ->assertSee('Líneas de contacto');
+
+        $this->assertArrayHasKey('Boleto', $this->tabBadges($component));
+    }
+
+    public function test_con_el_permiso_de_emision_se_guardan_la_descarga_y_el_mensaje(): void
+    {
+        $this->actingAs($this->adminWithPermissions(TicketSettings::TICKET_EMISSION_PERMISSION));
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.descarga_automatica_pdf', false)
+            ->set('data.whatsapp_mensaje', 'Tu pasaje: {link}')
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        Setting::flushCache();
+
+        $this->assertFalse(Setting::descargaAutomaticaPdf());
+        $this->assertSame('Tu pasaje: {link}', Setting::whatsappMensaje());
+    }
+
+    public function test_sin_el_permiso_de_emision_guardar_conserva_la_emision_por_link(): void
+    {
+        $this->actingAs($this->admin);
+
+        Setting::set(Setting::DESCARGA_AUTOMATICA_PDF, '0');
+        Setting::set(Setting::WHATSAPP_MENSAJE, 'Tu pasaje: {link}');
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.venta_limite_horas', 8)
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        Setting::flushCache();
+
+        $this->assertSame(8, Setting::ventaLimiteHoras());
+        $this->assertFalse(Setting::descargaAutomaticaPdf());
+        $this->assertSame('Tu pasaje: {link}', Setting::whatsappMensaje());
+    }
+
+    public function test_sin_el_permiso_de_emision_un_pedido_manipulado_no_cambia_la_emision(): void
+    {
+        $this->actingAs($this->admin);
+
+        Setting::set(Setting::DESCARGA_AUTOMATICA_PDF, '0');
+        Setting::set(Setting::WHATSAPP_MENSAJE, 'Tu pasaje: {link}');
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.descarga_automatica_pdf', true)
+            ->set('data.whatsapp_mensaje', 'Otro: {link}')
+            ->set('data.require_password_ticket_delete', true)
+            ->call('save')
+            ->assertHasNoErrors();
+
+        Setting::flushCache();
+
+        $this->assertTrue(Setting::getBool(Setting::REQUIRE_PASSWORD_TICKET_DELETE));
+        $this->assertFalse(Setting::descargaAutomaticaPdf());
+        $this->assertSame('Tu pasaje: {link}', Setting::whatsappMensaje());
+    }
+
     private function tabBadges(Testable $component): array
     {
         $tabs = collect($component->instance()->form->getFlatComponents())
@@ -784,7 +867,7 @@ class TicketSettingsTest extends TestCase
 
     public function test_el_mensaje_de_whatsapp_sin_link_se_rechaza(): void
     {
-        $this->actingAs($this->admin);
+        $this->actingAs($this->adminWithPermissions(TicketSettings::TICKET_EMISSION_PERMISSION));
 
         Livewire::test(TicketSettings::class)
             ->set('data.descarga_automatica_pdf', false)
@@ -798,7 +881,7 @@ class TicketSettingsTest extends TestCase
 
     public function test_el_mensaje_de_whatsapp_demasiado_largo_se_rechaza(): void
     {
-        $this->actingAs($this->admin);
+        $this->actingAs($this->adminWithPermissions(TicketSettings::TICKET_EMISSION_PERMISSION));
 
         Livewire::test(TicketSettings::class)
             ->set('data.descarga_automatica_pdf', false)
@@ -809,7 +892,7 @@ class TicketSettingsTest extends TestCase
 
     public function test_el_mensaje_de_whatsapp_vacio_usa_el_texto_por_defecto(): void
     {
-        $this->actingAs($this->admin);
+        $this->actingAs($this->adminWithPermissions(TicketSettings::TICKET_EMISSION_PERMISSION));
 
         Setting::set(Setting::WHATSAPP_MENSAJE, 'Tu pasaje: {link}');
 
@@ -827,7 +910,7 @@ class TicketSettingsTest extends TestCase
 
     public function test_el_mensaje_de_whatsapp_oculto_no_se_pierde_al_guardar(): void
     {
-        $this->actingAs($this->admin);
+        $this->actingAs($this->adminWithPermissions(TicketSettings::TICKET_EMISSION_PERMISSION));
 
         Setting::set(Setting::DESCARGA_AUTOMATICA_PDF, '0');
         Setting::set(Setting::WHATSAPP_MENSAJE, 'Tu pasaje: {link}');

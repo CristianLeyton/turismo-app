@@ -36,8 +36,9 @@ use UnitEnum;
  * Página Configuración > Parámetros (solo quien tiene `settings.manage`).
  *
  * Agrupa los parámetros del sistema en pestañas según a qué afectan: Venta,
- * Boleto, Calendario, Seguridad, Clientes (esta solo con el permiso
- * `settings.client_panel`) y Apariencia (solo con `settings.appearance`). Un parámetro nuevo lleva una constante en
+ * Boleto (la sección de emisión solo con `settings.ticket_emission`), Calendario,
+ * Seguridad, Clientes (esta solo con el permiso `settings.client_panel`) y
+ * Apariencia (solo con `settings.appearance`). Un parámetro nuevo lleva una constante en
  * Setting, su campo en la pestaña que corresponde y su entrada en TAB_FIELDS
  * (ver la sección "Parámetros" del skill filament-ui).
  */
@@ -66,6 +67,9 @@ class TicketSettings extends Page
 
     /** Permiso para ver y cambiar el estilo de los selectores de origen y destino. */
     public const SALE_SELECTORS_PERMISSION = 'settings.sale_selectors';
+
+    /** Permiso para ver y cambiar la emisión al finalizar la venta (PDF automático y mensaje de WhatsApp). */
+    public const TICKET_EMISSION_PERMISSION = 'settings.ticket_emission';
 
     private const PRIMARY_COLOR_INVALID_MESSAGE = 'Elegí un color válido en formato #RRGGBB (por ejemplo, #10288c).';
 
@@ -165,6 +169,14 @@ class TicketSettings extends Page
         return (bool) Auth::user()?->can(self::SALE_SELECTORS_PERMISSION);
     }
 
+    /**
+     * ¿Quien usa la página puede cambiar cómo se entregan los boletos al finalizar la venta?
+     */
+    protected function canManageTicketEmission(): bool
+    {
+        return (bool) Auth::user()?->can(self::TICKET_EMISSION_PERMISSION);
+    }
+
     public function form(Schema $schema): Schema
     {
         return $schema
@@ -258,6 +270,7 @@ class TicketSettings extends Page
         return [
             Section::make('Emisión al finalizar la venta')
                 ->columnSpanFull()
+                ->visible(fn (): bool => $this->canManageTicketEmission())
                 ->schema([
                     Toggle::make('descarga_automatica_pdf')
                         ->label('Descargar PDF automáticamente al vender')
@@ -612,14 +625,18 @@ class TicketSettings extends Page
             ($data['permitir_acompanantes'] ?? true) ? '1' : '0',
         );
 
-        Setting::set(
-            Setting::DESCARGA_AUTOMATICA_PDF,
-            ($data['descarga_automatica_pdf'] ?? true) ? '1' : '0',
-        );
+        // Sin el permiso, la sección está oculta: la emisión queda como estaba
+        // aunque el pedido la traiga (o no la traiga, que antes la reactivaba).
+        if ($this->canManageTicketEmission() && array_key_exists('descarga_automatica_pdf', $data)) {
+            Setting::set(
+                Setting::DESCARGA_AUTOMATICA_PDF,
+                $data['descarga_automatica_pdf'] ? '1' : '0',
+            );
+        }
 
-        // Oculto (descarga automática activada), el campo no llega en el
-        // estado: se conserva el mensaje guardado. Vacío = texto por defecto.
-        if (array_key_exists('whatsapp_mensaje', $data)) {
+        // Oculto (descarga automática activada o sin el permiso), el campo no
+        // llega en el estado: se conserva el mensaje guardado. Vacío = texto por defecto.
+        if ($this->canManageTicketEmission() && array_key_exists('whatsapp_mensaje', $data)) {
             Setting::set(
                 Setting::WHATSAPP_MENSAJE,
                 filled($data['whatsapp_mensaje']) ? trim($data['whatsapp_mensaje']) : null,

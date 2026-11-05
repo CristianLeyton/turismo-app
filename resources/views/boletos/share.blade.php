@@ -54,14 +54,16 @@
 
     {{-- Fuera de un panel Filament no se inyecta su paleta (--gray-*,
          --primary-*, ...), de la que dependen las utilidades del tema: la
-         misma que el admin, con su primary fucsia. --}}
+         misma que el admin, con el color de la empresa (Parámetros >
+         Apariencia) como primary y su --primary-text. --}}
     <style>
         :root {
-            @foreach (array_merge(\Filament\Support\Facades\FilamentColor::getColors(), ['primary' => \Filament\Support\Colors\Color::Fuchsia]) as $colorName => $shades)
+            @foreach (array_merge(\Filament\Support\Facades\FilamentColor::getColors(), ['primary' => \App\Support\BrandPalette::current()]) as $colorName => $shades)
                 @foreach ($shades as $shade => $value)
                     --{{ $colorName }}-{{ $shade }}: {{ $value }};
                 @endforeach
             @endforeach
+            --primary-text: {{ \App\Support\BrandPalette::currentTextColor() }};
         }
     </style>
 </head>
@@ -71,7 +73,7 @@
     $buttonBase = 'fi-btn fi-size-md w-full sm:w-auto';
     $buttonPrimary =
         $buttonBase .
-        ' ring-0 bg-fuchsia-600 text-white hover:bg-fuchsia-500 dark:bg-fuchsia-500 dark:hover:bg-fuchsia-400 focus-visible:ring-fuchsia-500/50 [&>.fi-icon]:text-white';
+        ' ring-0 bg-primary-600 text-[var(--primary-text)] hover:bg-primary-500 dark:bg-primary-500 dark:hover:bg-primary-400 focus-visible:ring-primary-500/50 [&>.fi-icon]:text-[var(--primary-text)]';
     $buttonSuccess =
         $buttonBase .
         ' ring-0 bg-green-600 text-white hover:bg-green-500 dark:bg-green-500 dark:hover:bg-green-400 focus-visible:ring-green-500/50 [&>.fi-icon]:text-white';
@@ -106,7 +108,7 @@
                                 <span>{{ $line['name'] }}:</span>
                             @endif
                             <a href="tel:{{ $line['dial'] }}"
-                                class="font-semibold text-fuchsia-600 hover:underline dark:text-fuchsia-400">{{ $line['phone'] }}</a>
+                                class="font-semibold text-primary-600 hover:underline dark:text-primary-400">{{ $line['phone'] }}</a>
                         </span>
                     @endforeach
                 </p>
@@ -200,7 +202,7 @@
             <div id="pdf-preview-fallback"
                 class="flex flex-col gap-4 rounded-lg bg-gray-50 p-4 sm:flex-row sm:items-center sm:justify-between dark:bg-white/5">
                 <div class="flex items-center gap-3">
-                    {{ svg('heroicon-o-document-text', 'size-8 shrink-0 text-fuchsia-600 dark:text-fuchsia-400') }}
+                    {{ svg('heroicon-o-document-text', 'size-8 shrink-0 text-primary-600 dark:text-primary-400') }}
                     <span
                         class="text-sm font-medium break-all text-gray-700 dark:text-gray-300">{{ $filename }}</span>
                 </div>

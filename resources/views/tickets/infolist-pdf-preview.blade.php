@@ -28,7 +28,7 @@
         class="flex flex-col gap-4 rounded-lg bg-gray-50 p-4 sm:flex-row sm:items-center sm:justify-between dark:bg-white/5"
     >
         <div class="flex items-center gap-3">
-            {{ svg('heroicon-o-document-text', 'size-8 shrink-0 text-fuchsia-600 dark:text-fuchsia-400') }}
+            {{ svg('heroicon-o-document-text', 'size-8 shrink-0 text-primary-600 dark:text-primary-400') }}
             <span class="text-sm font-medium break-all text-gray-700 dark:text-gray-300">{{ $filename }}</span>
         </div>
 

@@ -72,9 +72,9 @@
         <div class="flex flex-col md:flex-row md:justify-between gap-4">
             <div>
                 <h2 class="text-2xl font-bold text-gray-900 dark:text-gray-100">
-                    <span class="text-fuchsia-600">{{ $originLocation?->name ?? 'Origen' }} </span>
+                    <span class="text-primary-600 dark:text-primary-400">{{ $originLocation?->name ?? 'Origen' }} </span>
                     →
-                    <span class="text-fuchsia-600">{{ $destinationLocation?->name ?? 'Destino' }}</span>
+                    <span class="text-primary-600 dark:text-primary-400">{{ $destinationLocation?->name ?? 'Destino' }}</span>
                 </h2>
 
                 @if ($trip)
@@ -94,13 +94,13 @@
                     @if ($bus)
                     <p class="text-sm text-gray-600 dark:text-gray-400">
                         <span class="font-semibold">Colectivo:</span>
-                        <span class="text-fuchsia-600 dark:text-fuchsia-400">{{ $bus->name }}</span>
+                        <span class="text-primary-600 dark:text-primary-400">{{ $bus->name }}</span>
                     </p>
                     @endif
 
                     <p class="text-sm text-gray-600 dark:text-gray-400">
                         <span class="font-semibold"> Ruta: </span>
-                        <span class="text-fuchsia-600 dark:text-fuchsia-400">
+                        <span class="text-primary-600 dark:text-primary-400">
                             {{ $route?->name ?? 'No especificada' }}
                         </span>
                     </p>
@@ -119,7 +119,7 @@
                 <div class="text-sm text-gray-500 dark:text-gray-400 uppercase">
                     {{ $seatLabel }}
                 </div>
-                <div class="text-3xl font-bold text-fuchsia-600 dark:text-fuchsia-400">
+                <div class="text-3xl font-bold text-primary-600 dark:text-primary-400">
                     {{ $record?->seat?->seat_number ?? ($record?->isPendingDate() ? 'A asignar' : '—') }}
                 </div>
             </div>
@@ -140,11 +140,11 @@
 
                         @if ($returnLegTrip->bus)
                         <br> <span class="font-semibold">Colectivo:</span>
-                        <span class="text-fuchsia-600 dark:text-fuchsia-400">{{ $returnLegTrip->bus->name }}</span>
+                        <span class="text-primary-600 dark:text-primary-400">{{ $returnLegTrip->bus->name }}</span>
                         @endif
                         <br>
                         <span class="font-semibold">Ruta:</span>
-                        <span class="text-fuchsia-600 dark:text-fuchsia-400">
+                        <span class="text-primary-600 dark:text-primary-400">
                             {{ $returnLegTrip->route?->name ?? 'No especificada' }}</span>
                     @else
                         <span class="font-semibold text-amber-600 dark:text-amber-400">Fecha y horario a confirmar</span>
@@ -160,7 +160,7 @@
                         <div class="text-sm text-gray-500 dark:text-gray-400 uppercase">
                             Asiento vuelta
                         </div>
-                        <div class="text-3xl font-bold text-fuchsia-600 dark:text-fuchsia-400">
+                        <div class="text-3xl font-bold text-primary-600 dark:text-primary-400">
                             {{ $returnLegSeat ?? '—' }}
                         </div>
                     </div>
@@ -212,7 +212,7 @@
                     class="self-start md:self-center
                                  px-3 py-1 rounded-full text-xs font-medium
                                  bg-gray-100 dark:bg-gray-800
-                                 text-fuchsia-600 dark:text-fuchsia-400">
+                                 text-primary-600 dark:text-primary-400">
                     Adulto
                 </span>
             </div>
@@ -222,16 +222,16 @@
             <div class="mt-4">
                 @foreach ($record->passenger->children as $child)
                     <div
-                        class="border-l-4 border-fuchsia-500 pl-4 py-2 my-2
+                        class="border-l-4 border-primary-500 pl-4 py-2 my-2
                                 bg-gray-50 dark:bg-gray-800 rounded">
                         <div
-                            class="text-sm font-semibold text-fuchsia-600 dark:text-fuchsia-400 flex flex-row justify-between gap-3 mb-1 flex-nowrap">
+                            class="text-sm font-semibold text-primary-600 dark:text-primary-400 flex flex-row justify-between gap-3 mb-1 flex-nowrap">
                             <span> Acompañante </span>
                             <span
                                 class="self-start md:self-center
                                  px-3 py-1 rounded-full text-xs font-medium
                                  bg-gray-100 dark:bg-gray-900
-                                 text-fuchsia-600 dark:text-fuchsia-400 mr-3">
+                                 text-primary-600 dark:text-primary-400 mr-3">
                                 Menor
                             </span>
                         </div>

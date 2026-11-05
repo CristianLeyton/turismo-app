@@ -584,7 +584,7 @@
                     <span class="text-sm text-gray-700 dark:text-gray-300">Disponible</span>
                 </div>
                 <div class="flex items-center gap-2">
-                    <div class="w-6 h-6 bg-purple-500 rounded border border-purple-600"></div>
+                    <div class="w-6 h-6 bg-primary-800 rounded border border-primary-900"></div>
                     <span class="text-sm text-gray-700 dark:text-gray-300">Seleccionado</span>
                 </div>
                 <div class="flex items-center gap-2">
@@ -605,7 +605,7 @@
             @endif
         </div>
 
-        <h3 class="text-xl font-semibold text-primary text-fuchsia-600 flex justify-between">
+        <h3 class="text-xl font-semibold text-primary-600 dark:text-primary-400 flex justify-between">
             <p>Seleccionar asientos</p>
 
             <p class="font-bold text-xl uppercase">
@@ -797,7 +797,7 @@
                                                 'bg-gray-300 dark:bg-gray-600 border-gray-400 hover:bg-gray-400 dark:hover:bg-gray-500':
                                                     !isSelected({{ $seatId }}) && !@js($isOccupied),
                                             
-                                                'bg-purple-500 border-purple-600 text-white hover:bg-purple-600': isSelected(
+                                                'bg-primary-800 border-primary-900 text-white hover:bg-primary-900': isSelected(
                                                     {{ $seatId }}),
                                             
                                                 'bg-red-500 border-red-600 cursor-not-allowed': @js($isOccupied),

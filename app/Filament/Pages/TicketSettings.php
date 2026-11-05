@@ -3,11 +3,13 @@
 namespace App\Filament\Pages;
 
 use App\Models\Setting;
+use App\Support\BrandPalette;
 use BackedEnum;
 use Carbon\Carbon;
 use Closure;
 use Filament\Actions\Action;
 use Filament\Forms\Components\CheckboxList;
+use Filament\Forms\Components\ColorPicker;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
@@ -23,6 +25,7 @@ use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Tabs;
 use Filament\Schemas\Components\Tabs\Tab;
 use Filament\Schemas\Components\Utilities\Get;
+use Filament\Schemas\Components\View;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Support\Facades\Auth;
@@ -33,8 +36,8 @@ use UnitEnum;
  * Página Configuración > Parámetros (solo quien tiene `settings.manage`).
  *
  * Agrupa los parámetros del sistema en pestañas según a qué afectan: Venta,
- * Boleto, Calendario, Seguridad y Clientes (esta solo con el permiso
- * `settings.client_panel`). Un parámetro nuevo lleva una constante en
+ * Boleto, Calendario, Seguridad, Clientes (esta solo con el permiso
+ * `settings.client_panel`) y Apariencia (solo con `settings.appearance`). Un parámetro nuevo lleva una constante en
  * Setting, su campo en la pestaña que corresponde y su entrada en TAB_FIELDS
  * (ver la sección "Parámetros" del skill filament-ui).
  */
@@ -52,10 +55,16 @@ class TicketSettings extends Page
         'Calendario' => ['service_weekdays', 'service_exceptions'],
         'Seguridad' => ['require_password_ticket_delete', 'require_password_ticket_reschedule', 'require_password_ticket_edit'],
         'Clientes' => ['panel_clientes_activo'],
+        'Apariencia' => ['primary_color'],
     ];
 
     /** Permiso para ver la pestaña Clientes y prender o apagar el panel. */
     public const CLIENT_PANEL_PERMISSION = 'settings.client_panel';
+
+    /** Permiso para ver la pestaña Apariencia y cambiar el color principal. */
+    public const APPEARANCE_PERMISSION = 'settings.appearance';
+
+    private const PRIMARY_COLOR_INVALID_MESSAGE = 'Elegí un color válido en formato #RRGGBB (por ejemplo, #10288c).';
 
     public const WHATSAPP_MENSAJE_MAX = 300;
 
@@ -124,6 +133,7 @@ class TicketSettings extends Page
                 fn (array $exception): bool => $exception['date'] >= $today,
             ))),
             'panel_clientes_activo' => Setting::panelClientesActivo(),
+            'primary_color' => Setting::primaryColor(),
         ];
     }
 
@@ -133,6 +143,14 @@ class TicketSettings extends Page
     protected function canManageClientPanel(): bool
     {
         return (bool) Auth::user()?->can(self::CLIENT_PANEL_PERMISSION);
+    }
+
+    /**
+     * ¿Quien usa la página puede ver la pestaña Apariencia y cambiar el color?
+     */
+    protected function canManageAppearance(): bool
+    {
+        return (bool) Auth::user()?->can(self::APPEARANCE_PERMISSION);
     }
 
     public function form(Schema $schema): Schema
@@ -149,6 +167,8 @@ class TicketSettings extends Page
                         $this->tab('Seguridad', Heroicon::OutlinedLockClosed, $this->securityComponents()),
                         $this->tab('Clientes', Heroicon::OutlinedUsers, $this->clientComponents())
                             ->visible(fn (): bool => $this->canManageClientPanel()),
+                        $this->tab('Apariencia', Heroicon::OutlinedSwatch, $this->appearanceComponents())
+                            ->visible(fn (): bool => $this->canManageAppearance()),
                     ]),
             ]);
     }
@@ -401,6 +421,45 @@ class TicketSettings extends Page
     }
 
     /**
+     * @return array<Component>
+     */
+    protected function appearanceComponents(): array
+    {
+        return [
+            Section::make('Color de la empresa')
+                ->columnSpanFull()
+                ->schema([
+                    ColorPicker::make('primary_color')
+                        ->label('Color principal')
+                        ->hex()
+                        ->live()
+                        ->required()
+                        ->regex('/^#[0-9a-fA-F]{6}$/')
+                        ->default(Setting::PRIMARY_COLOR_DEFAULT)
+                        ->helperText('Se aplica en todo el sistema, el link del boleto y los PDF.')
+                        ->hintIcon(Heroicon::OutlinedInformationCircle, tooltip: 'Botones y links usan este color exacto; los tonos más claros y más oscuros se generan solos. Sobre un color claro, el texto pasa a oscuro para que se lea.')
+                        ->validationMessages([
+                            'required' => 'Elegí el color principal.',
+                            'regex' => self::PRIMARY_COLOR_INVALID_MESSAGE,
+                        ]),
+
+                    // Vista previa con el color elegido (sin guardar): el
+                    // sitio sigue con el color guardado hasta "Guardar cambios".
+                    View::make('filament.settings.palette-preview')
+                        ->viewData(function (Get $get): array {
+                            $color = (string) $get('primary_color');
+                            $isValid = preg_match('/^#[0-9a-fA-F]{6}$/', $color) === 1;
+
+                            return [
+                                'palette' => $isValid ? BrandPalette::fromHexAsHex($color) : [],
+                                'textColor' => $isValid ? BrandPalette::textColorOn($color) : null,
+                            ];
+                        }),
+                ]),
+        ];
+    }
+
+    /**
      * Cantidad de campos de la pestaña que tienen error de validación.
      */
     protected function countTabErrors(string $tab): int
@@ -570,6 +629,12 @@ class TicketSettings extends Page
             ->values()
             ->all();
         Setting::set(Setting::SERVICE_EXCEPTIONS, json_encode($exceptions));
+
+        // Sin el permiso, la pestaña está oculta: el color queda como estaba
+        // aunque el pedido lo traiga.
+        if ($this->canManageAppearance() && array_key_exists('primary_color', $data)) {
+            Setting::set(Setting::PRIMARY_COLOR, strtolower((string) $data['primary_color']));
+        }
 
         // Sin el permiso, la pestaña está oculta: el parámetro queda como
         // estaba aunque el pedido lo traiga.

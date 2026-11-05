@@ -120,6 +120,7 @@ final class Permissions
                 'actions' => [
                     'manage' => 'Administrar configuración',
                     'client_panel' => 'Activar/desactivar panel de clientes',
+                    'appearance' => 'Cambiar apariencia',
                 ],
             ],
             'buses' => [

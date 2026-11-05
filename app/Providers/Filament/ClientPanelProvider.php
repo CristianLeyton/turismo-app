@@ -9,6 +9,7 @@ use App\Filament\Client\Pages\SetPassword;
 use App\Http\Middleware\EnsureClientPanelIsEnabled;
 use App\Http\Middleware\EnsureClientPasswordIsSet;
 use App\Models\Setting;
+use App\Support\BrandPalette;
 use Filament\Actions\Action;
 use Filament\Enums\ThemeMode;
 use Filament\Http\Middleware\Authenticate;
@@ -16,7 +17,6 @@ use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
 use Filament\Panel;
 use Filament\PanelProvider;
-use Filament\Support\Colors\Color;
 use Filament\View\PanelsRenderHook;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
@@ -53,7 +53,15 @@ class ClientPanelProvider extends PanelProvider
             // mismo logo y mismo color primario.
             ->viteTheme('resources/css/filament/admin/theme.css')
             ->brandLogo(fn () => view('filament.admin.logo'))
-            ->colors(['primary' => Color::Fuchsia])
+            // Color de la empresa (Parámetros > Apariencia): la paleta se
+            // genera en cada request, sin recompilar el tema.
+            ->colors(fn (): array => ['primary' => BrandPalette::current()])
+            // Texto sobre el color principal (logo y vistas propias): blanco
+            // u oscuro según el contraste con el color elegido.
+            ->renderHook(
+                PanelsRenderHook::STYLES_AFTER,
+                fn (): string => BrandPalette::textColorStyleTag(),
+            )
             // El tema sigue la preferencia claro/oscuro del dispositivo del usuario.
             ->defaultThemeMode(ThemeMode::System)
             ->spa(hasPrefetching: true)

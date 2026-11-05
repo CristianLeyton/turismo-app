@@ -18,11 +18,11 @@
             <div
                 class="px-6 py-2 border-b border-gray-200 dark:border-gray-700 flex flex-wrap justify-between items-center gap-2">
                 <h3 class="text-lg font-semibold text-gray-900 dark:text-gray-100">
-                    <span class="text-fuchsia-600 dark:text-fuchsia-400">
+                    <span class="text-primary-600 dark:text-primary-400">
                         {{ $paradas->first()?->location?->name ?? 'Origen' }}
                     </span>
                     <span class="mx-1">→</span>
-                    <span class="text-fuchsia-600 dark:text-fuchsia-400">
+                    <span class="text-primary-600 dark:text-primary-400">
                         {{ $paradas->last()?->location?->name ?? 'Destino' }}
                     </span>
                 </h3>

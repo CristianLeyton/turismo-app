@@ -76,9 +76,9 @@
         <div class="flex flex-col md:flex-row md:justify-between gap-4">
             <div>
                 <h2 class="text-2xl font-bold text-gray-900 dark:text-gray-100">
-                    <span class="text-fuchsia-600">{{ $record?->origin?->name ?? 'Origen' }}</span>
+                    <span class="text-primary-600 dark:text-primary-400">{{ $record?->origin?->name ?? 'Origen' }}</span>
                     →
-                    <span class="text-fuchsia-600">{{ $record?->destination?->name ?? 'Destino' }}</span>
+                    <span class="text-primary-600 dark:text-primary-400">{{ $record?->destination?->name ?? 'Destino' }}</span>
                 </h2>
 
                 <div class="mt-2 space-y-1">
@@ -121,11 +121,11 @@
 
             <div class="text-left md:text-right">
                 <div class="text-sm text-gray-500 dark:text-gray-400 uppercase">Asiento actual</div>
-                <div class="text-3xl font-bold text-fuchsia-600 dark:text-fuchsia-400">
+                <div class="text-3xl font-bold text-primary-600 dark:text-primary-400">
                     {{ $seat?->seat_number ?? '—' }}
                 </div>
                 <div class="mt-2 text-sm text-gray-600 dark:text-gray-400">
-                    <span class="font-semibold text-fuchsia-600 dark:text-fuchsia-400">
+                    <span class="font-semibold text-primary-600 dark:text-primary-400">
                         ${{ number_format((float) ($record?->display_price ?? 0), 0, ',', '.') }}
                     </span>
                     <span class="mx-1">•</span>

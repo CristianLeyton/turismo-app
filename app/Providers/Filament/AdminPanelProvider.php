@@ -9,6 +9,7 @@ use App\Filament\Resources\Users\Pages\Auth\CustomLogin;
 use App\Filament\Widgets\Panel as PanelWidget;
 use App\Filament\Widgets\UserAccount;
 use App\Models\Setting;
+use App\Support\BrandPalette;
 use Filament\Enums\ThemeMode;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
@@ -18,7 +19,6 @@ use Filament\Navigation\NavigationItem;
 use Filament\Notifications\Notification;
 use Filament\Panel;
 use Filament\PanelProvider;
-use Filament\Support\Colors\Color;
 use Filament\View\PanelsRenderHook;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
@@ -57,9 +57,15 @@ class AdminPanelProvider extends PanelProvider
             ->login(CustomLogin::class)
             ->globalSearch(false)
             ->viteTheme('resources/css/filament/admin/theme.css')
-            ->colors([
-                'primary' => Color::Fuchsia,
-            ])
+            // Color de la empresa (Parámetros > Apariencia): la paleta se
+            // genera en cada request, sin recompilar el tema.
+            ->colors(fn (): array => ['primary' => BrandPalette::current()])
+            // Texto sobre el color principal (logo y vistas propias): blanco
+            // u oscuro según el contraste con el color elegido.
+            ->renderHook(
+                PanelsRenderHook::STYLES_AFTER,
+                fn (): string => BrandPalette::textColorStyleTag(),
+            )
             ->defaultThemeMode(ThemeMode::Light)
             ->discoverClusters(in: app_path('Filament/Clusters'), for: 'App\Filament\Clusters')
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\Filament\Resources')

@@ -36,7 +36,7 @@
                             wire:loading.attr="disabled"
                             class="px-4 py-1.5 text-sm font-medium transition
                                 {{ $f === $this->floor
-                                    ? 'bg-primary-500 text-white'
+                                    ? 'bg-primary-500 text-[var(--primary-text)]'
                                     : 'bg-white text-gray-600 hover:bg-gray-50 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800' }}"
                         >{{ $floorName($f) }}</button>
                     @endforeach
@@ -52,7 +52,7 @@
                     type="button"
                     x-on:click="setMode('seat')"
                     :class="mode === 'seat'
-                        ? 'bg-primary-500 text-white'
+                        ? 'bg-primary-500 text-[var(--primary-text)]'
                         : 'bg-white text-gray-600 hover:bg-gray-50 dark:bg-gray-900 dark:text-gray-300'"
                     class="px-4 py-1.5 text-sm font-medium transition"
                 >Asientos</button>
@@ -293,7 +293,7 @@
                             <button
                                 type="submit"
                                 wire:loading.attr="disabled"
-                                class="rounded-lg bg-primary-500 px-4 py-2 text-sm font-medium text-white hover:bg-primary-600"
+                                class="rounded-lg bg-primary-500 px-4 py-2 text-sm font-medium text-[var(--primary-text)] hover:bg-primary-600"
                             >Guardar plantilla</button>
                         </div>
                     </form>

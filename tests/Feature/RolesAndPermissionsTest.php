@@ -221,6 +221,19 @@ class RolesAndPermissionsTest extends TestCase
         $this->assertTrue(User::factory()->superAdmin()->create()->can('settings.client_panel'));
     }
 
+    public function test_permiso_de_apariencia_se_registra_sin_asignarse_a_ningun_rol(): void
+    {
+        Permissions::syncToDatabase();
+
+        $this->assertDatabaseHas('permissions', ['name' => 'settings.appearance']);
+
+        $this->assertFalse(Role::findByName(Permissions::ROLE_ADMIN)->hasPermissionTo('settings.appearance'));
+        $this->assertFalse(Role::findByName(Permissions::ROLE_SELLER)->hasPermissionTo('settings.appearance'));
+
+        $this->assertFalse(User::factory()->admin()->create()->can('settings.appearance'));
+        $this->assertTrue(User::factory()->superAdmin()->create()->can('settings.appearance'));
+    }
+
     public function test_permisos_de_lineas_se_registran_sin_asignarse_a_admin_ni_vendedor(): void
     {
         Permissions::syncToDatabase();

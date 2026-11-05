@@ -17,7 +17,7 @@
                         <span>{{ $line['name'] }}:</span>
                     @endif
                     <a href="tel:{{ $line['dial'] }}"
-                        class="font-semibold text-fuchsia-600 hover:underline dark:text-fuchsia-400">{{ $line['phone'] }}</a>
+                        class="font-semibold text-primary-600 hover:underline dark:text-primary-400">{{ $line['phone'] }}</a>
                 </li>
             @endforeach
         </ul>

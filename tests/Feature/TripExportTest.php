@@ -11,6 +11,7 @@ use App\Models\RouteStop;
 use App\Models\Sale;
 use App\Models\Schedule;
 use App\Models\Seat;
+use App\Models\Setting;
 use App\Models\Ticket;
 use App\Models\Trip;
 use App\Models\User;
@@ -163,6 +164,28 @@ class TripExportTest extends TestCase
         $response->assertOk();
         $this->assertStringContainsString('application/pdf', (string) $response->headers->get('Content-Type'));
         $this->assertStringContainsString("Viaje_N°{$this->trip->id}_Coche_9_01-10-2030.pdf", rawurldecode((string) $response->headers->get('Content-Disposition')));
+    }
+
+    public function test_el_pdf_del_viaje_usa_el_color_de_la_empresa(): void
+    {
+        Setting::set(Setting::PRIMARY_COLOR, '#0e7490');
+
+        $passengers = $this->trip->getPassengersWithDetails();
+        $stops = $this->trip->route->stops()->with('location')->get();
+
+        $html = view('pdf.trip-details', [
+            'trip' => $this->trip,
+            'passengers' => $passengers,
+            'firstStop' => $stops->first(),
+            'lastStop' => $stops->last(),
+            'stops' => $stops,
+            'stopsCount' => $stops->count(),
+            'passengersCount' => $passengers->count(),
+        ])->render();
+
+        BrandColorPdfTest::assertUsesBrandPalette($this, $html);
+
+        Setting::flushCache();
     }
 
     public function test_un_usuario_con_permiso_de_viajes_recibe_el_excel_por_url(): void

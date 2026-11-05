@@ -1,6 +1,6 @@
 ---
 name: filament-ui
-description: Convenciones de UI/UX del panel Filament 4 de turismo-app (venta de boletos de colectivo). Usala SIEMPRE que crees o modifiques cualquier cosa de Filament en este proyecto: resources, clusters, páginas, relation managers, tablas, columnas, filtros, formularios, acciones, modales, notificaciones, widgets, vistas Blade en resources/views/filament o el tema CSS. También cuando el pedido hable de "pantalla", "listado", "ABM", "botón", "modal", "mensaje", "panel de administración" o de un módulo nuevo (rutas, horarios, colectivos, boletos, ventas, pagos, clientes), aunque no diga "Filament".
+description: Convenciones de UI/UX del panel Filament 4 de turismo-app (venta de boletos de colectivo). Usala SIEMPRE que crees o modifiques cualquier cosa de Filament en este proyecto: resources, clusters, páginas, relation managers, tablas, columnas, filtros, formularios, acciones, modales, notificaciones, widgets, vistas Blade en resources/views/filament o el tema CSS. También cuando el pedido hable de "pantalla", "listado", "ABM", "botón", "modal", "mensaje", "panel de administración", "color", "estilos", "PDF" o de un módulo nuevo (rutas, horarios, colectivos, boletos, ventas, pagos, clientes), aunque no diga "Filament".
 ---
 
 # Filament UI — turismo-app
@@ -18,7 +18,7 @@ Ejemplos de referencia en el código (leelos cuando necesites el patrón complet
 
 ## 1. Ubicación y navegación
 
-- El panel usa `topNavigation()`, color primario `Color::Fuchsia` y tema claro por defecto.
+- El panel usa `topNavigation()` y tema claro por defecto. El color primario **es el de la empresa** y no se fija en el código: ver sección 11, "Color de la empresa".
 - Los módulos de configuración van en **clusters** (`app/Filament/Clusters/{Nombre}/`), en el grupo `'Configuración'`, con subnavegación arriba:
 
 ```php
@@ -191,7 +191,24 @@ Notification::make()
 ## 11. Vistas Blade y estilos
 
 - Las vistas custom van en `resources/views/filament/...` y se inyectan con render hooks, `ViewColumn` o `ViewField`.
-- Tailwind v4 con **soporte dark obligatorio**. Paleta usada: tarjetas `rounded-lg bg-gray-50 p-2.5 dark:bg-white/5`; destacados `bg-fuchsia-500/10 text-fuchsia-700 dark:text-fuchsia-400`; montos y avisos `amber`/`yellow`; negativos `red`. Etiquetas chicas `text-[11px] text-gray-500 dark:text-gray-400`, valores `text-base font-bold`.
+- Tailwind v4 con **soporte dark obligatorio**. Paleta usada: tarjetas `rounded-lg bg-gray-50 p-2.5 dark:bg-white/5`; destacados `bg-primary-500/10 text-primary-700 dark:text-primary-400`; montos y avisos `amber`/`yellow`; negativos `red`. Etiquetas chicas `text-[11px] text-gray-500 dark:text-gray-400`, valores `text-base font-bold`.
+
+**Color de la empresa (obligatorio).** El sistema se instala para varias empresas (una instalación por empresa) y cada una elige su color principal en Parámetros > Apariencia. Todo lo que sea "color de marca" sale de esa paleta, nunca de un color fijo, o esa pantalla queda fucsia en la instalación de otra empresa.
+
+| Dónde | Usá | Nunca |
+|---|---|---|
+| Componentes Filament (acciones, badges, columnas, toggles) | `->color('primary')` | `Color::Fuchsia`, `Color::hex(...)` |
+| Clases Tailwind en Blade | `text-primary-600`, `bg-primary-50`, `border-primary-300`, `dark:text-primary-400` | `fuchsia-*`, `purple-*`, `violet-*`, `pink-*` como color de marca |
+| CSS en `theme.css` | `var(--primary-600)` | hex de marca (`#c026d3`, `#d946ef`…) |
+| Texto sobre un fondo `primary-600` | `text-[var(--primary-text)]` (blanco u oscuro según el contraste) | `text-white` fijo: con un color claro queda ilegible |
+| PDFs (dompdf: no entiende `var()` ni `oklch`) | hex de `App\Support\BrandPalette::currentAsHex()`, pasados por el servicio del PDF a la vista (`{{ $brand[600] }}`) | hex de marca escritos en la vista |
+| Páginas fuera de un panel (como `boletos/share`) | imprimir las variables `--primary-*` y `--primary-text` con `BrandPalette::current()` | asumir que Filament las inyecta |
+
+- **Escalones:** el 600 es el color exacto de la empresa (botones, links, acentos fuertes). Para un estado "de la marca" que tiene que distinguirse del principal (asiento seleccionado), usá un tono más oscuro: `bg-primary-800 border-primary-900 hover:bg-primary-900`. 50–200 para fondos suaves, 300 para bordes, 700–800 para texto sobre fondos claros, y 400 para acentos en modo oscuro.
+- **Modo oscuro:** todo `text-primary-500…900` lleva `dark:text-primary-400` (con un color de marca oscuro, como un azul marino, el 600 desaparece sobre fondo negro), y los tonos claros (50–300) quedan chillones sobre fondo oscuro. En oscuro usá el 400 para texto y borde, y fondos translúcidos (`dark:bg-primary-400/15` o `color-mix(in oklab, var(--primary-400) 15%, transparent)` en CSS).
+- **Lo que no es de marca no cambia:** estados (`success`, `danger`, `warning`, `info`, y `red`/`green`/`amber` en Blade) y grises neutros siguen con su color fijo. Usá `primary` solo para lo que identifica a la empresa, no para comunicar un estado.
+- **Guardia automática:** `BrandColorUsageTest` falla si una vista, `theme.css` o `app/Filament` usa `fuchsia-*`, `purple-*` (salvo las categorías del diseñador de colectivos) o un hex de la paleta fucsia anterior, y también si un `text-primary-500…900` no tiene su `dark:text-primary-*` en la misma línea. Si falla, migrá a `primary`; no agregues excepciones.
+- `BrandPalette`, `--primary-text`, la pestaña Apariencia y la guardia llegan con el cambio OpenSpec `configurable-primary-color`. Mientras no esté implementado, `primary` ya funciona en Filament y en Tailwind (hoy es fucsia), así que el código nuevo igual se escribe con `primary`.
 - Grillas responsive con `gap`: `grid grid-cols-2 gap-2 sm:grid-cols-4`.
 - Los estilos globales van en `resources/css/filament/admin/theme.css`. Si creás vistas en una carpeta nueva, agregá su `@source`. Después de tocar clases Tailwind, avisá que hay que correr `npm run build` (o `npm run dev`).
 - Los inputs numéricos no tienen flechas ni cambian con la rueda del mouse (ya resuelto globalmente: no lo dupliques).
@@ -235,6 +252,8 @@ La página `app/Filament/Pages/TicketSettings.php` junta los parámetros del sis
 | Boleto | Lo que recibe el pasajero | PDF automático, mensaje de WhatsApp, líneas de contacto |
 | Calendario | Cuándo hay viajes | Días de la semana, excepciones por fecha |
 | Seguridad | Qué tan protegidas están las acciones | Confirmación de contraseña |
+| Clientes (permiso `settings.client_panel`) | El panel de pasajeros | Panel de clientes activo |
+| Apariencia (permiso `settings.appearance`) | Cómo se ve la marca de la empresa | Color principal |
 
 Si no entra en ninguna, consultalo antes de crear una pestaña nueva. Además de la constante en `Setting` y el campo, sumalo a `TicketSettings::TAB_FIELDS`: de ahí salen el badge rojo de errores de la pestaña y la notificación de guardado fallido.
 
@@ -270,5 +289,6 @@ En el celular el tooltip se abre al tocar el ícono y es fácil no verlo: **un h
 - [ ] Borrados que afectan boletos vendidos protegidos (modal, alternativa y `before()`)
 - [ ] Policy y entrada en `Permissions::catalog()`
 - [ ] Vistas Blade con `dark:`
+- [ ] Colores de marca con `primary` (Filament, Tailwind, `var(--primary-*)`, `$brand` en PDFs): ningún `fuchsia`/`purple` ni hex de marca fijo
 - [ ] Parámetro nuevo: en su pestaña y en `TAB_FIELDS`, texto en el nivel que corresponde y cada regla con mensaje en voseo
 - [ ] Test feature, Pint y tests corridos

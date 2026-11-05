@@ -1,3 +1,8 @@
+{{-- Colores de marca: paleta del color de la empresa en hex (dompdf no
+     entiende var() ni oklch). Se calcula acá si quien renderiza no la pasa. --}}
+@php
+    $brand = $brand ?? \App\Support\BrandPalette::currentAsHex();
+@endphp
 <!DOCTYPE html>
 <html lang='es'>
 
@@ -57,7 +62,7 @@
         .route-title {
             font-size: 14px;
             font-weight: bold;
-            color: #d946ef;
+            color: {{ $brand[500] }};
             text-transform: uppercase;
         }
 
@@ -65,9 +70,9 @@
             display: inline-block;
             margin-top: 1mm;
             padding: 0.5mm 2mm;
-            border: 1px solid #d946ef;
+            border: 1px solid {{ $brand[500] }};
             border-radius: 3px;
-            color: #d946ef;
+            color: {{ $brand[500] }};
             font-size: 10px;
             font-weight: bold;
             letter-spacing: 1px;
@@ -90,8 +95,8 @@
         }
 
         .child-box {
-            background: #f3e8ff;
-            border-left: 3px solid #d946ef;
+            background: {{ $brand[100] }};
+            border-left: 3px solid {{ $brand[500] }};
             padding: 2mm;
             margin-top: 2mm;
             border-radius: 4px;
@@ -109,8 +114,8 @@
 
         .reschedule-mark {
             background: #fcecff;
-            border: 2px solid #f3e8ff;
-            color: #d946ef;
+            border: 2px solid {{ $brand[100] }};
+            color: {{ $brand[500] }};
             font-size: 11px;
             font-weight: bold;
             padding: 2mm;
@@ -149,11 +154,11 @@
         .seat {
             font-size: 18px;
             font-weight: bold;
-            color: #d946ef;
+            color: {{ $brand[500] }};
             margin: 2mm;
             padding: 2mm;
             border-radius: 4px;
-            border: 1px solid #f3e8ff;
+            border: 1px solid {{ $brand[100] }};
             text-align: center;
             background-color: #f3f4f6;
         }
@@ -191,8 +196,8 @@
         .child-warning {
             margin-top: 2mm;
             padding: 2mm;
-            background: #f3e8ff;
-            border-left: 3px solid #d946ef;
+            background: {{ $brand[100] }};
+            border-left: 3px solid {{ $brand[500] }};
             font-size: 9px;
             font-weight: bold;
             color: #6b21a8;
@@ -318,7 +323,7 @@
                                 @if ($hasChild)
                                     @foreach ($ticket->passenger->children as $child)
                                         <div class='child-box'>
-                                            <strong style="color: #d946ef;">ACOMPAÑANTE</strong><br>
+                                            <strong style="color: {{ $brand[500] }};">ACOMPAÑANTE</strong><br>
                                             <strong>Nombre:</strong> {{ $child->full_name }}<br>
                                             <strong>Documento:</strong> {{ $child->dni }}
                                         </div>
@@ -390,7 +395,7 @@
                                                 &middot;
                                             @endif
                                             {{ $line['name'] !== null ? $line['name'].':' : '' }}
-                                            <a style="color:#d946ef" href="tel:{{ $line['dial'] }}">{{ $line['phone'] }}</a>
+                                            <a style="color:{{ $brand[500] }}" href="tel:{{ $line['dial'] }}">{{ $line['phone'] }}</a>
                                         @endforeach
                                     </div>
                                 @endif

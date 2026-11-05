@@ -17,6 +17,7 @@ use App\Models\Setting;
 use App\Models\Ticket;
 use App\Models\Trip;
 use App\Models\User;
+use App\Support\Permissions;
 use App\Support\ServiceDays;
 use Filament\Schemas\Components\Tabs;
 use Filament\Schemas\Components\Tabs\Tab;
@@ -256,6 +257,20 @@ class TicketSettingsTest extends TestCase
         $this->assertSame(1, Setting::query()->where('key', Setting::REQUIRE_PASSWORD_TICKET_DELETE)->count());
     }
 
+    public function test_el_color_principal_por_defecto_es_fucsia_y_un_valor_corrupto_no_rompe(): void
+    {
+        $this->assertSame('#c026d3', Setting::primaryColor());
+
+        Setting::set(Setting::PRIMARY_COLOR, '#10288C');
+        $this->assertSame('#10288c', Setting::primaryColor());
+
+        Setting::set(Setting::PRIMARY_COLOR, 'azul');
+        $this->assertSame('#c026d3', Setting::primaryColor());
+
+        Setting::set(Setting::PRIMARY_COLOR, '#12345');
+        $this->assertSame('#c026d3', Setting::primaryColor());
+    }
+
     // ====================== Líneas de contacto: lectura ======================
 
     public function test_sin_configuracion_no_hay_lineas_de_contacto(): void
@@ -395,7 +410,7 @@ class TicketSettingsTest extends TestCase
             ->assertSee('Panel de clientes activo');
 
         $this->assertSame(
-            ['Venta', 'Boleto', 'Calendario', 'Seguridad', 'Clientes'],
+            ['Venta', 'Boleto', 'Calendario', 'Seguridad', 'Clientes', 'Apariencia'],
             array_keys($this->tabBadges($component)),
         );
     }
@@ -448,6 +463,123 @@ class TicketSettingsTest extends TestCase
         $this->assertTrue(Setting::getBool(Setting::REQUIRE_PASSWORD_TICKET_DELETE));
         $this->assertFalse(Setting::panelClientesActivo());
         $this->assertDatabaseMissing('settings', ['key' => Setting::PANEL_CLIENTES_ACTIVO]);
+    }
+
+    // ====================== Apariencia ======================
+
+    private function adminWithPermissions(string ...$permissions): User
+    {
+        Permissions::syncToDatabase();
+
+        $this->admin->givePermissionTo($permissions);
+
+        return $this->admin->refresh();
+    }
+
+    public function test_con_el_permiso_de_apariencia_se_ve_su_pestana_al_final(): void
+    {
+        $this->actingAs($this->adminWithPermissions(TicketSettings::APPEARANCE_PERMISSION));
+
+        $component = Livewire::test(TicketSettings::class)
+            ->assertSee('Color principal');
+
+        $this->assertSame(
+            ['Venta', 'Boleto', 'Calendario', 'Seguridad', 'Apariencia'],
+            array_keys($this->tabBadges($component)),
+        );
+    }
+
+    public function test_con_los_dos_permisos_se_ven_clientes_y_apariencia_en_orden(): void
+    {
+        $this->actingAs($this->adminWithPermissions(
+            TicketSettings::CLIENT_PANEL_PERMISSION,
+            TicketSettings::APPEARANCE_PERMISSION,
+        ));
+
+        $this->assertSame(
+            ['Venta', 'Boleto', 'Calendario', 'Seguridad', 'Clientes', 'Apariencia'],
+            array_keys($this->tabBadges(Livewire::test(TicketSettings::class))),
+        );
+    }
+
+    public function test_sin_el_permiso_de_apariencia_no_se_ve_su_pestana(): void
+    {
+        $this->actingAs($this->admin);
+
+        $this->assertFalse($this->admin->can(TicketSettings::APPEARANCE_PERMISSION));
+
+        $component = Livewire::test(TicketSettings::class)
+            ->assertDontSee('Color principal');
+
+        $this->assertArrayNotHasKey('Apariencia', $this->tabBadges($component));
+    }
+
+    public function test_sin_configurar_el_color_principal_es_fucsia_y_la_vista_previa_lo_muestra(): void
+    {
+        $this->actingAs($this->adminWithPermissions(TicketSettings::APPEARANCE_PERMISSION));
+
+        Livewire::test(TicketSettings::class)
+            ->assertSet('data.primary_color', '#c026d3')
+            ->assertSeeHtml('background-color: #c026d3');
+    }
+
+    public function test_la_vista_previa_muestra_el_color_elegido_sin_guardarlo(): void
+    {
+        $this->actingAs($this->adminWithPermissions(TicketSettings::APPEARANCE_PERMISSION));
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.primary_color', '#10288c')
+            ->assertSeeHtml('background-color: #10288c');
+
+        $this->assertSame('#c026d3', Setting::primaryColor());
+        $this->assertDatabaseMissing('settings', ['key' => Setting::PRIMARY_COLOR]);
+    }
+
+    public function test_con_el_permiso_se_guarda_el_color_principal(): void
+    {
+        $this->actingAs($this->adminWithPermissions(TicketSettings::APPEARANCE_PERMISSION));
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.primary_color', '#10288C')
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertSame('#10288c', Setting::primaryColor());
+
+        Livewire::test(TicketSettings::class)
+            ->assertSet('data.primary_color', '#10288c');
+    }
+
+    public function test_un_color_invalido_se_rechaza_en_espanol_sin_guardar_nada(): void
+    {
+        $this->actingAs($this->adminWithPermissions(TicketSettings::APPEARANCE_PERMISSION));
+
+        foreach (['azul', '#12345'] as $invalidColor) {
+            Livewire::test(TicketSettings::class)
+                ->set('data.venta_limite_horas', 8)
+                ->set('data.primary_color', $invalidColor)
+                ->call('save')
+                ->assertHasFormErrors(['primary_color' => 'regex'])
+                ->assertSee('Elegí un color válido');
+
+            $this->assertSame(Setting::VENTA_LIMITE_HORAS_DEFAULT, Setting::ventaLimiteHoras());
+            $this->assertDatabaseMissing('settings', ['key' => Setting::PRIMARY_COLOR]);
+        }
+    }
+
+    public function test_sin_el_permiso_un_pedido_manipulado_no_cambia_el_color(): void
+    {
+        $this->actingAs($this->admin);
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.primary_color', '#10288c')
+            ->set('data.require_password_ticket_delete', true)
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertTrue(Setting::getBool(Setting::REQUIRE_PASSWORD_TICKET_DELETE));
+        $this->assertSame('#c026d3', Setting::primaryColor());
+        $this->assertDatabaseMissing('settings', ['key' => Setting::PRIMARY_COLOR]);
     }
 
     private function tabBadges(Testable $component): array

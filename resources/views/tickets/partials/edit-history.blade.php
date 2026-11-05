@@ -21,7 +21,7 @@
     <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 last:border-b-0">
         <div class="flex flex-col sm:flex-row sm:justify-between gap-2">
             <span class="self-start inline-block px-2.5 py-1 text-xs font-semibold rounded-lg
-                         bg-fuchsia-100 dark:bg-fuchsia-900/30 text-fuchsia-800 dark:text-fuchsia-300">
+                         bg-primary-100 dark:bg-primary-900/30 text-primary-800 dark:text-primary-300">
                 {{ count($group['changes']) }} campo{{ count($group['changes']) === 1 ? '' : 's' }} corregido{{ count($group['changes']) === 1 ? '' : 's' }}
             </span>
 

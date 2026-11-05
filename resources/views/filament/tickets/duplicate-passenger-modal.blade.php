@@ -27,7 +27,7 @@
                 </div>
                 <div class="sm:col-span-2">
                     <dt class="text-xs font-medium uppercase text-gray-500 dark:text-gray-400">Tramo</dt>
-                    <dd class="font-medium text-fuchsia-600 dark:text-fuchsia-400">{{ $row['route'] !== '' ? $row['route'] : '—' }}</dd>
+                    <dd class="font-medium text-primary-600 dark:text-primary-400">{{ $row['route'] !== '' ? $row['route'] : '—' }}</dd>
                 </div>
                 <div>
                     <dt class="text-xs font-medium uppercase text-gray-500 dark:text-gray-400">Asiento</dt>

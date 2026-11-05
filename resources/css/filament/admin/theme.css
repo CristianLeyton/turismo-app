@@ -14,7 +14,7 @@
 .fi-ta-filters-above-content-ctn {
     .fi-ta-filters-header button {
         background: none !important;
-        border: 1px solid #d87fee !important;
+        border: 1px solid var(--primary-300) !important;
         box-shadow: none !important;
         padding: 0.25rem !important;
         border-radius: 0.375rem !important;
@@ -30,15 +30,32 @@
     .fi-ta-filters-header button::after {
         display: flex !important;
         content: "Limpiar filtros" !important;
-        color: #c026d3 !important;
+        color: var(--primary-600) !important;
         position: absolute !important;
         inset: 0 !important;
         align-items: center !important;
         justify-content: center !important;
     }
 
+    /* 100 y no 50: con colores oscuros el 50 es casi blanco y el hover no se nota. */
     .fi-ta-filters-header button:hover {
-        background: #f5ecf7 !important;
+        background: var(--primary-100) !important;
+    }
+}
+
+/* En oscuro, los tonos claros (50/300/600) quedan chillones sobre el fondo:
+   borde y texto 400, y hover translúcido. */
+.dark .fi-ta-filters-above-content-ctn {
+    .fi-ta-filters-header button {
+        border-color: color-mix(in oklab, var(--primary-400) 50%, transparent) !important;
+    }
+
+    .fi-ta-filters-header button::after {
+        color: var(--primary-400) !important;
+    }
+
+    .fi-ta-filters-header button:hover {
+        background: color-mix(in oklab, var(--primary-400) 15%, transparent) !important;
     }
 }
 
@@ -66,10 +83,10 @@ input[type="checkbox"].toggle-checkbox.fi-checkbox-input {
 .filament-forms-checkbox-wrapper
     input[type="checkbox"].toggle-checkbox.fi-checkbox-input:checked,
 input[type="checkbox"].toggle-checkbox.fi-checkbox-input:checked {
-    background: linear-gradient(135deg, #d946ef 0%, #c026d3 100%) !important;
+    background: linear-gradient(135deg, var(--primary-500) 0%, var(--primary-600) 100%) !important;
     box-shadow:
         inset 0 1px 3px rgba(0, 0, 0, 0.1),
-        0 0 0 3px rgba(217, 70, 239, 0.1) !important;
+        0 0 0 3px color-mix(in oklab, var(--primary-500) 10%, transparent) !important;
 }
 
 .filament-forms-checkbox-wrapper
@@ -115,7 +132,7 @@ input[type="checkbox"].toggle-checkbox.fi-checkbox-input:checked::before {
 }
 
 .filament-forms-checkbox-wrapper .fi-checkbox-input.toggle-checkbox:checked {
-    background: linear-gradient(135deg, #d946ef 0%, #c026d3 100%) !important;
+    background: linear-gradient(135deg, var(--primary-500) 0%, var(--primary-600) 100%) !important;
 }
 
 .filament-forms-checkbox-wrapper .fi-checkbox-input.toggle-checkbox::before {
@@ -162,16 +179,17 @@ input[type="number"]::-webkit-inner-spin-button {
     margin: 0 !important;
 }
 
-/* Logo personalizado */
+/* Logo personalizado: fondo del color de la empresa y texto blanco u
+   oscuro según el contraste (--primary-text, ver BrandPalette). */
 .logo-personalizado {
     margin-top: -0.30rem;
     padding: 0.5rem;
-    color: #f8fafc;
-    background-color: #c026d3;
+    color: var(--primary-text, #f8fafc);
+    background-color: var(--primary-600);
     border-radius: 0.375rem;
 }
 
 .dark .logo-personalizado {
     background-color: #242427;
-    color: #d87fee;
+    color: var(--primary-400);
 }

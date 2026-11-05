@@ -104,6 +104,16 @@ class Setting extends Model
      */
     public const PANEL_CLIENTES_ACTIVO = 'clients.panel_activo';
 
+    /**
+     * Color principal de la empresa (hex `#RRGGBB`). De él sale la paleta
+     * `primary` de los paneles, la página pública del boleto y los PDFs
+     * (ver App\Support\BrandPalette).
+     */
+    public const PRIMARY_COLOR = 'appearance.primary_color';
+
+    /** Fucsia histórico del sistema: sin configurar, todo se ve como antes. */
+    public const PRIMARY_COLOR_DEFAULT = '#c026d3';
+
     protected $fillable = ['key', 'value'];
 
     /**
@@ -180,6 +190,22 @@ class Setting extends Model
     public static function panelClientesActivo(): bool
     {
         return self::getBool(self::PANEL_CLIENTES_ACTIVO, false);
+    }
+
+    /**
+     * Color principal guardado, en minúsculas. Un valor que no sea `#RRGGBB`
+     * (nunca guardado, o corrupto) cae al fucsia por defecto para que el
+     * sitio nunca se quede sin paleta.
+     */
+    public static function primaryColor(): string
+    {
+        $value = self::raw(self::PRIMARY_COLOR);
+
+        if ($value !== null && preg_match('/^#[0-9a-fA-F]{6}$/', trim($value)) === 1) {
+            return strtolower(trim($value));
+        }
+
+        return self::PRIMARY_COLOR_DEFAULT;
     }
 
     /**

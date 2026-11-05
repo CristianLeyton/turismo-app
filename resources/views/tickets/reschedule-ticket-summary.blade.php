@@ -82,7 +82,7 @@
 
         <div class="text-right">
             <div class="text-xs uppercase text-gray-500 dark:text-gray-400">Asiento actual</div>
-            <div class="text-2xl font-bold text-fuchsia-600 dark:text-fuchsia-400">
+            <div class="text-2xl font-bold text-primary-600 dark:text-primary-400">
                 {{ $seat?->seat_number ?? ($isPendingDate ? 'A asignar' : '—') }}
             </div>
         </div>

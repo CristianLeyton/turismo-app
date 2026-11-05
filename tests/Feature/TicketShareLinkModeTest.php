@@ -17,6 +17,7 @@ use App\Models\Setting;
 use App\Models\Ticket;
 use App\Models\Trip;
 use App\Models\User;
+use App\Support\BrandPalette;
 use App\Support\ShareLinkNotification;
 use App\Support\WhatsAppShare;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -166,6 +167,26 @@ class TicketShareLinkModeTest extends TestCase
         $this->assertStringContainsString($expectedText, urldecode($targets[0]['url']));
     }
 
+    public function test_la_pagina_del_boleto_usa_el_color_de_la_empresa(): void
+    {
+        Setting::set(Setting::DESCARGA_AUTOMATICA_PDF, '0');
+        Setting::set(Setting::PRIMARY_COLOR, '#0e7490');
+
+        $f = $this->makeFixture();
+        $this->actingAs(User::factory()->vendedor()->create());
+
+        $this->invokeHandleRecordCreation($this->salePayload($f, ['81000001'], ['81000001' => '3881234567']));
+
+        $palette = BrandPalette::fromHex('#0e7490');
+
+        $this->get(Ticket::sole()->shareUrl())
+            ->assertOk()
+            ->assertSee("--primary-600: {$palette[600]};", false)
+            ->assertSee("--primary-50: {$palette[50]};", false)
+            ->assertSee('--primary-text: #ffffff;', false)
+            ->assertDontSee('fuchsia', false);
+    }
+
     public function test_el_mensaje_de_whatsapp_viene_de_parametros(): void
     {
         Setting::set(Setting::WHATSAPP_MENSAJE, 'Aca va tu boleto: {link} - buscado desde_parametros');
@@ -307,7 +328,7 @@ class TicketShareLinkModeTest extends TestCase
             ->assertOk()
             ->assertSeeInOrder(['Contacto:', 'Orán:', '+54 9 (3878) 804-506', '387 123-4567'])
             ->assertSee('href="tel:+5493878804506"', false)
-            ->assertSee('text-fuchsia-600', false)
+            ->assertSee('text-primary-600', false)
             ->assertDontSee('Link verificable del boleto');
     }
 

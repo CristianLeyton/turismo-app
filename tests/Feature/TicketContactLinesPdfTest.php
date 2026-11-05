@@ -10,6 +10,7 @@ use App\Models\Setting;
 use App\Models\Ticket;
 use App\Models\User;
 use App\Services\TicketPdfService;
+use App\Support\BrandPalette;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -86,6 +87,14 @@ class TicketContactLinesPdfTest extends TestCase
         return trim(preg_replace('/\s+/', ' ', html_entity_decode(strip_tags($matches[1]))));
     }
 
+    public function test_el_boleto_usa_el_color_de_la_empresa(): void
+    {
+        Setting::set(Setting::PRIMARY_COLOR, '#0e7490');
+        $this->configure([['name' => 'Orán', 'phone' => '3878-804506']]);
+
+        BrandColorPdfTest::assertUsesBrandPalette($this, $this->renderPdfHtml());
+    }
+
     public function test_con_dos_lineas_el_boleto_las_muestra_en_una_fila(): void
     {
         $this->configure([
@@ -108,8 +117,9 @@ class TicketContactLinesPdfTest extends TestCase
 
         $html = $this->renderPdfHtml();
 
-        $this->assertStringContainsString('<a style="color:#d946ef" href="tel:3878804506">3878-804506</a>', $html);
-        $this->assertStringContainsString('<a style="color:#d946ef" href="tel:+5493878804506">+54 9 (3878) 804-506</a>', $html);
+        $linkColor = BrandPalette::currentAsHex()[500];
+        $this->assertStringContainsString('<a style="color:'.$linkColor.'" href="tel:3878804506">3878-804506</a>', $html);
+        $this->assertStringContainsString('<a style="color:'.$linkColor.'" href="tel:+5493878804506">+54 9 (3878) 804-506</a>', $html);
         $this->assertStringNotContainsString('>Orán:</a>', $html);
     }
 

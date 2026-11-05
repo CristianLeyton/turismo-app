@@ -2,37 +2,33 @@
 
 namespace App\Providers\Filament;
 
+use App\Filament\Pages\Auth\EditProfile;
+use App\Filament\Pages\CustomDashboard;
+use App\Filament\Resources\Tickets\TicketResource;
 use App\Filament\Resources\Users\Pages\Auth\CustomLogin;
+use App\Filament\Widgets\Panel as PanelWidget;
+use App\Filament\Widgets\UserAccount;
+use App\Models\Setting;
+use App\Support\BrandPalette;
+use Filament\Enums\ThemeMode;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
-use Filament\Notifications\Notification;
-use Filament\Pages\Dashboard;
-use App\Filament\Pages\CustomDashboard;
+use Filament\Navigation\NavigationItem;
 use Filament\Panel;
 use Filament\PanelProvider;
-use Filament\Support\Colors\Color;
-use Filament\Widgets\AccountWidget;
-use Filament\Widgets\FilamentInfoWidget;
+use Filament\View\PanelsRenderHook;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
 use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Session\Middleware\StartSession;
-use Illuminate\View\Middleware\ShareErrorsFromSession;
-use App\Filament\Pages\Auth\EditProfile;
-use App\Filament\Resources\Tickets\TicketResource;
-use Filament\Enums\ThemeMode;
-use Filament\Navigation\NavigationItem;
-use Filament\View\PanelsRenderHook;
-use App\Filament\Widgets\Panel as PanelWidget;
-use App\Filament\Widgets\UserAccount;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\View\Middleware\ShareErrorsFromSession;
 
 class AdminPanelProvider extends PanelProvider
 {
-
     public function panel(Panel $panel): Panel
     {
         return $panel
@@ -60,9 +56,15 @@ class AdminPanelProvider extends PanelProvider
             ->login(CustomLogin::class)
             ->globalSearch(false)
             ->viteTheme('resources/css/filament/admin/theme.css')
-            ->colors([
-                'primary' => Color::Blue,
-            ])
+            // Color de la empresa (Parámetros > Apariencia): la paleta se
+            // genera en cada request, sin recompilar el tema.
+            ->colors(fn(): array => ['primary' => BrandPalette::current()])
+            // Texto sobre el color principal (logo y vistas propias): blanco
+            // u oscuro según el contraste con el color elegido.
+            ->renderHook(
+                PanelsRenderHook::STYLES_AFTER,
+                fn(): string => BrandPalette::textColorStyleTag(),
+            )
             ->defaultThemeMode(ThemeMode::Light)
             ->discoverClusters(in: app_path('Filament/Clusters'), for: 'App\Filament\Clusters')
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\Filament\Resources')
@@ -117,50 +119,15 @@ class AdminPanelProvider extends PanelProvider
                 HTML,
             )
             /* Atajo para clientes: un pasajero puede llegar por error al login
-               del panel de administración; desde ahí lo mando al panel
-               público de clientes ("Mis boletos", PanelProvider con path
-               'clientes', que incluye el ingreso por DNI). Sólo en el login
-               del panel de administración: PanelsRenderHook sólo se
-               aplica en la página Login de este panel. */
-            /*             ->renderHook(
+               del panel de administración; desde ahí lo mando al ingreso del
+               panel de clientes. Solo con el parámetro "Panel de clientes
+               activo": apagado, /clientes responde 404. El render hook solo
+               se aplica en la página Login de este panel. */
+            ->renderHook(
                 PanelsRenderHook::AUTH_LOGIN_FORM_AFTER,
-                fn () => <<<'HTML'
-                    <style>
-                        .clientes-login-shortcut {
-                            margin-top: 1rem;
-                            padding: 0.75rem 1rem;
-                            border: 1px solid #f3e8f6;
-                            border-radius: 0.75rem;
-                            background: #faf5fd;
-                            display: flex;
-                            align-items: center;
-                            justify-content: space-between;
-                            gap: 0.75rem;
-                            flex-wrap: wrap;
-                            font-size: 0.875rem;
-                            color: #57534e;
-                        }
-
-                        .clientes-login-shortcut p {
-                            margin: 0;
-                        }
-
-                        .clientes-login-shortcut a {
-                            color: #155DFC;
-                            font-weight: 600;
-                            text-decoration: none;
-                            white-space: nowrap;
-                        }
-
-                        .clientes-login-shortcut a:hover {
-                            text-decoration: underline;
-                        }
-                    </style>
-                    <div class="clientes-login-shortcut">
-                        <p>¿Sos pasajero? Tus boletos están en el <a href="/clientes">panel de Clientes.</a></p>
-                        
-                    </div>
-                HTML,
-            ) */;
+                fn(): string => Setting::panelClientesActivo()
+                    ? view('filament.admin.client-login-shortcut')->render()
+                    : '',
+            );
     }
 }

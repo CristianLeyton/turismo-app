@@ -18,8 +18,7 @@
 
     <div class="flex flex-wrap items-center gap-1 mt-1.5">
         @forelse ($roles as $role)
-            <span
-                class="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900/40 dark:text-blue-200">
+            <span class="inline-flex items-center rounded-full bg-primary-100 px-2 py-0.5 text-xs font-medium text-primary-700 dark:bg-primary-900/40 dark:text-primary-200">
                 {{ $role->name }}
             </span>
         @empty

@@ -2,12 +2,14 @@
 
 namespace App\Filament\Resources\Tickets\Schemas;
 
+use App\Models\Bus;
 use App\Models\Schedule;
 use App\Models\Seat;
 use App\Models\SeatReservation;
 use App\Models\Setting;
 use App\Models\Ticket;
 use App\Models\Trip;
+use App\Support\ServiceDays;
 use Carbon\Carbon;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Hidden;
@@ -30,7 +32,7 @@ class TicketRescheduleForm
             ->components([
                 Section::make('Boleto actual')
                     ->description(fn (LivewireComponent $livewire) => self::ticket($livewire)
-                        ? "Boleto N°" . self::ticket($livewire)->id . " — Venta N°" . self::ticket($livewire)->sale_id
+                        ? 'Boleto N°'.self::ticket($livewire)->id.' — Venta N°'.self::ticket($livewire)->sale_id
                         : '')
                     ->schema([
                         ViewField::make('ticket_summary')
@@ -61,8 +63,13 @@ class TicketRescheduleForm
                         DatePicker::make('date')
                             // Reprogramar el tramo de vuelta reusa este bloque:
                             // el rótulo acompaña al tramo real del boleto.
-                            ->label(fn (LivewireComponent $livewire) => 'Nueva fecha de ' . self::legLabel(self::ticket($livewire)))
+                            ->label(fn (LivewireComponent $livewire) => 'Nueva fecha de '.self::legLabel(self::ticket($livewire)))
                             ->required()
+                            ->native(false)
+                            ->displayFormat('d/m/Y')
+                            ->closeOnDateSelection()
+                            ->disabledDates(fn (): array => ServiceDays::disabledTravelDatesForCurrentUser())
+                            ->helperText(fn (Get $get): ?string => ServiceDays::userCanBypass() ? ServiceDays::warning($get('date')) : null)
                             // Cruzado: la ida no puede quedar después de la vuelta.
                             // Si se está eligiendo una vuelta nueva (scope "both")
                             // el tope se relaja hasta que esa fecha exista, para
@@ -111,7 +118,7 @@ class TicketRescheduleForm
                             ]),
 
                         Select::make('schedule_id')
-                            ->label(fn (LivewireComponent $livewire) => 'Horario de ' . self::legLabel(self::ticket($livewire)))
+                            ->label(fn (LivewireComponent $livewire) => 'Horario de '.self::legLabel(self::ticket($livewire)))
                             ->required()
                             ->live()
                             ->disabled(fn (Get $get) => blank($get('date')))
@@ -195,7 +202,7 @@ class TicketRescheduleForm
                             }),
 
                         ViewField::make('seat_selector')
-                            ->label(fn (LivewireComponent $livewire) => 'Nuevo asiento de ' . self::legLabel(self::ticket($livewire)))
+                            ->label(fn (LivewireComponent $livewire) => 'Nuevo asiento de '.self::legLabel(self::ticket($livewire)))
                             ->columnSpanFull()
                             ->view('tickets.seat-selector')
                             ->visible(fn (Get $get) => filled($get('trip_id')) && Trip::find($get('trip_id')) !== null)
@@ -228,6 +235,11 @@ class TicketRescheduleForm
                         DatePicker::make('return_date')
                             ->label('Nueva fecha de vuelta')
                             ->required()
+                            ->native(false)
+                            ->displayFormat('d/m/Y')
+                            ->closeOnDateSelection()
+                            ->disabledDates(fn (): array => ServiceDays::disabledTravelDatesForCurrentUser())
+                            ->helperText(fn (Get $get): ?string => ServiceDays::userCanBypass() ? ServiceDays::warning($get('return_date')) : null)
                             // Cruzado: la vuelta no puede salir antes que la ida
                             // elegida (o que hoy, si todavía no se eligió la ida).
                             ->minDate(function (Get $get) {
@@ -500,9 +512,10 @@ class TicketRescheduleForm
 
     /**
      * Horarios bookable() que cubren el segmento. Para boletos con bus_id
-     * guardado (venta con colectivo obligatorio) sólo se ofrecen horarios de
-     * rutas de ese colectivo; para boletos viejos se mantiene el comportamiento
-     * anterior (cualquier horario que cubra el segmento, sin forzar el bus).
+     * guardado (venta con colectivo obligatorio) se ofrecen horarios de todos
+     * los colectivos de su línea, con el nombre del colectivo en la etiqueta;
+     * para boletos viejos se mantiene el comportamiento anterior (cualquier
+     * horario que cubra el segmento, sin forzar el bus).
      */
     private static function scheduleOptions(int $originId, int $destinationId, ?Ticket $ticket = null): array
     {
@@ -510,12 +523,16 @@ class TicketRescheduleForm
             ->bookable()
             ->whereHas('route.stops', fn ($q) => $q->where('location_id', $originId))
             ->whereHas('route.stops', fn ($q) => $q->where('location_id', $destinationId))
-            ->when(filled($ticket?->bus_id), fn ($q) => $q->whereHas('route', fn ($r) => $r->where('bus_id', $ticket->bus_id)))
-            ->with('route.stops')
+            ->when(filled($ticket?->bus_id), fn ($q) => $q->whereHas('route', fn ($r) => $r->whereIn('bus_id', Bus::idsInSameLineAs($ticket->bus_id))))
+            ->with(['route.stops', 'route.bus'])
             ->get()
             ->filter(fn (Schedule $schedule) => $schedule->route->isValidSegment($originId, $destinationId))
             ->sortBy(fn (Schedule $schedule) => $schedule->display_name, SORT_NATURAL | SORT_FLAG_CASE)
-            ->mapWithKeys(fn (Schedule $schedule) => [$schedule->id => $schedule->display_name])
+            ->mapWithKeys(fn (Schedule $schedule) => [
+                $schedule->id => $schedule->route->bus?->name !== null
+                    ? "{$schedule->display_name} · {$schedule->route->bus->name}"
+                    : $schedule->display_name,
+            ])
             ->toArray();
     }
 

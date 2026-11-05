@@ -78,7 +78,7 @@
         </form>
 
         <p class="text-sm text-gray-400 dark:text-gray-500">
-            La podés cambiar más adelante desde «Mi perfil».
+            La podés cambiar más adelante desde «Mi perfil», en el menú de tu usuario.
         </p>
     </div>
 </x-filament-panels::page>

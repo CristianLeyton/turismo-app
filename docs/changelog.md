@@ -1,3 +1,68 @@
+## 2026-11-04 — Editor de rutas: datos, recorrido y horarios en una sola pantalla
+
+- Cada ruta se edita en una pantalla con pestañas **Datos**, **Recorrido** y **Horarios**. Al crear una ruta se pasa directo a esa pantalla. Los menús sueltos «Paradas» y «Horarios» salen del cluster Destinos; cada pestaña respeta los permisos de su módulo.
+- **Recorrido:** las paradas nuevas van al final sin cargar un número de orden, el destino se elige con buscador y se puede crear uno nuevo ahí mismo. Las horas se cargan como hora del primer horario del día y una columna muestra cómo quedan en los demás horarios. Sin horarios cargados, pide cargar uno primero.
+- **Cambiar orden:** se arrastran las paradas y el orden se guarda recién con **«Confirmar cambios»** (o se vuelve atrás con «Descartar cambios»). Las horas siguen pegadas a la posición.
+- **Validaciones en lenguaje simple:** destino repetido en el recorrido, llegada posterior a la salida, parada que sale antes que la anterior o antes de la salida del horario.
+- **Aviso de boletos vendidos:** antes de guardar un cambio que mueve horas (editar o eliminar un horario o una parada, reordenar), avisa cuántos boletos de viajes que todavía no partieron van a ver la hora nueva y pide confirmación.
+- **Listado de rutas:** muestra el recorrido («Orán → Salta»), la cantidad de paradas y de horarios, y la alerta «Sin paradas» / «Sin horarios» en rutas activas incompletas. Se quitan las columnas técnicas de fechas del cluster.
+- Correcciones: al editar una parada el formulario mostraba una hora equivocada (y guardar sin tocarla la dejaba mal); reordenar una ruta con paradas eliminadas daba error y dejaba el orden a medio cambiar.
+
+## 2026-11-04 — Protección al eliminar horarios, rutas y destinos
+
+- Un **horario** con boletos en viajes que todavía no partieron no se puede eliminar: en su lugar aparece **«Desactivar»**.
+- Una **ruta** con viajes pendientes (no partieron y tienen boletos vendidos) no se puede eliminar, ni desde el listado, ni desde su pantalla, ni en lote: el aviso dice cuántos boletos tiene y ofrece **«Desactivar ruta»**.
+- Un **destino** que está en el recorrido de alguna ruta no se puede eliminar (ni definitivamente, que borraría esas paradas); el aviso nombra las rutas. Al editar un destino usado, avisa en qué rutas se va a ver el cambio. El listado de destinos muestra en cuántas rutas se usa cada uno.
+
+## 2026-11-03 — Permisos para la vista «Líneas»
+
+- La vista Colectivos > **Líneas** pasa a exigir los permisos del módulo nuevo «Líneas» (antes cualquier usuario del panel podía verla y editarla). Se habilitan desde la matriz de Roles; por defecto ni Administrador ni Vendedor los traen.
+
+## 2026-11-03 — Lista de viajes: viajes sin pasajeros ocultos por defecto
+
+- La lista de viajes muestra solo los que tienen al menos un boleto activo. El switch **«Ver también viajes sin pasajeros»** los vuelve a mostrar (en gris), y buscar por «Viaje Nº» encuentra el viaje aunque esté vacío. No se borra ningún viaje.
+
+## 2026-11-03 — Líneas de colectivo y refuerzos
+
+- Nuevo concepto de **Línea**: agrupa colectivos que comparten recorrido, por ejemplo el regular y su refuerzo. Al vender, el selector de colectivo lista solo los regulares, y los horarios incluyen los de toda la línea con el nombre de su colectivo («14:00 · Oran - Salta (Refuerzo)»).
+- La reprogramación de un tramo ofrece los horarios de los colectivos de la misma línea. Un colectivo sin línea funciona igual que antes, y no cambia ninguna venta, boleto ni viaje existente.
+
+## 2026-11-03 — Un solo boleto por persona en cada viaje
+
+- Una persona (por DNI, contando menores que viajan con un adulto) no puede tener dos boletos activos en el mismo viaje. Al pasar del paso Pasajeros aparece un aviso con «Ver boleto», y la venta y la reprogramación se bloquean si el DNI ya está en el viaje. El formulario tampoco deja cargar dos veces el mismo DNI en una venta.
+
+## 2026-11-03 — Líneas de contacto en el boleto
+
+- Nuevo parámetro «Líneas de contacto» (hasta 3, con nombre opcional y teléfono). Todos los PDF del boleto las muestran debajo del asiento, y cada teléfono se puede tocar desde el celular para llamar.
+
+## 2026-11-03 — Venta y reservas más seguras
+
+- La **emisión es todo o nada**: si algo falla (por ejemplo, un asiento ocupado en el último momento) no queda ninguna venta a medias. La base de datos impide dos boletos vigentes en el mismo asiento y viaje.
+- **Reservas de asientos:** abrir la venta ya no borra reservas de otras ventas; cancelar o terminar libera solo las de esa venta. Mientras el vendedor trabaja la reserva se renueva, y una venta abandonada vence a los 5 minutos de la última actividad.
+- La API de reservas del selector de asientos exige estar logueado (vendedor o cliente) y opera solo sobre la propia sesión.
+- La **vuelta** de una venta de ida y vuelta se identifica por su marca y ya no por el precio: una ida a precio 0 (cortesía o canje) sigue siendo ida. Una migración corrige las ventas ya afectadas.
+
+## 2026-11-03 — Panel de clientes con el login de Filament
+
+- El panel de clientes usa el login estándar de Filament (DNI + contraseña, «Recordarme»), separado del de administración. La dirección pasa a `/clientes/login` (la vieja redirige). Los clientes dados de alta sin contraseña reciben su DNI como contraseña inicial y la cambian al entrar.
+
+## 2026-11-03 — Boleto: ida y vuelta bien identificadas y link compartido rediseñado
+
+- «Ver boleto» y la página del link muestran **«Ida»** o **«Vuelta»** según el boleto, con su asiento y una referencia al otro tramo. Cada boleto del PDF lleva la etiqueta «IDA» o «VUELTA de N°X».
+- La página pública del link del boleto se parece al «Ver boleto» del panel, respeta el modo oscuro (con selector de tema), muestra «Abrir/Descargar PDF» en celulares sin visor y ordena las acciones WhatsApp, Descargar PDF y Copiar link.
+
+## 2026-11-02 — Días de servicio configurables
+
+- Nueva configuración en Configuración > Parámetros: **días de la semana con servicio** y **excepciones por fecha** («con servicio» o «sin servicio», con motivo). Se aplica a la venta, la reprogramación, el panel de clientes y la creación de viajes, y se valida también al guardar.
+- Nuevo permiso «Vender en días sin servicio» (ningún rol lo trae por defecto; nunca aplica al panel de clientes). La configuración inicial es la de siempre: lunes a sábado, más el 13/09/2026.
+
+## 2026-10-28 — Paradas: una ruta a la vez, reordenar con drag & drop que intercambia horarios, y horarios por hora
+
+- El recurso **Paradas** trabaja con una ruta por pantalla: el filtro de **Ruta** arranca mostrando la primera ruta activa, con desplegable para cambiar. Con ruta elegida el recorrido completo va en una sola pantalla (sin paginar), y la columna «Ruta» sale del listado por ser redundante.
+- **Reordenar arrastrando y soltando** (drag & drop de tabla de Filament, sin código custom): al soltar una fila, **los horarios de salida/llegada se intercambian** con la parada de destino — el horario queda pegado a la posición, no a la fila. Ejemplo: arrastra “Cruce Castelar” (17:50) sobre “Moreno” (17:30) → Cruce Castelar muestra 17:30 y Moreno 17:50. El reordenar sólo está activo con una ruta elegida (evita mezclar el orden entre rutas) y también funciona con el botón de reordenar de la tabla.
+- Los horarios de paradas se configuran por **Hora (Salida / Llegada)**, no por desfase de minutos: el administrador elige la hora tal cual se ve en el recorrido (ej. 17:30) y el sistema la guarda como minutos desde la salida del horario de la ruta. Si la ruta tiene varios horarios activos, muestra un selector de “Horario de referencia”.
+- En el listado, las columnas de minuteros pasan a mostrar **Hora de salida / Hora de llegada en HH:MM** (hora de la primera parada activada de la ruta).
+
 ## 2026-10-28 — Rutas: en el listado por defecto se ven sólo las activas
 
 - En el recurso **Rutas**, el filtro **Activa** arranca en **Sí**: las rutas inactivas no se ven hasta que se cambia o limpia el filtro. Igual que antes, las inactivas siguen existiendo para viajes y boletos ya vendidos, y activar/desactivar sigue disponible con el toggle de la fila.

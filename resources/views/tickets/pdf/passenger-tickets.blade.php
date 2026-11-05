@@ -1,3 +1,8 @@
+{{-- Colores de marca: paleta del color de la empresa en hex (dompdf no
+     entiende var() ni oklch). Se calcula acá si quien renderiza no la pasa. --}}
+@php
+    $brand = $brand ?? \App\Support\BrandPalette::currentAsHex();
+@endphp
 <!DOCTYPE html>
 <html lang='es'>
 
@@ -58,8 +63,20 @@
         .route-title {
             font-size: 14px;
             font-weight: bold;
-            color: #155DFC;
+            color: {{ $brand[500] }};
             text-transform: uppercase;
+        }
+
+        .leg-label {
+            display: inline-block;
+            margin-top: 1mm;
+            padding: 0.5mm 2mm;
+            border: 1px solid {{ $brand[500] }};
+            border-radius: 3px;
+            color: {{ $brand[500] }};
+            font-size: 10px;
+            font-weight: bold;
+            letter-spacing: 1px;
         }
 
         .section-title {
@@ -79,8 +96,8 @@
         }
 
         .child-box {
-            background: #9dbbfd;
-            border-left: 3px solid #155DFC;
+            background: {{ $brand[100] }};
+            border-left: 3px solid {{ $brand[500] }};
             padding: 2mm;
             margin-top: 2mm;
             border-radius: 4px;
@@ -98,8 +115,8 @@
 
         .reschedule-mark {
             background: #fcecff;
-            border: 2px solid #9dbbfd;
-            color: #155DFC;
+            border: 2px solid {{ $brand[100] }};
+            color: {{ $brand[500] }};
             font-size: 11px;
             font-weight: bold;
             padding: 2mm;
@@ -138,11 +155,11 @@
         .seat {
             font-size: 18px;
             font-weight: bold;
-            color: #155DFC;
+            color: {{ $brand[500] }};
             margin: 2mm;
             padding: 2mm;
             border-radius: 4px;
-            border: 1px solid #9dbbfd;
+            border: 1px solid {{ $brand[100] }};
             text-align: center;
             background-color: #cedaf1;
         }
@@ -180,8 +197,8 @@
         .child-warning {
             margin-top: 2mm;
             padding: 2mm;
-            background: #9dbbfd;
-            border-left: 3px solid #155DFC;
+            background: {{ $brand[100] }};
+            border-left: 3px solid {{ $brand[500] }};
             font-size: 9px;
             font-weight: bold;
             color: #6b21a8;
@@ -214,15 +231,49 @@
             color: #6b7280;
             margin-top: 1mm;
         }
+
+        /* Teléfonos de contacto: una fila compacta debajo del asiento. */
+        .contact-lines {
+            font-size: 10px;
+            color: #4b5563;
+            margin: 1mm 2mm 0;
+            line-height: 1.4;
+        }
+
+        .contact-lines-title {
+            font-weight: bold;
+        }
+
+        .contact-lines a {
+            color: #111827;
+            font-weight: bold;
+            text-decoration: underline;
+        }
     </style>
 </head>
 
 <body>
+    @php
+        /* Se leen una vez por PDF: son las mismas para todos los boletos. */
+        $contactLines = \App\Models\Setting::contactLines();
+    @endphp
 
-    @foreach ($tickets->chunk(2) as $pair)
+    @foreach (\App\Services\TicketPdfService::sheets($tickets) as $pair)
         <div class='sheet'>
 
             @foreach ($pair as $index => $ticket)
+                @php
+                    /* Tramo del boleto según su marca: "IDA" para la ida de un
+                       diferido, "VUELTA de N°X" para la vuelta (X = su ida),
+                       sin etiqueta para un boleto sólo de ida. */
+                    $legLabel = null;
+                    if ($ticket->isReturnLeg()) {
+                        $outboundTicket = $ticket->roundTripOutboundTicket();
+                        $legLabel = $outboundTicket ? "VUELTA de N°{$outboundTicket->id}" : 'VUELTA';
+                    } elseif ($ticket->is_round_trip) {
+                        $legLabel = 'IDA';
+                    }
+                @endphp
                 <div class='ticket'>
 
                     <table width='100%' cellspacing='0' cellpadding='0'>
@@ -241,6 +292,9 @@
                                             <div class='route-title'>
                                                 {{ $ticket->origin->name }} > {{ $ticket->destination->name }}
                                             </div>
+                                            @if ($legLabel)
+                                                <div class='leg-label'>{{ $legLabel }}</div>
+                                            @endif
                                         </td>
                                     </tr>
                                 </table>
@@ -271,7 +325,7 @@
                                 @if ($hasChild)
                                     @foreach ($ticket->passenger->children as $child)
                                         <div class='child-box'>
-                                            <strong style="color: #155DFC;">ACOMPAÑANTE</strong><br>
+                                            <strong style="color: {{ $brand[500] }};">ACOMPAÑANTE</strong><br>
                                             <strong>Nombre:</strong> {{ $child->full_name }}<br>
                                             <strong>Documento:</strong> {{ $child->dni }}
                                         </div>
@@ -339,6 +393,19 @@
                                         </td>
                                     </tr>
                                 </table>
+
+                                @if ($contactLines !== [])
+                                    <div class='contact-lines'>
+                                        <span class='contact-lines-title'>Líneas de contacto:</span>
+                                        @foreach ($contactLines as $line)
+                                            @if (! $loop->first)
+                                                &middot;
+                                            @endif
+                                            {{ $line['name'] !== null ? $line['name'].':' : '' }}
+                                            <a style="color:{{ $brand[500] }}" href="tel:{{ $line['dial'] }}">{{ $line['phone'] }}</a>
+                                        @endforeach
+                                    </div>
+                                @endif
                             </td>
 
                             {{-- Columna derecha 1/3 --}}

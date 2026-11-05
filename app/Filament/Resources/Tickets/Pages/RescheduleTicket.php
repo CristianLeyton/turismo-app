@@ -5,10 +5,12 @@ namespace App\Filament\Resources\Tickets\Pages;
 use App\Filament\Resources\Tickets\Schemas\TicketRescheduleForm;
 use App\Filament\Resources\Tickets\TicketResource;
 use App\Models\SeatReservation;
+use App\Models\Setting;
 use App\Models\Ticket;
 use App\Models\Trip;
 use App\Services\TicketPdfService;
 use App\Services\TicketRescheduleService;
+use App\Support\TicketDelivery;
 use Filament\Actions\Action;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\Concerns\InteractsWithRecord;
@@ -193,6 +195,10 @@ class RescheduleTicket extends ResourcePage
 
         try {
             app(TicketRescheduleService::class)->reschedule($ticket, $payload);
+        } catch (\App\Exceptions\DuplicatePassengerOnTripException $e) {
+            \App\Support\DuplicateTicketNotification::send($e->conflicts(), 'Volver');
+
+            return; // Conservar el estado del form
         } catch (\Illuminate\Validation\ValidationException $e) {
             foreach ($e->errors() as $messages) {
                 foreach ((array) $messages as $message) {
@@ -208,29 +214,24 @@ class RescheduleTicket extends ResourcePage
             return; // Conservar el estado del form
         }
 
-        // Éxito: generar PDF y ofrecer descarga (patrón de CreateTicket).
+        // Éxito: entregar el boleto según el parámetro de emisión.
         $freshTicket = $ticket->fresh()->load(['sale', 'passenger', 'trip', 'returnTrip', 'seat']);
 
-        $sale = $freshTicket->sale;
-        $pdfService = new TicketPdfService;
+        // Flujo "emisión por link": sin PDF en sesión ni descarga; el detalle
+        // del boleto abre el modal de entrega (pedido en la sesión flash).
+        if (! Setting::descargaAutomaticaPdf()) {
+            TicketDelivery::flashForReschedule($freshTicket);
 
-        $passengerTickets = $sale->tickets()
-            ->where('passenger_id', $freshTicket->passenger_id)
-            ->with(['trip', 'returnTrip', 'origin', 'destination', 'seat'])
-            ->get();
+            $this->redirect(TicketResource::getUrl('view', ['record' => $freshTicket->id]));
 
-        if ($freshTicket->is_round_trip) {
-            $pdfContent = $pdfService->generateRoundTripTicket($sale, $passengerTickets);
-        } else {
-            $pdfContent = $pdfService->generatePassengerTickets($sale, collect([$freshTicket]));
+            return;
         }
 
-        $colectivo = str_replace(' ', '_', $freshTicket->trip?->bus?->name ?? 'Sin fecha');
-        $filename = "Boleto_N°{$freshTicket->id}_{$colectivo}.pdf";
+        $pdf = (new TicketPdfService)->forTicket($freshTicket);
 
         session([
-            'ticket_pdf_content' => base64_encode($pdfContent),
-            'ticket_pdf_filename' => $filename,
+            'ticket_pdf_content' => base64_encode($pdf['content']),
+            'ticket_pdf_filename' => $pdf['filename'],
         ]);
 
         $downloadUrl = route('tickets.download');
@@ -257,6 +258,7 @@ class RescheduleTicket extends ResourcePage
      */
     public function handleSeatReservationConflict($data): void
     {
+
         $message = $data['message'] ?? 'Conflicto de reservación detectado';
 
         Notification::make()

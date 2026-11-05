@@ -19,9 +19,9 @@
                     <p class="mt-0.5 text-lg font-bold text-gray-900 dark:text-white">
                         {{ $this->totals['tickets_count'] }}</p>
                 </div>
-                <div class="rounded-lg bg-blue-500/10 p-3">
-                    <p class="text-xs text-blue-700 dark:text-blue-400">Total ventas</p>
-                    <p class="mt-0.5 text-lg font-bold text-blue-700 dark:text-blue-400">
+                <div class="rounded-lg bg-primary-500/10 p-3">
+                    <p class="text-xs text-primary-700 dark:text-primary-400">Total ventas</p>
+                    <p class="mt-0.5 text-lg font-bold text-primary-700 dark:text-primary-400">
                         {{ $this->money($this->totals['ventas_total']) }}</p>
                 </div>
             @endif
@@ -124,13 +124,13 @@
                         <label for="tickets-from"
                             class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400">Desde</label>
                         <input id="tickets-from" type="date" wire:model.live="from"
-                            class="w-full rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 dark:border-white/10 dark:bg-gray-900 dark:text-gray-200 sm:w-auto">
+                            class="w-full rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 focus:border-primary-500 focus:ring-1 focus:ring-primary-500 dark:border-white/10 dark:bg-gray-900 dark:text-gray-200 sm:w-auto">
                     </div>
                     <div class="w-full sm:w-auto">
                         <label for="tickets-to"
                             class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400">Hasta</label>
                         <input id="tickets-to" type="date" wire:model.live="to"
-                            class="w-full rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 dark:border-white/10 dark:bg-gray-900 dark:text-gray-200 sm:w-auto">
+                            class="w-full rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 focus:border-primary-500 focus:ring-1 focus:ring-primary-500 dark:border-white/10 dark:bg-gray-900 dark:text-gray-200 sm:w-auto">
                     </div>
                 </div>
 
@@ -170,7 +170,7 @@
                     <label for="tickets-payment"
                         class="mb-1 text-xs font-medium text-gray-500 dark:text-gray-400">Metodo de pago</label>
                     <select id="tickets-payment" wire:model.live="payment"
-                        class="w-full rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 dark:border-white/10 dark:bg-gray-900 dark:text-gray-200 sm:w-auto">
+                        class="w-full rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 focus:border-primary-500 focus:ring-1 focus:ring-primary-500 dark:border-white/10 dark:bg-gray-900 dark:text-gray-200 sm:w-auto">
                         @foreach (array_merge(['all' => 'Todos'], \App\Models\PaymentMethod::options()) as $value => $label)
                             <option value="{{ $value }}">{{ $label }}</option>
                         @endforeach
@@ -224,7 +224,7 @@
 
         <div class="flex items-center gap-2">
             <button type="button" wire:click="exportPdf" wire:loading.attr="disabled"
-                class="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-blue-700 disabled:opacity-50">
+                class="inline-flex items-center gap-1.5 rounded-lg bg-primary-600 px-3 py-1.5 text-sm font-medium text-[var(--primary-text)] transition hover:bg-primary-700 disabled:opacity-50">
                 <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"
                     aria-hidden="true">
                     <path stroke-linecap="round" stroke-linejoin="round"
@@ -282,7 +282,7 @@
                             @else
                                 <span class="font-medium text-gray-900 dark:text-white">#{{ $record['id'] }}</span>
                                 <span
-                                    class="mt-1 block w-fit rounded-full bg-blue-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-400">
+                                    class="mt-1 block w-fit rounded-full bg-primary-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary-700 dark:text-primary-400">
                                     Venta
                                 </span>
                             @endif
@@ -381,8 +381,7 @@
                                                     </td>
                                                     <td class="whitespace-nowrap px-3 py-2 text-center">
                                                         @if ($ticket->seat)
-                                                            <span
-                                                                class="rounded-full bg-blue-500/10 px-2 py-0.5 text-[11px] font-semibold text-blue-700 dark:text-blue-400">
+                                                            <span class="rounded-full bg-primary-500/10 px-2 py-0.5 text-[11px] font-semibold text-primary-700 dark:text-primary-400">
                                                                 {{ $ticket->seat->seat_number }}
                                                             </span>
                                                         @else
@@ -461,7 +460,7 @@
                     <label class="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
                         <span>Por página</span>
                         <select wire:model.live="perPage"
-                            class="rounded-lg border border-gray-300 bg-white px-2 py-1 text-xs text-gray-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 dark:border-white/10 dark:bg-gray-900 dark:text-gray-200">
+                            class="rounded-lg border border-gray-300 bg-white px-2 py-1 text-xs text-gray-700 focus:border-primary-500 focus:ring-1 focus:ring-primary-500 dark:border-white/10 dark:bg-gray-900 dark:text-gray-200">
                             <option value="10">10</option>
                             <option value="25">25</option>
                             <option value="50">50</option>

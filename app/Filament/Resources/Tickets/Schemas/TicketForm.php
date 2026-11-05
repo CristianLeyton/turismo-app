@@ -12,12 +12,16 @@ use App\Models\RouteStop;
 use App\Models\Schedule;
 use App\Models\Seat;
 use App\Models\SeatReservation;
+use App\Models\Setting;
 use App\Models\Trip;
 use App\Services\TripTimesService;
 use App\Support\LiveValidation;
 use App\Support\Permissions;
 use App\Support\SaleCutoff;
+use App\Support\ServiceDays;
+use App\Support\TripPassengerConflicts;
 use Carbon\Carbon;
+use Closure;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\DatePicker;
@@ -39,9 +43,9 @@ use Filament\Schemas\Components\Wizard\Step;
 use Filament\Schemas\Schema;
 use Filament\Support\Exceptions\Halt;
 use Filament\Support\Icons\Heroicon;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Support\HtmlString;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\HtmlString;
 use Livewire\Component as LivewireComponent;
 
 class TicketForm
@@ -52,38 +56,10 @@ class TicketForm
             Wizard::make([
                 Step::make('Buscar viaje')
                     ->afterValidation(function (Get $get, Set $set, LivewireComponent $livewire) {
-                        // Solo limpiar reservas si realmente cambian los parámetros de búsqueda
-                        // No limpiar solo por navegación hacia atrás
-                        static $lastSearchHash = null;
-
                         // Venta sin fecha (permiso `tickets.vender_sin_fecha`):
                         // los tramos marcados no resuelven viaje ni asiento acá.
                         $sellWithoutDateIda = (bool) $get('sell_without_date_ida');
                         $sellWithoutDateVuelta = (bool) $get('sell_without_date_vuelta');
-
-                        $currentSearch = [
-                            'bus_id' => $get('bus_id'),
-                            'origin_id' => $get('origin_location_id'),
-                            'destination_id' => $get('destination_location_id'),
-                            'schedule_id' => $get('schedule_id'),
-                            'departure_date' => $get('departure_date'),
-                            'passengers_count' => $get('passengers_count'),
-                        ];
-
-                        $currentHash = md5(serialize($currentSearch));
-
-                        // Si la búsqueda realmente cambió, limpiar reservas anteriores
-                        if ($lastSearchHash !== null && $lastSearchHash !== $currentHash) {
-                            Log::info('Búsqueda cambió - limpiando reservaciones', [
-                                'lastHash' => $lastSearchHash,
-                                'currentHash' => $currentHash,
-                                'searchParams' => $currentSearch,
-                            ]);
-                            $sessionId = session()->getId();
-                            SeatReservation::releaseBySession($sessionId);
-                        }
-
-                        $lastSearchHash = $currentHash;
 
                         // Verificar automáticamente el viaje de ida si no se ha verificado
                         $tripId = $get('trip_id');
@@ -118,7 +94,7 @@ class TicketForm
                                     if ($result['trip']) {
                                         $trip = $result['trip'];
                                         $requiredSeats = (int) $passengersCount;
-                                        $availableSeats = $result['available_seats'];
+                                        $availableSeats = $trip->availableSeatsCountForSession(session()->getId());
 
                                         // Validar disponibilidad de asientos
                                         if ($availableSeats >= $requiredSeats) {
@@ -162,7 +138,7 @@ class TicketForm
                                     Notification::make()
                                         ->title('Error')
                                         ->icon('heroicon-m-x-circle')
-                                        ->body('Error al buscar viaje: ' . $e->getMessage())
+                                        ->body('Error al buscar viaje: '.$e->getMessage())
                                         ->danger()
                                         ->send();
                                 }
@@ -255,7 +231,7 @@ class TicketForm
                                         if ($result['trip']) {
                                             $trip = $result['trip'];
                                             $requiredSeats = (int) $passengersCount;
-                                            $availableSeats = $result['available_seats'];
+                                            $availableSeats = $trip->availableSeatsCountForSession(session()->getId());
 
                                             // Validar disponibilidad de asientos
                                             if ($availableSeats >= $requiredSeats) {
@@ -300,7 +276,7 @@ class TicketForm
                                         Notification::make()
                                             ->title('Error')
                                             ->icon('heroicon-m-x-circle')
-                                            ->body('Error al buscar viaje de vuelta: ' . $e->getMessage())
+                                            ->body('Error al buscar viaje de vuelta: '.$e->getMessage())
                                             ->danger()
                                             ->send();
                                     }
@@ -353,18 +329,20 @@ class TicketForm
                                 }
                             }
                         }
+
+                        self::releaseAbandonedTrips($get, $set);
                     })
                     ->schema([
                         Grid::make(2)
                             ->schema([
                                 Select::make('bus_id')
                                     ->label('Colectivo')
-                                    ->options(Bus::query()->orderBy('name')->pluck('name', 'id')->toArray())
-                                    ->default(fn() => Bus::query()->orderBy('name')->value('id'))
-                                    ->required()
-                                    ->selectablePlaceholder(false)
+                                    ->options(fn (Get $get) => self::saleBusOptions($get('bus_id')))
+                                    ->default(fn () => Bus::query()->where('is_reinforcement', false)->orderBy('name')->value('id'))
+                                    ->required()->selectablePlaceholder(false)
+                                    ->suffixAction(self::stopsAndTimesModal())
                                     ->live()
-                                    ->afterStateUpdated(fn($set) => [
+                                    ->afterStateUpdated(fn ($set) => [
                                         $set('origin_location_id', null),
                                         $set('destination_location_id', null),
                                         $set('schedule_id', null),
@@ -432,30 +410,17 @@ class TicketForm
                                 Select::make('origin_location_id')
                                     ->label('Origen')
                                     ->required()
-                                    ->disabled(fn(Get $get) => blank($get('bus_id')))
-                                    ->placeholder(fn(Get $get) => blank($get('bus_id')) ? 'Seleccione un colectivo primero' : 'Seleccione origen')
-                                    ->options(function (Get $get) {
-                                        $busId = $get('bus_id');
-                                        if (blank($busId)) {
-                                            return [];
-                                        }
-                                        $stops = RouteStop::query()
-                                            ->whereHas('route', fn($q) => $q->where('bus_id', $busId)->where('is_active', true))
-                                            ->with('location')
-                                            ->orderBy('route_id')
-                                            ->orderBy('stop_order')
-                                            ->get();
-                                        $options = [];
-                                        foreach ($stops as $stop) {
-                                            if (! isset($options[$stop->location_id]) && $stop->location?->is_active !== false) {
-                                                $options[$stop->location_id] = $stop->location->name;
-                                            }
-                                        }
-
-                                        return $options;
-                                    })
+                                    ->disabled(fn (Get $get) => blank($get('bus_id')))
+                                    ->placeholder(fn (Get $get) => blank($get('bus_id')) ? 'Seleccione un colectivo primero' : 'Seleccione origen')
+                                    // Estilo según Parámetros > Venta: detallado = select con
+                                    // buscador (solo con >10 paradas, con pocas estorba) y
+                                    // paradas numeradas; simple = select nativo, lista plana.
+                                    ->native(fn (): bool => ! self::detailedSelectors())
+                                    ->searchable(fn (Get $get): bool => self::detailedSelectors() && count(self::originOptions($get('bus_id'), true)) > 10)
+                                    ->optionsLimit(100)
+                                    ->options(fn (Get $get) => self::originOptions($get('bus_id'), self::detailedSelectors()))
                                     ->live()
-                                    ->afterStateUpdated(fn($set) => [
+                                    ->afterStateUpdated(fn ($set) => [
                                         $set('destination_location_id', null),
                                         $set('schedule_id', null),
                                         $set('trip_id', null),
@@ -473,49 +438,28 @@ class TicketForm
                                 Select::make('destination_location_id')
                                     ->label('Destino')
                                     ->required()
-                                    ->disabled(fn(Get $get) => blank($get('origin_location_id')))
-                                    ->placeholder('Seleccione un origen primero')
-                                    ->options(function (Get $get) {
-                                        $originId = $get('origin_location_id');
-                                        $busId = $get('bus_id');
-                                        if (blank($originId) || blank($busId)) {
-                                            return [];
-                                        }
-
-                                        return RouteStop::query()
-                                            ->withoutGlobalScopes()
-                                            ->from('route_stops as destination')
-                                            ->join('route_stops as origin', function ($join) use ($originId) {
-                                                $join->on('destination.route_id', '=', 'origin.route_id')
-                                                    ->where('origin.location_id', $originId);
-                                            })
-                                            ->join('routes', 'routes.id', '=', 'destination.route_id')
-                                            ->whereNull('routes.deleted_at')
-                                            ->whereNull('destination.deleted_at')
-                                            ->whereNull('origin.deleted_at')
-                                            ->where('routes.is_active', true)
-                                            ->where('routes.bus_id', $busId)
-                                            ->whereColumn('destination.stop_order', '>', 'origin.stop_order')
-                                            ->where('destination.location_id', '!=', $originId)
-                                            ->join('locations', 'locations.id', '=', 'destination.location_id')
-                                            ->orderBy('destination.stop_order')
-                                            ->get(['destination.location_id', 'locations.name'])
-                                            ->mapWithKeys(fn($row) => [
-                                                (int) $row->location_id => (string) $row->name,
-                                            ])
-                                            ->toArray();
-                                    })
+                                    ->disabled(fn (Get $get) => blank($get('origin_location_id')))->placeholder('Seleccione un origen primero')
+                                    // Mismo criterio de estilo que Origen.
+                                    ->native(fn (): bool => ! self::detailedSelectors())
+                                    ->searchable(fn (Get $get): bool => self::detailedSelectors() && count(self::destinationOptions($get('bus_id'), $get('origin_location_id'), true)) > 10)
+                                    ->optionsLimit(100)
+                                    ->options(fn (Get $get) => self::destinationOptions($get('bus_id'), $get('origin_location_id'), self::detailedSelectors()))
                                     ->live()
-                                    ->afterStateUpdated(fn($set) => [
-                                        $set('schedule_id', null),
-                                        $set('trip_id', null),
-                                        $set('trip_search_status', null),
-                                        $set('trip_available_seats', null),
-                                        $set('return_trip_id', null),
-                                        $set('return_trip_search_status', null),
-                                        $set('return_trip_available_seats', null),
-                                        $set('is_round_trip', false),
-                                    ])
+                                    ->afterStateUpdated(function (Set $set, Get $get) {
+                                        $set('schedule_id', null);
+                                        $set('trip_id', null);
+                                        $set('trip_search_status', null);
+                                        $set('trip_available_seats', null);
+                                        $set('return_trip_id', null);
+                                        $set('return_trip_search_status', null);
+                                        $set('return_trip_available_seats', null);
+                                        $set('is_round_trip', false);
+
+                                        // Con un único horario disponible para el tramo elegido se
+                                        // queda preseleccionado (default); con ninguno o más de uno,
+                                        // el vendedor elige manualmente.
+                                        $set('schedule_id', self::autoSelectedScheduleId($get));
+                                    })
                                     ->validationMessages([
                                         'required' => 'Seleccione un destino',
                                     ]),
@@ -530,10 +474,10 @@ class TicketForm
                                 // trae implícito por bypass, no cuenta como encendido).
                                 Toggle::make('sell_without_date_ida')
                                     ->label('Viaje de ida sin fecha')
-                                    ->helperText('El boleto se vende sin fecha ni horario y se asignan después desde la opción "reprogramar boleto".')
+                                    ->helperText(fn (): string => self::withoutDateHelperText())
                                     ->default(false)
                                     ->columnSpan(2)
-                                    ->visible(fn(): bool => (bool) Auth::user()?->can('tickets.vender_sin_fecha')
+                                    ->visible(fn (): bool => (bool) Auth::user()?->can('tickets.vender_sin_fecha')
                                         && Permissions::permissionGrantedToAnyRole('tickets.vender_sin_fecha'))
                                     ->live()
                                     ->afterStateUpdated(function ($state, Set $set) {
@@ -553,34 +497,53 @@ class TicketForm
 
                                 DatePicker::make('departure_date')
                                     ->label('Fecha de ida')
-                                    ->visible(fn(Get $get) => ! (bool) $get('sell_without_date_ida'))
-                                    ->required(fn(Get $get) => ! (bool) $get('sell_without_date_ida'))
+                                    ->visible(fn (Get $get) => ! (bool) $get('sell_without_date_ida'))
+                                    ->required(fn (Get $get) => ! (bool) $get('sell_without_date_ida'))
                                     ->native(false)
                                     ->displayFormat('d/m/Y')
-                                    ->minDate(fn() => SaleCutoff::minSelectableDate())
+                                    ->minDate(fn () => SaleCutoff::minSelectableDate())
                                     ->closeOnDateSelection()
-                                    ->disabledDates(fn(): array => self::getDisabledTravelDates())
-                                    /* ->helperText('Solo se permiten días laborables (lunes a viernes)') */
-                                    ->live()
-                                    ->afterStateUpdated(fn($set) => [
-                                        $set('schedule_id', null), // Limpiar horario al cambiar fecha para revalidar horarios disponibles
-                                        $set('trip_id', null),
-                                        $set('trip_search_status', null),
-                                        $set('trip_available_seats', null),
-                                        $set('return_trip_id', null),
-                                        $set('return_trip_search_status', null),
-                                        $set('return_trip_available_seats', null),
-                                        $set('is_round_trip', false),
-                                    ])
+                                    ->disabledDates(fn (): array => ServiceDays::disabledTravelDatesForCurrentUser())
+                                    ->helperText(fn (Get $get): ?string => self::serviceDayWarning($get('departure_date')))
+                                    ->rules([fn (): Closure => self::serviceDayRule()])
+                                    ->live()->afterStateUpdated(function (Set $set, Get $get): void {
+                                        $set('schedule_id', null); // Limpiar horario al cambiar fecha para revalidar horarios disponibles
+                                        $set('trip_id', null);
+                                        $set('trip_search_status', null);
+                                        $set('trip_available_seats', null);
+                                        $set('return_trip_id', null);
+                                        $set('return_trip_search_status', null);
+                                        $set('return_trip_available_seats', null);
+                                        $set('is_round_trip', false);
+
+                                        // Con un único horario disponible para la fecha elegida se
+                                        // queda preseleccionado (default); con ninguno o más de uno,
+                                        // el vendedor elige manualmente.
+                                        $set('schedule_id', self::autoSelectedScheduleId($get));
+                                    })
                                     ->validationMessages([
                                         'required' => 'Seleccione una fecha de ida',
                                         'after_or_equal' => 'No se venden pasajes para fechas anteriores a hoy.',
                                     ]),
                                 Select::make('schedule_id')
                                     ->label('Horario de ida')
-                                    ->visible(fn(Get $get) => ! (bool) $get('sell_without_date_ida'))
-                                    ->required(fn(Get $get) => ! (bool) $get('sell_without_date_ida'))
-                                    ->disabled(fn(Get $get) => blank($get('bus_id')) || blank($get('origin_location_id')) || blank($get('destination_location_id')) || blank($get('departure_date')))
+                                    ->key(function (Get $get) {
+                                        // Remount forzado: sin esto el widget del select
+                                        // no sincroniza el valor fijado programáticamente
+                                        // (autoselección del horario único) porque wire:model
+                                        // sólo sincroniza en cambios disparados por el usuario.
+                                        return 'schedule_id.'.md5(json_encode([
+                                            $get('bus_id'),
+                                            $get('origin_location_id'),
+                                            $get('destination_location_id'),
+                                            $get('departure_date'),
+                                            $get('schedule_id'),
+                                        ]));
+                                    })
+                                    ->default(fn (Get $get) => self::autoSelectedScheduleId($get))
+                                    ->visible(fn (Get $get) => ! (bool) $get('sell_without_date_ida'))
+                                    ->required(fn (Get $get) => ! (bool) $get('sell_without_date_ida'))
+                                    ->disabled(fn (Get $get) => blank($get('bus_id')) || blank($get('origin_location_id')) || blank($get('destination_location_id')) || blank($get('departure_date')))
                                     ->placeholder(function (Get $get) {
                                         if (blank($get('bus_id'))) {
                                             return 'Seleccione un colectivo primero';
@@ -597,9 +560,9 @@ class TicketForm
 
                                         $schedules = Schedule::query()
                                             ->bookable()
-                                            ->whereHas('route', fn($q) => $q->where('bus_id', $get('bus_id')))
-                                            ->whereHas('route.stops', fn($q) => $q->where('location_id', $get('origin_location_id')))
-                                            ->whereHas('route.stops', fn($q) => $q->where('location_id', $get('destination_location_id')))
+                                            ->whereHas('route', fn ($q) => $q->whereIn('bus_id', self::lineBusIds($get('bus_id'))))
+                                            ->whereHas('route.stops', fn ($q) => $q->where('location_id', $get('origin_location_id')))
+                                            ->whereHas('route.stops', fn ($q) => $q->where('location_id', $get('destination_location_id')))
                                             ->get()
                                             ->filter(function ($schedule) use ($get) {
                                                 if (
@@ -614,7 +577,7 @@ class TicketForm
                                                 return true;
                                             })
                                             // Venta fuera de término (misma condición que en options)
-                                            ->filter(fn($schedule) => SaleCutoff::blockReasonForSchedule(
+                                            ->filter(fn ($schedule) => SaleCutoff::blockReasonForSchedule(
                                                 $get('departure_date'),
                                                 $schedule,
                                                 $get('origin_location_id'),
@@ -626,6 +589,7 @@ class TicketForm
 
                                         return 'Seleccione un horario';
                                     })
+
                                     ->options(function (Get $get) {
                                         if (blank($get('bus_id')) || blank($get('origin_location_id')) || blank($get('destination_location_id')) || blank($get('departure_date'))) {
                                             return [];
@@ -633,9 +597,10 @@ class TicketForm
 
                                         $schedules = Schedule::query()
                                             ->bookable()
-                                            ->whereHas('route', fn($q) => $q->where('bus_id', $get('bus_id')))
-                                            ->whereHas('route.stops', fn($q) => $q->where('location_id', $get('origin_location_id')))
-                                            ->whereHas('route.stops', fn($q) => $q->where('location_id', $get('destination_location_id')))
+                                            ->whereHas('route', fn ($q) => $q->whereIn('bus_id', self::lineBusIds($get('bus_id'))))
+                                            ->whereHas('route.stops', fn ($q) => $q->where('location_id', $get('origin_location_id')))
+                                            ->whereHas('route.stops', fn ($q) => $q->where('location_id', $get('destination_location_id')))
+                                            ->with('route.bus')
                                             ->get()
                                             ->filter(function ($schedule) use ($get) {
                                                 // Validar que el segmento origen-destino sea válido para esta ruta
@@ -652,19 +617,19 @@ class TicketForm
                                             })
                                             // Venta fuera de término: sin el permiso no se
                                             // listan fechas anteriores ni salidas ya vencidas.
-                                            ->filter(fn($schedule) => SaleCutoff::blockReasonForSchedule(
+                                            ->filter(fn ($schedule) => SaleCutoff::blockReasonForSchedule(
                                                 $get('departure_date'),
                                                 $schedule,
                                                 $get('origin_location_id'),
                                             ) === null)
-                                            ->sortBy(fn($schedule) => $schedule->display_name, SORT_NATURAL | SORT_FLAG_CASE);
+                                            ->sortBy(fn ($schedule) => $schedule->display_name, SORT_NATURAL | SORT_FLAG_CASE);
 
                                         if ($schedules->isEmpty()) {
                                             return [];
                                         }
 
-                                        return $schedules->mapWithKeys(fn($schedule) => [
-                                            $schedule->id => $schedule->display_name,
+                                        return $schedules->mapWithKeys(fn ($schedule) => [
+                                            $schedule->id => self::scheduleOptionLabel($schedule),
                                         ]);
                                     })
                                     ->helperText(function (Get $get) {
@@ -677,9 +642,9 @@ class TicketForm
 
                                         $schedules = Schedule::query()
                                             ->bookable()
-                                            ->whereHas('route', fn($q) => $q->where('bus_id', $get('bus_id')))
-                                            ->whereHas('route.stops', fn($q) => $q->where('location_id', $get('origin_location_id')))
-                                            ->whereHas('route.stops', fn($q) => $q->where('location_id', $get('destination_location_id')))
+                                            ->whereHas('route', fn ($q) => $q->whereIn('bus_id', self::lineBusIds($get('bus_id'))))
+                                            ->whereHas('route.stops', fn ($q) => $q->where('location_id', $get('origin_location_id')))
+                                            ->whereHas('route.stops', fn ($q) => $q->where('location_id', $get('destination_location_id')))
                                             ->get()
                                             ->filter(function ($schedule) use ($get) {
                                                 if (
@@ -713,11 +678,14 @@ class TicketForm
                                         return null;
                                     })
                                     ->live()
-                                    ->afterStateUpdated(fn($set) => [
+                                    ->afterStateUpdated(fn (Set $set, Get $get) => [
                                         $set('trip_id', null),
                                         $set('trip_search_status', null),
                                         $set('trip_available_seats', null),
-                                        $set('return_schedule_id', null), // Limpiar horario de vuelta si cambia el de ida
+                                        // Al cambiar el horario de ida se recalcula el de vuelta:
+                                        // con un único horario de vuelta disponible se queda
+                                        // preseleccionado; con ninguno o más de uno, manual.
+                                        $set('return_schedule_id', self::autoSelectedScheduleId($get, 'vuelta')),
                                         $set('return_trip_id', null),
                                         $set('return_trip_search_status', null),
                                         $set('return_trip_available_seats', null),
@@ -750,6 +718,8 @@ class TicketForm
                             ->live(),
                         Hidden::make('return_trip_available_seats')
                             ->live(),
+                        Hidden::make('reserved_trip_id'),
+                        Hidden::make('reserved_return_trip_id'),
 
                         ViewField::make('search_trip_button')
                             ->label('')
@@ -807,7 +777,7 @@ class TicketForm
                                             if ($result['trip']) {
                                                 $trip = $result['trip'];
                                                 $requiredSeats = (int) $passengersCount;
-                                                $availableSeats = $result['available_seats'];
+                                                $availableSeats = $trip->availableSeatsCountForSession(session()->getId());
 
                                                 // Validar disponibilidad de asientos
                                                 if ($availableSeats >= $requiredSeats) {
@@ -847,7 +817,7 @@ class TicketForm
                                             Notification::make()
                                                 ->title('Error al buscar viaje de ida')
                                                 ->icon('heroicon-m-x-circle')
-                                                ->body('Error al buscar viaje: ' . $e->getMessage())
+                                                ->body('Error al buscar viaje: '.$e->getMessage())
                                                 ->danger()
                                                 ->send();
 
@@ -877,11 +847,11 @@ class TicketForm
                                     ->where('is_active', true)
                                     ->whereHas(
                                         'stops',
-                                        fn($q) => $q->where('location_id', $get('destination_location_id'))
+                                        fn ($q) => $q->where('location_id', $get('destination_location_id'))
                                     )
                                     ->whereHas(
                                         'stops',
-                                        fn($q) => $q->where('location_id', $get('origin_location_id'))
+                                        fn ($q) => $q->where('location_id', $get('origin_location_id'))
                                     )
                                     ->first();
 
@@ -921,7 +891,7 @@ class TicketForm
                                             if ($result['trip']) {
                                                 $trip = $result['trip'];
                                                 $requiredSeats = (int) $passengersCount;
-                                                $availableSeats = $result['available_seats'];
+                                                $availableSeats = $trip->availableSeatsCountForSession(session()->getId());
 
                                                 // Validar disponibilidad de asientos
                                                 if ($availableSeats >= $requiredSeats) {
@@ -943,7 +913,7 @@ class TicketForm
                                             Notification::make()
                                                 ->title('Error')
                                                 ->icon('heroicon-m-x-circle')
-                                                ->body('Error al buscar viaje de vuelta: ' . $e->getMessage())
+                                                ->body('Error al buscar viaje de vuelta: '.$e->getMessage())
                                                 ->danger()
                                                 ->send();
                                         }
@@ -958,10 +928,10 @@ class TicketForm
                             ->schema([
                                 Toggle::make('sell_without_date_vuelta')
                                     ->label('Viaje de vuelta sin fecha')
-                                    ->helperText('El boleto se vende sin fecha ni horario y se asignan después desde la opción "reprogramar boleto".')
+                                    ->helperText(fn (): string => self::withoutDateHelperText())
                                     ->default(false)
                                     ->columnSpan(2)
-                                    ->visible(fn(Get $get): bool => (bool) $get('is_round_trip')
+                                    ->visible(fn (Get $get): bool => (bool) $get('is_round_trip')
                                         && (bool) Auth::user()?->can('tickets.vender_sin_fecha')
                                         && Permissions::permissionGrantedToAnyRole('tickets.vender_sin_fecha'))
                                     ->live()
@@ -998,7 +968,9 @@ class TicketForm
 
                                         return $date->startOfDay();
                                     })
-                                    ->disabledDates(fn(): array => self::getDisabledTravelDates())
+                                    ->disabledDates(fn (): array => ServiceDays::disabledTravelDatesForCurrentUser())
+                                    ->helperText(fn (Get $get): ?string => self::serviceDayWarning($get('return_date')))
+                                    ->rules([fn (): Closure => self::serviceDayRule()])
                                     /*                                     ->helperText(function (Get $get) {
                                                                             $departureDate = $get('departure_date');
                                                                             if ($departureDate) {
@@ -1012,20 +984,36 @@ class TicketForm
                                         'required' => 'Seleccione una fecha de vuelta',
                                     ])
                                     ->rule('after_or_equal:departure_date')
-                                    ->visible(fn(Get $get) => $get('is_round_trip') && ! (bool) $get('sell_without_date_vuelta'))
-                                    ->live()
-                                    ->afterStateUpdated(fn($set) => [
-                                        $set('return_schedule_id', null),
-                                        $set('return_trip_id', null),
-                                        $set('return_trip_search_status', null),
-                                        $set('return_trip_available_seats', null),
-                                    ]),
+                                    ->visible(fn (Get $get) => $get('is_round_trip') && ! (bool) $get('sell_without_date_vuelta'))
+                                    ->live()->afterStateUpdated(function (Set $set, Get $get): void {
+                                        $set('return_schedule_id', null);
+                                        $set('return_trip_id', null);
+                                        $set('return_trip_search_status', null);
+                                        $set('return_trip_available_seats', null);
+
+                                        // Con un único horario de vuelta disponible (respetando la
+                                        // regla de mismo día: salir después del horario de ida) se
+                                        // queda preseleccionado; con ninguno o más de uno, manual.
+                                        $set('return_schedule_id', self::autoSelectedScheduleId($get, 'vuelta'));
+                                    }),
 
                                 Select::make('return_schedule_id')
                                     ->label('Horario de vuelta')
-                                    ->required(fn(Get $get) => ! (bool) $get('sell_without_date_vuelta'))
-                                    ->visible(fn(Get $get) => $get('is_round_trip') && ! (bool) $get('sell_without_date_vuelta'))
-                                    ->disabled(fn(Get $get) => blank($get('return_date')))
+                                    ->key(function (Get $get) {
+                                        // Remount forzado igual que en el horario de ida.
+                                        return 'return_schedule_id.'.md5(json_encode([
+                                            $get('bus_id'),
+                                            $get('origin_location_id'),
+                                            $get('destination_location_id'),
+                                            $get('schedule_id'),
+                                            $get('return_date'),
+                                            $get('return_schedule_id'),
+                                        ]));
+                                    })
+                                    ->default(fn (Get $get) => self::autoSelectedScheduleId($get, 'vuelta'))
+                                    ->required(fn (Get $get) => ! (bool) $get('sell_without_date_vuelta'))
+                                    ->visible(fn (Get $get) => $get('is_round_trip') && ! (bool) $get('sell_without_date_vuelta'))
+                                    ->disabled(fn (Get $get) => blank($get('return_date')))
                                     ->placeholder(function (Get $get) {
                                         if (blank($get('return_date'))) {
                                             return 'Seleccione la fecha de vuelta primero';
@@ -1059,8 +1047,8 @@ class TicketForm
                                         // Buscar rutas que conecten el destino (origen de vuelta) con el origen (destino de vuelta)
                                         $schedules = Schedule::query()
                                             ->bookable()
-                                            ->whereHas('route.stops', fn($q) => $q->where('location_id', $get('destination_location_id')))
-                                            ->whereHas('route.stops', fn($q) => $q->where('location_id', $get('origin_location_id')))
+                                            ->whereHas('route.stops', fn ($q) => $q->where('location_id', $get('destination_location_id')))
+                                            ->whereHas('route.stops', fn ($q) => $q->where('location_id', $get('origin_location_id')))
                                             ->get()
                                             ->filter(function ($schedule) use ($get) {
                                                 return $schedule->route->isValidSegment(
@@ -1068,7 +1056,7 @@ class TicketForm
                                                     $get('origin_location_id')
                                                 );
                                             })
-                                            ->sortBy(fn($schedule) => $schedule->display_name, SORT_NATURAL | SORT_FLAG_CASE);
+                                            ->sortBy(fn ($schedule) => $schedule->display_name, SORT_NATURAL | SORT_FLAG_CASE);
 
                                         // Si es el mismo día y hay un horario de ida seleccionado, filtrar por departure_time
                                         if ($isSameDay && $departureTime) {
@@ -1084,7 +1072,7 @@ class TicketForm
                                         }
 
                                         // Venta fuera de término (misma condición que en options)
-                                        $schedules = $schedules->filter(fn($schedule) => SaleCutoff::blockReasonForSchedule(
+                                        $schedules = $schedules->filter(fn ($schedule) => SaleCutoff::blockReasonForSchedule(
                                             $get('return_date'),
                                             $schedule,
                                             $get('destination_location_id'),
@@ -1130,8 +1118,8 @@ class TicketForm
                                         // Buscar rutas que conecten el destino (origen de vuelta) con el origen (destino de vuelta)
                                         $schedules = Schedule::query()
                                             ->bookable()
-                                            ->whereHas('route.stops', fn($q) => $q->where('location_id', $get('destination_location_id')))
-                                            ->whereHas('route.stops', fn($q) => $q->where('location_id', $get('origin_location_id')))
+                                            ->whereHas('route.stops', fn ($q) => $q->where('location_id', $get('destination_location_id')))
+                                            ->whereHas('route.stops', fn ($q) => $q->where('location_id', $get('origin_location_id')))
                                             ->get()
                                             ->filter(function ($schedule) use ($get) {
                                                 return $schedule->route->isValidSegment(
@@ -1139,7 +1127,7 @@ class TicketForm
                                                     $get('origin_location_id')
                                                 );
                                             })
-                                            ->sortBy(fn($schedule) => $schedule->display_name, SORT_NATURAL | SORT_FLAG_CASE);
+                                            ->sortBy(fn ($schedule) => $schedule->display_name, SORT_NATURAL | SORT_FLAG_CASE);
 
                                         // Si es el mismo día y hay un horario de ida seleccionado, filtrar por departure_time
                                         if ($isSameDay && $departureTime) {
@@ -1156,14 +1144,14 @@ class TicketForm
 
                                         // Venta fuera de término: sin el permiso no se
                                         // listan fechas anteriores ni salidas ya vencidas.
-                                        $schedules = $schedules->filter(fn($schedule) => SaleCutoff::blockReasonForSchedule(
+                                        $schedules = $schedules->filter(fn ($schedule) => SaleCutoff::blockReasonForSchedule(
                                             $get('return_date'),
                                             $schedule,
                                             $get('destination_location_id'),
                                         ) === null);
 
-                                        return $schedules->mapWithKeys(fn($schedule) => [
-                                            $schedule->id => $schedule->display_name,
+                                        return $schedules->mapWithKeys(fn ($schedule) => [
+                                            $schedule->id => self::scheduleOptionLabel($schedule),
                                         ]);
                                     })
                                     ->helperText(function (Get $get) {
@@ -1196,8 +1184,8 @@ class TicketForm
                                         // Buscar rutas que conecten el destino (origen de vuelta) con el origen (destino de vuelta)
                                         $schedules = Schedule::query()
                                             ->bookable()
-                                            ->whereHas('route.stops', fn($q) => $q->where('location_id', $get('destination_location_id')))
-                                            ->whereHas('route.stops', fn($q) => $q->where('location_id', $get('origin_location_id')))
+                                            ->whereHas('route.stops', fn ($q) => $q->where('location_id', $get('destination_location_id')))
+                                            ->whereHas('route.stops', fn ($q) => $q->where('location_id', $get('origin_location_id')))
                                             ->get()
                                             ->filter(function ($schedule) use ($get) {
                                                 return $schedule->route->isValidSegment(
@@ -1205,7 +1193,7 @@ class TicketForm
                                                     $get('origin_location_id')
                                                 );
                                             })
-                                            ->sortBy(fn($schedule) => $schedule->display_name, SORT_NATURAL | SORT_FLAG_CASE);
+                                            ->sortBy(fn ($schedule) => $schedule->display_name, SORT_NATURAL | SORT_FLAG_CASE);
 
                                         // Si es el mismo día y hay un horario de ida seleccionado, filtrar por departure_time
                                         if ($isSameDay && $departureTime) {
@@ -1231,7 +1219,7 @@ class TicketForm
                                         return null;
                                     })
                                     ->live()
-                                    ->afterStateUpdated(fn($set) => [
+                                    ->afterStateUpdated(fn ($set) => [
                                         $set('return_trip_id', null),
                                         $set('return_trip_search_status', null),
                                         $set('return_trip_available_seats', null),
@@ -1278,7 +1266,7 @@ class TicketForm
 
                 Step::make('Asientos (Ida)')
                     // Con ida sin fecha no hay asientos que elegir.
-                    ->visible(fn(Get $get) => ! (bool) $get('sell_without_date_ida'))
+                    ->visible(fn (Get $get) => ! (bool) $get('sell_without_date_ida'))
                     ->beforeValidation(function (Get $get, Set $set) {
                         // No limpiar reservas expiradas aquí para evitar eliminar reservas recién creadas
                         // SeatReservation::cleanupExpired();
@@ -1348,7 +1336,7 @@ class TicketForm
                                     Notification::make()
                                         ->title('Asientos de ida no disponibles')
                                         ->icon('heroicon-m-exclamation-triangle')
-                                        ->body('Los siguientes asientos fueron vendidos: ' . implode(', ', $removedSeatNumbers) . '. Por favor, seleccione otros asientos.')
+                                        ->body('Los siguientes asientos fueron vendidos: '.implode(', ', $removedSeatNumbers).'. Por favor, seleccione otros asientos.')
                                         ->warning()
                                         ->persistent()
                                         ->send();
@@ -1394,7 +1382,7 @@ class TicketForm
                                 );
 
                                 return [
-                                    'busName' => $get('bus_id') ? Bus::find($get('bus_id'))?->name : '—',
+                                    'busName' => self::busNameFor($get('schedule_id'), $get('bus_id')),
                                     'originName' => $get('origin_location_id') ? \App\Models\Location::find($get('origin_location_id'))?->name : '—',
                                     'destinationName' => $get('destination_location_id') ? \App\Models\Location::find($get('destination_location_id'))?->name : '—',
                                     'departureTime' => $idaTimes['departure'],
@@ -1413,7 +1401,7 @@ class TicketForm
                             ->viewData(function (Get $get) {
                                 $tripId = $get('trip_id');
                                 $trip = $tripId ? Trip::find($tripId) : null;
-                                $availableSeats = $trip ? $trip->remainingSeats() : 0;
+                                $availableSeats = $trip ? $trip->availableSeatsCountForSession(session()->getId()) : 0;
                                 $requiredSeats = (int) $get('passengers_count');
 
                                 return [
@@ -1423,17 +1411,17 @@ class TicketForm
                                     'requiredSeats' => $requiredSeats,
                                 ];
                             })
-                            ->visible(fn(Get $get) => blank($get('trip_id')) || ! Trip::find($get('trip_id')) || Trip::find($get('trip_id'))?->remainingSeats() < (int) $get('passengers_count')),
+                            ->visible(fn (Get $get) => blank($get('trip_id')) || ! Trip::find($get('trip_id')) || Trip::find($get('trip_id'))?->availableSeatsCountForSession(session()->getId()) < (int) $get('passengers_count')),
 
                         Hidden::make('seat_ids')
                             ->default([])
                             ->dehydrated()
                             ->required(
-                                fn(Get $get) => ! blank($get('trip_id')) &&
+                                fn (Get $get) => ! blank($get('trip_id')) &&
                                     Trip::find($get('trip_id')) &&
-                                    Trip::find($get('trip_id'))?->remainingSeats() >= (int) $get('passengers_count')
+                                    Trip::find($get('trip_id'))?->availableSeatsCountForSession(session()->getId()) >= (int) $get('passengers_count')
                             )
-                            ->rule(fn(Get $get) => function ($attribute, $value, $fail) use ($get) {
+                            ->rule(fn (Get $get) => function ($attribute, $value, $fail) use ($get) {
                                 $required = (int) $get('passengers_count');
                                 if (count($value ?? []) !== $required) {
                                     $fail("Debe seleccionar exactamente {$required} asiento(s).");
@@ -1510,7 +1498,7 @@ class TicketForm
                                                 ->title('Asientos expirados')
                                                 ->icon('heroicon-m-clock')
                                                 ->persistent()
-                                                ->body('Los siguientes asientos expiraron: ' . implode(', ', $expiredSeatNumbers) . '. Por favor, selecciónelos nuevamente.')
+                                                ->body('Los siguientes asientos expiraron: '.implode(', ', $expiredSeatNumbers).'. Por favor, selecciónelos nuevamente.')
                                                 ->warning()
                                                 ->send();
                                         }
@@ -1571,13 +1559,13 @@ class TicketForm
                                 ];
                             })
                             ->visible(
-                                fn(Get $get) => ! blank($get('trip_id')) &&
+                                fn (Get $get) => ! blank($get('trip_id')) &&
                                     Trip::find($get('trip_id')) &&
-                                    Trip::find($get('trip_id'))?->remainingSeats() >= (int) $get('passengers_count')
+                                    Trip::find($get('trip_id'))?->availableSeatsCountForSession(session()->getId()) >= (int) $get('passengers_count')
                             ),
                     ]),
                 Step::make('Asientos (Vuelta)')
-                    ->visible(fn(Get $get) => $get('is_round_trip') && ! (bool) $get('sell_without_date_vuelta'))
+                    ->visible(fn (Get $get) => $get('is_round_trip') && ! (bool) $get('sell_without_date_vuelta'))
                     ->beforeValidation(function (Get $get, Set $set) {
                         // No limpiar reservas expiradas aquí para evitar eliminar reservas recién creadas
                         // SeatReservation::cleanupExpired();
@@ -1647,7 +1635,7 @@ class TicketForm
                                     Notification::make()
                                         ->title('Asientos de vuelta no disponibles')
                                         ->icon('heroicon-m-exclamation-triangle')
-                                        ->body('Los siguientes asientos de vuelta fueron vendidos: ' . implode(', ', $removedSeatNumbers) . '. Por favor, seleccione otros asientos.')
+                                        ->body('Los siguientes asientos de vuelta fueron vendidos: '.implode(', ', $removedSeatNumbers).'. Por favor, seleccione otros asientos.')
                                         ->warning()
                                         ->persistent()
                                         ->send();
@@ -1687,7 +1675,7 @@ class TicketForm
                                 );
 
                                 return [
-                                    'busName' => $get('bus_id') ? Bus::find($get('bus_id'))?->name : '—',
+                                    'busName' => self::busNameFor($get('schedule_id'), $get('bus_id')),
                                     'originName' => $get('origin_location_id') ? \App\Models\Location::find($get('origin_location_id'))?->name : '—',
                                     'destinationName' => $get('destination_location_id') ? \App\Models\Location::find($get('destination_location_id'))?->name : '—',
                                     'departureTime' => $idaTimes['departure'],
@@ -1706,7 +1694,7 @@ class TicketForm
                             ->viewData(function (Get $get) {
                                 $tripId = $get('return_trip_id');
                                 $trip = $tripId ? Trip::find($tripId) : null;
-                                $availableSeats = $trip ? $trip->remainingSeats() : 0;
+                                $availableSeats = $trip ? $trip->availableSeatsCountForSession(session()->getId()) : 0;
                                 $requiredSeats = (int) $get('passengers_count');
 
                                 return [
@@ -1717,20 +1705,20 @@ class TicketForm
                                 ];
                             })
                             ->visible(
-                                fn(Get $get) => blank($get('return_trip_id')) ||
+                                fn (Get $get) => blank($get('return_trip_id')) ||
                                     ! Trip::find($get('return_trip_id')) ||
-                                    Trip::find($get('return_trip_id'))?->remainingSeats() < (int) $get('passengers_count')
+                                    Trip::find($get('return_trip_id'))?->availableSeatsCountForSession(session()->getId()) < (int) $get('passengers_count')
                             ),
 
                         Hidden::make('return_seat_ids')
                             ->default([])
                             ->dehydrated()
                             ->required(
-                                fn(Get $get) => ! blank($get('return_trip_id')) &&
+                                fn (Get $get) => ! blank($get('return_trip_id')) &&
                                     Trip::find($get('return_trip_id')) &&
-                                    Trip::find($get('return_trip_id'))?->remainingSeats() >= (int) $get('passengers_count')
+                                    Trip::find($get('return_trip_id'))?->availableSeatsCountForSession(session()->getId()) >= (int) $get('passengers_count')
                             )
-                            ->rule(fn(Get $get) => function ($attribute, $value, $fail) use ($get) {
+                            ->rule(fn (Get $get) => function ($attribute, $value, $fail) use ($get) {
                                 $required = (int) $get('passengers_count');
 
                                 if (count($value ?? []) !== $required) {
@@ -1807,7 +1795,7 @@ class TicketForm
                                             Notification::make()
                                                 ->title('Asientos de vuelta expirados')
                                                 ->icon('heroicon-m-clock')
-                                                ->body('Los siguientes asientos de vuelta expiraron: ' . implode(', ', $expiredSeatNumbers) . '. Por favor, selecciónelos nuevamente.')
+                                                ->body('Los siguientes asientos de vuelta expiraron: '.implode(', ', $expiredSeatNumbers).'. Por favor, selecciónelos nuevamente.')
                                                 ->persistent()
                                                 ->warning()
                                                 ->send();
@@ -1867,13 +1855,37 @@ class TicketForm
                                 ];
                             })
                             ->visible(
-                                fn(Get $get) => ! blank($get('return_trip_id')) &&
+                                fn (Get $get) => ! blank($get('return_trip_id')) &&
                                     Trip::find($get('return_trip_id')) &&
-                                    Trip::find($get('return_trip_id'))?->remainingSeats() >= (int) $get('passengers_count')
+                                    Trip::find($get('return_trip_id'))?->availableSeatsCountForSession(session()->getId()) >= (int) $get('passengers_count')
                             ),
                     ]),
 
                 Step::make('Pasajeros')
+                    // Una persona por viaje: al presionar "Siguiente", si algún
+                    // DNI (adulto o menor) ya tiene boleto en el viaje de ida
+                    // o de vuelta, se abre el modal de duplicado y no se avanza.
+                    ->afterValidation(function (Get $get, LivewireComponent $livewire): void {
+                        $dnis = TripPassengerConflicts::saleDnis((array) $get('passengers'));
+                        $tripIds = TripPassengerConflicts::saleTripIds([
+                            'trip_id' => $get('trip_id'),
+                            'return_trip_id' => $get('return_trip_id'),
+                            'is_round_trip' => $get('is_round_trip'),
+                            'sell_without_date_ida' => $get('sell_without_date_ida'),
+                            'sell_without_date_vuelta' => $get('sell_without_date_vuelta'),
+                        ]);
+
+                        if (TripPassengerConflicts::find($dnis, $tripIds)->isEmpty()) {
+                            return;
+                        }
+
+                        $livewire->mountAction(CreateTicket::DUPLICATE_PASSENGER_ACTION, [
+                            'dnis' => $dnis,
+                            'tripIds' => $tripIds,
+                        ]);
+
+                        throw new Halt;
+                    })
                     ->schema([
                         ViewField::make('wizard_header_pasajeros')
                             ->view('tickets.wizard-step-header')
@@ -1896,7 +1908,7 @@ class TicketForm
                                 );
 
                                 return [
-                                    'busName' => $get('bus_id') ? Bus::find($get('bus_id'))?->name : '—',
+                                    'busName' => self::busNameFor($get('schedule_id'), $get('bus_id')),
                                     'originName' => $get('origin_location_id') ? \App\Models\Location::find($get('origin_location_id'))?->name : '—',
                                     'destinationName' => $get('destination_location_id') ? \App\Models\Location::find($get('destination_location_id'))?->name : '—',
                                     'departureTime' => $idaTimes['departure'],
@@ -2014,6 +2026,8 @@ class TicketForm
                                                     }
                                                 };
                                             })
+                                            // Una persona por venta (adultos y menores).
+                                            ->rule(static fn (Get $get): Closure => self::distinctSaleDniRule($get, 'dni'))
                                             ->validationMessages([
                                                 'required' => 'Debe ingresar un DNI.',
                                                 'numeric' => 'El DNI debe ser numérico.',
@@ -2103,7 +2117,12 @@ class TicketForm
                                                     $set('child_data', []);
                                                 }
                                             }),
-                                    ])->visible(fn(Get $get) => $get('dni') !== null && $get('dni') !== '' && $get('dni') !== '' && $get('first_name') !== null && $get('first_name') !== '' && $get('first_name') !== '' && $get('last_name') !== null && $get('last_name') !== '' && $get('last_name') !== ''),
+                                    ])
+                                    // Parámetro visual de "Parámetros": con la venta con
+                                    // acompañante desactivada no se muestran los switches
+                                    // "¿Viaja con...?" ni, por lo tanto, sus datos.
+                                    ->visible(fn (Get $get) => Setting::permiteAcompanantes()
+                                        && $get('dni') !== null && $get('dni') !== '' && $get('first_name') !== null && $get('first_name') !== '' && $get('last_name') !== null && $get('last_name') !== ''),
 
                                 // Sección de datos del menor (condicional)
                                 Grid::make(2)
@@ -2138,9 +2157,16 @@ class TicketForm
                                             ->label('DNI del menor')
                                             ->required()
                                             ->numeric()
+                                            ->live(onBlur: true)
+                                            ->afterStateUpdated(static function (TextInput $component, $state): void {
+                                                if (strlen(preg_replace('/\D+/', '', trim((string) $state))) >= 7) {
+                                                    LiveValidation::only($component);
+                                                }
+                                            })
                                             ->rules([
                                                 'digits_between:7,8',
                                             ])
+                                            ->rule(static fn (Get $get): Closure => self::distinctSaleDniRule($get, 'child_data.dni'))
                                             ->validationMessages([
                                                 'required' => 'Debe ingresar un DNI.',
                                                 'numeric' => 'El DNI debe ser numérico.',
@@ -2156,7 +2182,7 @@ class TicketForm
                                             ->visible(fn($get) => $get('travels_with_child'))
                                             ->helperText('Edad entre 0 y 4 años'), */
                                     ])
-                                    ->visible(fn($get) => $get('travels_with_child'))
+                                    ->visible(fn ($get) => $get('travels_with_child'))
                                     ->live(),
 
                                 // Sección de datos de mascotas (condicional)
@@ -2188,7 +2214,7 @@ class TicketForm
                                                 'in' => 'La cantidad debe ser entre 1 y 5.',
                                             ]),
                                     ])
-                                    ->visible(fn($get) => $get('travels_with_pets'))
+                                    ->visible(fn ($get) => $get('travels_with_pets'))
                                     ->live(),
 
                                 Hidden::make('passenger_number')
@@ -2214,11 +2240,11 @@ class TicketForm
                                             ->required()
                                             ->native(false)
                                             ->preload()
-                                            ->options(fn() => PaymentMethod::options())
+                                            ->options(fn () => PaymentMethod::options())
                                             ->placeholder('Seleccione un método de pago')
                                             ->createOptionModalHeading('Nuevo método de pago')
-                                            ->createOptionAction(fn($action) => $action
-                                                ->visible(fn(): bool => (bool) Auth::user()?->can('payment_methods.create')))
+                                            ->createOptionAction(fn ($action) => $action
+                                                ->visible(fn (): bool => (bool) Auth::user()?->can('payment_methods.create')))
                                             ->createOptionForm([
                                                 TextInput::make('label')
                                                     ->label('Nombre')
@@ -2252,12 +2278,12 @@ class TicketForm
                                             ->validationMessages([
                                                 'required' => 'Debe seleccionar un método de pago.',
                                             ]),
-                                    ])->visible(fn(Get $get) => $get('dni') !== null && $get('dni') !== '' && $get('dni') !== '' && $get('first_name') !== null && $get('first_name') !== '' && $get('first_name') !== '' && $get('last_name') !== null && $get('last_name') !== '' && $get('last_name') !== ''),
+                                    ])->visible(fn (Get $get) => $get('dni') !== null && $get('dni') !== '' && $get('dni') !== '' && $get('first_name') !== null && $get('first_name') !== '' && $get('first_name') !== '' && $get('last_name') !== null && $get('last_name') !== '' && $get('last_name') !== ''),
                             ])
                             ->extraItemActions([
                                 Action::make('createClient')
                                     ->label('Crear cliente')
-                                    ->visible(fn() => (bool) Auth::user()?->can('clients.create'))
+                                    ->visible(fn () => (bool) Auth::user()?->can('clients.create'))
                                     ->icon(Heroicon::UserPlus)
                                     ->color('primary')
                                     ->modalHeading('Crear cliente')
@@ -2363,7 +2389,7 @@ class TicketForm
                                             ->send();
                                     }),
                                 Action::make('loadClient')
-                                    ->visible(fn() => (bool) Auth::user()?->can('clients.view_any'))
+                                    ->visible(fn () => (bool) Auth::user()?->can('clients.view_any'))
                                     ->label('Cargar cliente')
                                     ->icon(Heroicon::User)
                                     ->color('primary')
@@ -2429,10 +2455,10 @@ class TicketForm
                             ])
 
                             ->extraAttributes(
-                                ['class' => '[&_.fi-fo-repeater-item-header-label]:text-blue-600']
+                                ['class' => '[&_.fi-fo-repeater-item-header-label]:text-primary-600 dark:[&_.fi-fo-repeater-item-header-label]:text-primary-400']
                             )
-                            ->minItems(fn(Get $get) => (int) $get('passengers_count'))
-                            ->maxItems(fn(Get $get) => (int) $get('passengers_count'))
+                            ->minItems(fn (Get $get) => (int) $get('passengers_count'))
+                            ->maxItems(fn (Get $get) => (int) $get('passengers_count'))
                             ->required()
                             ->addActionLabel('Agregar pasajero')
                             ->validationMessages([
@@ -2480,16 +2506,16 @@ class TicketForm
                                     $seatNumberVuelta = Seat::where('id', $returnSeatId)->where('bus_id', $vueltaBusId)->value('seat_number');
                                 }
 
-                                $label = 'Pasajero ' . $passengerNumber;
+                                $label = 'Pasajero '.$passengerNumber;
                                 if ($seatNumberIda !== null) {
-                                    $label .= ' | Asiento ida: ' . $seatNumberIda;
+                                    $label .= ' | Asiento ida: '.$seatNumberIda;
                                 } elseif ($seatId !== null && $seatId !== '') {
-                                    $label .= ' | Asiento ida: ' . $seatId;
+                                    $label .= ' | Asiento ida: '.$seatId;
                                 }
                                 if ($seatNumberVuelta !== null) {
-                                    $label .= ' | Asiento vuelta: ' . $seatNumberVuelta;
+                                    $label .= ' | Asiento vuelta: '.$seatNumberVuelta;
                                 } elseif ($returnSeatId !== null && $returnSeatId !== '') {
-                                    $label .= ' | Asiento vuelta: ' . $returnSeatId;
+                                    $label .= ' | Asiento vuelta: '.$returnSeatId;
                                 }
 
                                 return $label;
@@ -2499,7 +2525,7 @@ class TicketForm
                     ->schema([
                         ViewField::make('summary')
                             ->view('tickets.summary')
-                            ->viewData(fn(Get $get) => [
+                            ->viewData(fn (Get $get) => [
                                 'get' => $get,
                             ]),
                     ]),
@@ -2510,27 +2536,436 @@ class TicketForm
     }
 
     /**
-     * Domingos deshabilitados para venta, excepto el 13/09/2026.
-     *
-     * @return list<string>
+     * Acción (modal) para ver paradas y horarios del colectivo elegido.
+     * Se muestra como botón sufijo del select Colectivo y se activa sólo
+     * cuando hay colectivo seleccionado.
      */
-    private static function getDisabledTravelDates(): array
+    /**
+     * Al avanzar el paso 1: si el viaje de un tramo cambió respecto del que
+     * tenía los asientos elegidos, libera las reservas de la sesión en el viaje
+     * abandonado y descarta la selección de ese tramo (sin aviso de
+     * "asientos expirados"). Recuerda los viajes actuales para la próxima vez.
+     */
+    private static function releaseAbandonedTrips(Get $get, Set $set): void
     {
-        $allowedSunday = '2026-09-13';
-        $disabledDates = [];
-        $start = Carbon::today()->subYear();
-        $end = Carbon::today()->addYears(2);
+        $outboundTripId = $get('sell_without_date_ida') ? null : $get('trip_id');
+        $returnTripId = ($get('is_round_trip') && ! $get('sell_without_date_vuelta')) ? $get('return_trip_id') : null;
 
-        while ($start->lte($end)) {
-            if ($start->dayOfWeek === 0) {
-                $date = $start->copy()->format('Y-m-d');
-                if ($date !== $allowedSunday) {
-                    $disabledDates[] = $date;
+        $legs = [
+            ['reserved' => 'reserved_trip_id', 'current' => $outboundTripId, 'seats' => 'seat_ids'],
+            ['reserved' => 'reserved_return_trip_id', 'current' => $returnTripId, 'seats' => 'return_seat_ids'],
+        ];
+
+        foreach ($legs as $leg) {
+            $reservedTripId = $get($leg['reserved']);
+            $currentTripId = filled($leg['current']) ? (int) $leg['current'] : null;
+
+            if (filled($reservedTripId) && (int) $reservedTripId !== $currentTripId) {
+                SeatReservation::releaseBySession(session()->getId(), [(int) $reservedTripId]);
+                $set($leg['seats'], []);
+            }
+
+            $set($leg['reserved'], $currentTripId);
+        }
+    }
+
+    private static function stopsAndTimesModal(): Action
+    {
+        return Action::make('ver_paradas_y_horarios')
+            ->label('Paradas y horarios')
+            ->icon('heroicon-m-clock')
+            ->color('gray')
+            ->extraAttributes(['title' => 'Ver paradas y horarios del colectivo'])
+            ->visible(fn (Action $action): bool => filled(data_get($action->getLivewire(), 'data.bus_id')))
+            ->modalHeading(function (Action $action) {
+                $bus = self::busForAction($action);
+
+                return 'Paradas y horarios'.($bus !== null ? ' — '.$bus->name : '');
+            })
+            ->modalDescription('Horarios del colectivo segun paradas configuradas')
+            ->modalWidth('5xl')
+            ->modalSubmitAction(false)
+            ->modalCancelActionLabel('Cerrar')
+            ->modalContent(function (Action $action) {
+                $bus = self::busForAction($action);
+
+                if ($bus === null) {
+                    return null;
+                }
+
+                return view('filament.tickets.paradas-horarios', [
+                    'bus' => $bus,
+                    'rutas' => self::busRoutesForModal($bus->id),
+                ]);
+            });
+    }
+
+    /** Colectivo elegido en el formulario, leído del estado Livewire. */
+    private static function busForAction(Action $action): ?Bus
+    {
+        $busId = data_get($action->getLivewire(), 'data.bus_id');
+
+        return blank($busId) ? null : Bus::query()->find($busId);
+    }
+
+    /**
+     * Rutas activas del colectivo con sus horarios activos y sus paradas
+     * (con la ubicación), para armar el modal de paradas y horarios.
+     */
+    private static function busRoutesForModal(mixed $busId): Collection
+    {
+        return Route::query()
+            ->where('bus_id', $busId)
+            ->where('is_active', true)
+            ->with([
+                'stops.location',
+                'schedules' => fn ($q) => $q->where('is_active', true),
+            ])
+            ->orderBy('id')
+            ->get();
+    }
+
+    /**
+     * Horario único disponible para el tramo/fecha actuales: ida (origen →
+     * destino) o vuelta (destino → origen). Si existe exactamente uno, duelve
+     * su id para usarlo como default del select (mechanismo `default()` de
+     * Filament) y para preseleccionarlo cuando cambian los campos de los que
+     * dependen sus opciones; con ninguno o más de uno duelve null y el
+     * vendedor elige manualmente.
+     *
+     * Aplica los mismos filtros que las opciones de cada select (horarios
+     * activos y rutas activas del colectivo, segmento válido, venta fuera de
+     * término y, en la vuelta, salir después del horario de ida si es el
+     * mismo día).
+     */
+    private static function autoSelectedScheduleId(Get $get, string $leg = 'ida'): ?int
+    {
+        if ($leg === 'vuelta') {
+            $date = $get('return_date');
+            $fromLocationId = $get('destination_location_id');
+            $toLocationId = $get('origin_location_id');
+
+            // Vuelta el mismo día que la ida: debe salir después del horario
+            // de ida seleccionado.
+            $afterDepartureTime = null;
+
+            if ($date && $get('schedule_id')) {
+                $idaDate = $get('departure_date');
+
+                if ($idaDate) {
+                    $dateIda = is_string($idaDate) ? Carbon::parse($idaDate) : $idaDate;
+                    $dateVuelta = is_string($date) ? Carbon::parse($date) : $date;
+
+                    if ($dateIda->format('Y-m-d') === $dateVuelta->format('Y-m-d')) {
+                        $afterDepartureTime = Schedule::find($get('schedule_id'))?->departure_time;
+                    }
                 }
             }
-            $start->addDay();
+        } else {
+            $date = $get('departure_date');
+            $fromLocationId = $get('origin_location_id');
+            $toLocationId = $get('destination_location_id');
+            $afterDepartureTime = null;
         }
 
-        return $disabledDates;
+        if (blank($get('bus_id')) || blank($date) || blank($fromLocationId) || blank($toLocationId)) {
+            return null;
+        }
+
+        $schedules = Schedule::query()
+            ->bookable()
+            ->whereHas('route', fn ($q) => $q->whereIn('bus_id', self::lineBusIds($get('bus_id'))))
+            ->whereHas('route.stops', fn ($q) => $q->where('location_id', $fromLocationId))
+            ->whereHas('route.stops', fn ($q) => $q->where('location_id', $toLocationId))
+            ->get()
+            ->filter(fn ($schedule) => $schedule->route->isValidSegment(
+                (int) $fromLocationId,
+                (int) $toLocationId,
+            ));
+
+        // Vuelta el mismo día que la ida: el horario de vuelta debe salir
+        // después del horario de ida seleccionado.
+        if ($afterDepartureTime !== null) {
+            $afterTime = Carbon::parse($afterDepartureTime)->format('H:i:s');
+            $schedules = $schedules->filter(fn ($schedule) => $schedule->departure_time !== null
+                && Carbon::parse($schedule->departure_time)->format('H:i:s') > $afterTime);
+        }
+
+        // Venta fuera de término: sin el permiso no se listan fechas
+        // anteriores ni salidas ya vencidas.
+        $schedules = $schedules->filter(fn ($schedule) => SaleCutoff::blockReasonForSchedule(
+            $date,
+            $schedule,
+            (int) $fromLocationId,
+        ) === null);
+
+        return $schedules->count() === 1
+            ? (int) $schedules->first()->getKey()
+            : null;
+    }
+
+    /**
+     * Ids de los colectivos que comparten línea con el elegido, o solo el
+     * elegido si no tiene línea.
+     *
+     * @return array<int, int>
+     */
+    private static function lineBusIds(mixed $busId): array
+    {
+        return Bus::idsInSameLineAs($busId);
+    }
+
+    /**
+     * Opciones del selector Colectivo: los colectivos que no son refuerzo. Se
+     * conserva el colectivo ya guardado aunque sea refuerzo, para que una venta
+     * existente no quede sin valor al editarla.
+     *
+     * @return array<int, string>
+     */
+    private static function saleBusOptions(mixed $currentBusId): array
+    {
+        return Bus::query()
+            ->where(function ($query) use ($currentBusId): void {
+                $query->where('is_reinforcement', false);
+
+                if (filled($currentBusId)) {
+                    $query->orWhere('id', $currentBusId);
+                }
+            })
+            ->orderBy('name')
+            ->pluck('name', 'id')
+            ->all();
+    }
+
+    /**
+     * ¿Origen y Destino se muestran con el estilo detallado (Parámetros > Venta)?
+     */
+    private static function detailedSelectors(): bool
+    {
+        return Setting::selectoresDetallados();
+    }
+
+    /**
+     * Opciones del select Origen: las paradas de todas las rutas activas de la
+     * línea del colectivo, sin repetir localidades. En estilo detallado cada
+     * parada se numera con su posición en la primera ruta de la línea que la
+     * contiene; en el simple se muestra solo el nombre.
+     *
+     * @return array<int, string>
+     */
+    private static function originOptions(mixed $busId, bool $detailed): array
+    {
+        $lineBusIds = self::lineBusIds($busId);
+
+        if ($lineBusIds === []) {
+            return [];
+        }
+
+        $routes = Route::query()
+            ->whereIn('bus_id', $lineBusIds)
+            ->where('is_active', true)
+            ->with('stops.location')
+            ->orderBy('id')
+            ->get();
+
+        $options = [];
+
+        foreach ($routes as $route) {
+            foreach ($route->stops as $position => $stop) {
+                if ($stop->location?->is_active === false || array_key_exists($stop->location_id, $options)) {
+                    continue;
+                }
+
+                $options[$stop->location_id] = $detailed
+                    ? self::stopOptionLabel($position + 1, (string) $stop->location->name)
+                    : (string) $stop->location->name;
+            }
+        }
+
+        return $options;
+    }
+
+    /**
+     * Opciones del select Destino: paradas posteriores al origen en las rutas
+     * activas de la línea del colectivo. En estilo detallado se agrupan por
+     * sentido y se numeran con la posición de la parada dentro de su ruta
+     * (mismo criterio que Origen); en el simple son una lista plana, sin
+     * repetir, ordenada por posición de la parada y luego por ruta.
+     *
+     * @return array<string, array<int, string>>|array<int, string>
+     */
+    private static function destinationOptions(mixed $busId, mixed $originId, bool $detailed): array
+    {
+        if (blank($busId) || blank($originId)) {
+            return [];
+        }
+
+        $rows = RouteStop::query()
+            ->withoutGlobalScopes()
+            ->from('route_stops as destination')
+            ->join('route_stops as origin', function ($join) use ($originId) {
+                $join->on('destination.route_id', '=', 'origin.route_id')
+                    ->where('origin.location_id', $originId);
+            })
+            ->join('routes', 'routes.id', '=', 'destination.route_id')
+            ->whereNull('routes.deleted_at')
+            ->whereNull('destination.deleted_at')
+            ->whereNull('origin.deleted_at')
+            ->where('routes.is_active', true)
+            ->whereIn('routes.bus_id', self::lineBusIds($busId))
+            ->whereColumn('destination.stop_order', '>', 'origin.stop_order')
+            ->where('destination.location_id', '!=', $originId)
+            ->join('locations', 'locations.id', '=', 'destination.location_id')
+            ->orderBy('destination.route_id')
+            ->orderBy('destination.stop_order')
+            ->get([
+                'destination.route_id',
+                'destination.location_id',
+                'destination.stop_order',
+                'destination.departure_offset_minutes',
+                'locations.name',
+            ]);
+
+        if (! $detailed) {
+            return $rows
+                ->sortBy([['stop_order', 'asc'], ['route_id', 'asc']])
+                ->unique('location_id')
+                ->mapWithKeys(fn ($row): array => [(int) $row->location_id => (string) $row->name])
+                ->all();
+        }
+
+        $routeMeta = [];
+        $groups = [];
+
+        foreach ($rows as $row) {
+            $routeId = (int) $row->route_id;
+
+            // [etiqueta del grupo, stop_order de la primera parada] por ruta.
+            if (! array_key_exists($routeId, $routeMeta)) {
+                $route = Route::query()->with('stops.location')->find($routeId);
+                $routeMeta[$routeId] = [
+                    $route !== null ? self::routeGroupLabel($route) : 'Ruta',
+                    (int) ($route?->stops->min('stop_order') ?? 0),
+                ];
+            }
+            [$groupLabel, $firstStopOrder] = $routeMeta[$routeId];
+
+            $position = (int) $row->stop_order - $firstStopOrder + 1;
+
+            $groups[$groupLabel][(int) $row->location_id] ??= self::stopOptionLabel(
+                $position,
+                (string) $row->name,
+            );
+        }
+
+        return $groups;
+    }
+
+    /**
+     * Etiqueta de una parada para las opciones: "3 · Tolosa".
+     */
+    private static function stopOptionLabel(int $order, string $locationName): string
+    {
+        return "{$order} · {$locationName}";
+    }
+
+    /**
+     * Encabezado del grupo de destinos por sentido: "Hacia Salta", según la
+     * última parada de la ruta. Regular y refuerzo con el mismo sentido caen
+     * en el mismo grupo.
+     */
+    private static function routeGroupLabel(Route $route): string
+    {
+        $last = $route->stops->last()?->location?->name;
+
+        return $last !== null
+            ? "Hacia {$last}"
+            : (string) ($route->name ?? 'Ruta');
+    }
+
+    /**
+     * Colectivo que viaja en el horario elegido. Si no hay horario, el del selector.
+     */
+    private static function busNameFor(mixed $scheduleId, mixed $busId): string
+    {
+        $scheduleBusName = filled($scheduleId) ? Schedule::find($scheduleId)?->route?->bus?->name : null;
+
+        if ($scheduleBusName !== null) {
+            return $scheduleBusName;
+        }
+
+        return filled($busId) ? (Bus::find($busId)?->name ?? '—') : '—';
+    }
+
+    /**
+     * Etiqueta de un horario en el select: incluye el colectivo al que pertenece,
+     * porque dentro de una línea puede ser un refuerzo.
+     */
+    private static function scheduleOptionLabel(Schedule $schedule): string
+    {
+        $busName = $schedule->route?->bus?->name;
+
+        return $busName !== null
+            ? "{$schedule->display_name} · {$busName}"
+            : $schedule->display_name;
+    }
+
+    /**
+     * Ayuda de los interruptores de venta sin fecha (ida y vuelta). Menciona
+     * el panel de clientes solo cuando está activo.
+     */
+    public static function withoutDateHelperText(): string
+    {
+        return Setting::panelClientesActivo()
+            ? 'El boleto se vende sin fecha ni horario y se asignan después desde la opción "reprogramar boleto", o el pasajero los elige desde el panel de clientes.'
+            : 'El boleto se vende sin fecha ni horario y se asignan después desde la opción "reprogramar boleto".';
+    }
+
+    /**
+     * Aviso para quien tiene el permiso de días sin servicio y eligió uno.
+     */
+    private static function serviceDayWarning(mixed $date): ?string
+    {
+        return ServiceDays::userCanBypass() ? ServiceDays::warning($date) : null;
+    }
+
+    /**
+     * Regla de validación de un DNI de la venta (adulto o menor): no puede
+     * repetirse dentro de la venta. Falla si el mismo DNI está cargado en
+     * cualquier otro campo DNI de la venta (de adulto o de menor).
+     */
+    private static function distinctSaleDniRule(Get $get, string $field): Closure
+    {
+        return static function (string $attribute, mixed $value, Closure $fail) use ($get, $field): void {
+            $dni = trim((string) $value);
+
+            if ($dni === '' || ! preg_match('/passengers\.([^.]+)\.(?:child_data\.)?dni$/', $attribute, $matches)) {
+                return;
+            }
+
+            foreach (TripPassengerConflicts::saleDniSlots((array) $get('../../passengers')) as $slot) {
+                $isCurrentField = (string) $slot['key'] === $matches[1] && $slot['field'] === $field;
+
+                if (! $isCurrentField && $slot['dni'] === $dni) {
+                    $fail('Este DNI ya está cargado en otro pasajero de la venta.');
+
+                    return;
+                }
+            }
+        };
+    }
+
+    /**
+     * Regla de validación: la fecha debe tener servicio, salvo permiso.
+     */
+    private static function serviceDayRule(): Closure
+    {
+        return function (string $attribute, mixed $value, Closure $fail): void {
+            $reason = ServiceDays::blockReason($value);
+
+            if ($reason !== null) {
+                $fail($reason);
+            }
+        };
     }
 }

@@ -184,7 +184,7 @@ class BusLayoutService
 
         if ($soldSeats > 0) {
             throw new \InvalidArgumentException(
-                "El colectivo tiene asientos con boletos vendidos; no se puede reemplazar su layout de esta forma.",
+                'El colectivo tiene asientos con boletos vendidos; no se puede reemplazar su layout de esta forma.',
             );
         }
 
@@ -448,6 +448,8 @@ class BusLayoutService
             'luggage' => 'EQUIPAJE',
             'driver' => 'CONDUCTOR',
             'pasillo' => 'PASILLO',
+            'stairs' => 'ESCALERA',
+            'bar' => 'BAR',
             default => 'ÁREA',
         };
     }

@@ -194,6 +194,85 @@ class RolesAndPermissionsTest extends TestCase
         );
     }
 
+    public function test_permiso_de_dias_sin_servicio_se_registra_sin_asignarse_a_ningun_rol(): void
+    {
+        Artisan::call('permissions:sync');
+
+        $this->assertDatabaseHas('permissions', ['name' => 'tickets.vender_dia_sin_servicio']);
+
+        $this->assertFalse(Role::findByName(Permissions::ROLE_ADMIN)->hasPermissionTo('tickets.vender_dia_sin_servicio'));
+        $this->assertFalse(Role::findByName(Permissions::ROLE_SELLER)->hasPermissionTo('tickets.vender_dia_sin_servicio'));
+
+        $this->assertFalse(User::factory()->admin()->create()->can('tickets.vender_dia_sin_servicio'));
+        $this->assertFalse(User::factory()->vendedor()->create()->can('tickets.vender_dia_sin_servicio'));
+        $this->assertTrue(User::factory()->superAdmin()->create()->can('tickets.vender_dia_sin_servicio'));
+    }
+
+    public function test_permiso_del_panel_de_clientes_se_registra_sin_asignarse_a_ningun_rol(): void
+    {
+        Permissions::syncToDatabase();
+
+        $this->assertDatabaseHas('permissions', ['name' => 'settings.client_panel']);
+
+        $this->assertFalse(Role::findByName(Permissions::ROLE_ADMIN)->hasPermissionTo('settings.client_panel'));
+        $this->assertFalse(Role::findByName(Permissions::ROLE_SELLER)->hasPermissionTo('settings.client_panel'));
+
+        $this->assertFalse(User::factory()->admin()->create()->can('settings.client_panel'));
+        $this->assertTrue(User::factory()->superAdmin()->create()->can('settings.client_panel'));
+    }
+
+    public function test_permiso_de_apariencia_se_registra_sin_asignarse_a_ningun_rol(): void
+    {
+        Permissions::syncToDatabase();
+
+        $this->assertDatabaseHas('permissions', ['name' => 'settings.appearance']);
+
+        $this->assertFalse(Role::findByName(Permissions::ROLE_ADMIN)->hasPermissionTo('settings.appearance'));
+        $this->assertFalse(Role::findByName(Permissions::ROLE_SELLER)->hasPermissionTo('settings.appearance'));
+
+        $this->assertFalse(User::factory()->admin()->create()->can('settings.appearance'));
+        $this->assertTrue(User::factory()->superAdmin()->create()->can('settings.appearance'));
+    }
+
+    public function test_permiso_de_selectores_de_origen_y_destino_se_registra_sin_asignarse_a_ningun_rol(): void
+    {
+        Permissions::syncToDatabase();
+
+        $this->assertDatabaseHas('permissions', ['name' => 'settings.sale_selectors']);
+
+        $this->assertFalse(Role::findByName(Permissions::ROLE_ADMIN)->hasPermissionTo('settings.sale_selectors'));
+        $this->assertFalse(Role::findByName(Permissions::ROLE_SELLER)->hasPermissionTo('settings.sale_selectors'));
+
+        $this->assertFalse(User::factory()->admin()->create()->can('settings.sale_selectors'));
+        $this->assertTrue(User::factory()->superAdmin()->create()->can('settings.sale_selectors'));
+    }
+
+    public function test_permisos_de_lineas_se_registran_sin_asignarse_a_admin_ni_vendedor(): void
+    {
+        Permissions::syncToDatabase();
+
+        foreach (['view_any', 'view', 'create', 'update', 'delete', 'restore', 'force_delete'] as $action) {
+            $this->assertDatabaseHas('permissions', ['name' => "lineas.{$action}"]);
+            $this->assertFalse(Role::findByName(Permissions::ROLE_ADMIN)->hasPermissionTo("lineas.{$action}"));
+            $this->assertFalse(Role::findByName(Permissions::ROLE_SELLER)->hasPermissionTo("lineas.{$action}"));
+        }
+
+        $this->assertFalse(User::factory()->admin()->create()->can('lineas.view_any'));
+        $this->assertFalse(User::factory()->vendedor()->create()->can('lineas.view_any'));
+        $this->assertTrue(User::factory()->superAdmin()->create()->can('lineas.view_any'));
+    }
+
+    public function test_el_sync_no_revoca_permisos_de_lineas_habilitados_desde_la_matriz(): void
+    {
+        Permissions::syncToDatabase();
+
+        Role::findByName(Permissions::ROLE_ADMIN)->givePermissionTo('lineas.view_any');
+
+        Permissions::syncToDatabase();
+
+        $this->assertTrue(Role::findByName(Permissions::ROLE_ADMIN)->hasPermissionTo('lineas.view_any'));
+    }
+
     public function test_comando_permissions_sync_funciona(): void
     {
         // Borrar un permiso y verificar que el comando lo recrea.
@@ -345,6 +424,30 @@ class RolesAndPermissionsTest extends TestCase
 
         $this->assertArrayHasKey('tickets.reschedule', $ticketOptions);
         $this->assertArrayHasKey('tickets.create', $ticketOptions);
+    }
+
+    public function test_la_matriz_muestra_el_modulo_lineas_a_quien_puede_otorgarlo(): void
+    {
+        $this->actingAs(User::factory()->superAdmin()->create());
+
+        $component = Livewire::test(\App\Filament\Resources\Roles\Pages\ManageRoles::class)
+            ->assertOk()
+            ->mountAction('create');
+
+        $mountedAction = $component->instance()->getMountedAction();
+        $schema = $mountedAction->getSchema(\Filament\Schemas\Schema::make($component->instance()));
+
+        $lineaOptions = collect($schema->getComponents())
+            ->flatMap(fn ($c) => method_exists($c, 'getChildComponents') ? $c->getChildComponents() : [$c])
+            ->filter(fn ($c) => $c instanceof \Filament\Forms\Components\CheckboxList)
+            ->first(fn ($list) => $list->getLabel() === 'Líneas')
+            ?->getOptions();
+
+        $this->assertNotNull($lineaOptions);
+        $this->assertArrayHasKey('lineas.view_any', $lineaOptions);
+        $this->assertArrayHasKey('lineas.create', $lineaOptions);
+        $this->assertArrayHasKey('lineas.update', $lineaOptions);
+        $this->assertArrayHasKey('lineas.delete', $lineaOptions);
     }
 
     public function test_crear_un_rol_desde_la_ui_persiste_sus_permisos(): void

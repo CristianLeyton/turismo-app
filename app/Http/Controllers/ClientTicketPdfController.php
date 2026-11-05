@@ -2,14 +2,39 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Setting;
 use App\Models\Ticket;
 use App\Services\ClientTicketAssignmentService;
 use App\Services\TicketPdfService;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Response;
 
 class ClientTicketPdfController extends Controller
 {
+    /**
+     * "Ver boleto" del panel de clientes. Mismo scoping que el PDF (sesión
+     * + boleto del DNI del cliente); el token compartible se genera recién
+     * acá, al hacer click, no al listar los boletos.
+     */
+    public function show(Ticket $ticket): RedirectResponse
+    {
+        $client = \App\Support\ClientSession::current();
+
+        abort_unless($client !== null, 403);
+
+        abort_unless(
+            app(ClientTicketAssignmentService::class)->clientOwnsTicket($ticket, $client),
+            404
+        );
+
+        if (! Setting::descargaAutomaticaPdf()) {
+            return redirect()->away($ticket->shareUrl());
+        }
+
+        return redirect()->route('clientes.boletos.pdf', ['ticket' => $ticket->id]);
+    }
+
     /**
      * PDF del boleto del cliente. Generado al vuelo: sólo si el ticket
      * pertenece al cliente identificado en la sesión (scoping por DNI;
@@ -26,23 +51,11 @@ class ClientTicketPdfController extends Controller
             404
         );
 
-        $pdfService = new TicketPdfService;
+        $pdf = (new TicketPdfService)->forTicket($ticket);
 
-        $passengerTickets = $ticket->sale->tickets()
-            ->where('passenger_id', $ticket->passenger_id)
-            ->with(['trip', 'returnTrip', 'origin', 'destination', 'seat'])
-            ->get();
-
-        $pdfContent = $ticket->is_round_trip
-            ? $pdfService->generateRoundTripTicket($ticket->sale, $passengerTickets)
-            : $pdfService->generatePassengerTickets($ticket->sale, collect([$ticket]));
-
-        $colectivo = str_replace(' ', '_', $ticket->trip?->bus?->name ?? 'Sin fecha');
-        $filename = "Boleto_N°{$ticket->id}_{$colectivo}.pdf";
-
-        return Response::make($pdfContent, 200, [
+        return Response::make($pdf['content'], 200, [
             'Content-Type' => 'application/pdf',
-            'Content-Disposition' => 'inline; filename="' . rawurlencode($filename) . '"',
+            'Content-Disposition' => 'inline; filename="'.rawurlencode($pdf['filename']).'"',
         ]);
     }
 }

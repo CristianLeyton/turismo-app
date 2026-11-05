@@ -2,9 +2,9 @@
 
 namespace Tests\Feature;
 
+use App\Models\Sale;
 use App\Models\Seat;
 use App\Models\SeatReservation;
-use App\Models\Sale;
 use App\Models\Ticket;
 use App\Models\Trip;
 use App\Services\TicketRescheduleService;

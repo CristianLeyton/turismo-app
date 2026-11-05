@@ -1,6 +1,12 @@
 {{-- Tarjeta "Detalles de venta" del infolist del boleto --}}
 @php
-    $record = $getRecord();
+    /* Mismo criterio que infolist-summary-header: $record inyectado al incluir
+ la vista fuera del infolist; fallback al ViewEntry con $getRecord(). */
+    $record = $record ?? null;
+    if (!$record && isset($getRecord) && is_callable($getRecord)) {
+        $record = $getRecord();
+    }
+
     $sale = $record?->sale;
     $methodLabel = $record ? \App\Models\PaymentMethod::label($record->payment_method) : '—';
     $methodBadge = $record
@@ -12,7 +18,7 @@
     $price = $isReturnLegShared ? (float) $record->display_price : (float) ($record?->price ?? 0);
 @endphp
 
-<h2 class="text-2xl font-bold">Detalles de venta</h2>
+<h2 class="text-2xl font-bold mb-4">Detalles de venta</h2>
 
 <div class="rounded-xl border p-5 bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-700 mb-4">
     <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
@@ -33,7 +39,7 @@
 
         <div>
             <div class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Precio</div>
-            <div class="text-base font-semibold text-blue-600 dark:text-blue-400">
+            <div class="text-base font-semibold text-primary-600 dark:text-primary-400">
                 ${{ number_format($price, 0, ',', '.') }}
             </div>
             @if ($isReturnLegShared)

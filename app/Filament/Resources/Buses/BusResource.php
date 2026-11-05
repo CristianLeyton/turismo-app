@@ -19,6 +19,7 @@ use Filament\Actions\RestoreAction;
 use Filament\Actions\RestoreBulkAction;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Toggle;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
@@ -27,7 +28,6 @@ use Filament\Tables\Filters\TrashedFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
-use UnitEnum;
 
 class BusResource extends Resource
 {
@@ -40,8 +40,11 @@ class BusResource extends Resource
     protected static ?string $cluster = BusesCluster::class;
 
     protected static ?string $modelLabel = 'colectivo';
+
     protected static ?string $pluralModelLabel = 'Colectivos';
+
     protected static bool $hasTitleCaseModelLabel = false;
+
     protected static ?int $navigationSort = 1;
 
     public static function form(Schema $schema): Schema
@@ -83,6 +86,17 @@ class BusResource extends Resource
                         'max' => 'El colectivo no debe tener más de :max asientos.',
                     ]),
 
+                Select::make('linea_id')
+                    ->label('Línea')
+                    ->helperText('Agrupa este colectivo con otros que recorren el mismo trayecto. Sin línea, el colectivo se vende solo.')
+                    ->relationship('linea', 'name')
+                    ->searchable()
+                    ->preload()
+                    ->placeholder('Sin línea'),
+                Toggle::make('is_reinforcement')
+                    ->label('Es refuerzo')
+                    ->helperText('Marcá este colectivo si es un refuerzo de su línea. No aparece en el selector de colectivo de la venta, pero sus horarios sí.'),
+
                 // Sólo al crear: partir de una plantilla o copiar otro colectivo.
                 // La lógica de siembra vive en ManageBuses (CreateAction::using).
                 Select::make('layout_seed')
@@ -113,20 +127,22 @@ class BusResource extends Resource
     {
         return $table
             ->recordTitleAttribute('name')
+            ->recordUrl(null)
+            ->recordAction(null)
             ->columns([
                 TextColumn::make('name')
-                ->label('Nombre')
+                    ->label('Nombre')
                     ->searchable(),
                 TextColumn::make('plate')
-                ->label('Patente')
+                    ->label('Patente')
                     ->searchable(),
                 TextColumn::make('seat_count')
-                ->label('Cantidad de asientos')
+                    ->label('Cantidad de asientos')
                     ->numeric()
                     ->sortable()
                     ->alignCenter(),
                 TextColumn::make('floors')
-                ->label('Cantidad de pisos')
+                    ->label('Cantidad de pisos')
                     ->numeric()
                     ->sortable()
                     ->alignCenter()

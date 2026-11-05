@@ -55,6 +55,7 @@ final class Permissions
                     'create' => 'Vender / crear',
                     'vender_sin_fecha' => 'Vender sin fecha/horario',
                     'vender_pasado_limite' => 'Vender después del límite de salida',
+                    'vender_dia_sin_servicio' => 'Vender en días sin servicio',
                     'reschedule' => 'Reprogramar',
                     'edit' => 'Editar datos del pasajero/venta',
                     'delete' => 'Eliminar',
@@ -118,10 +119,17 @@ final class Permissions
                 'label' => 'Configuración',
                 'actions' => [
                     'manage' => 'Administrar configuración',
+                    'client_panel' => 'Activar/desactivar panel de clientes',
+                    'appearance' => 'Cambiar apariencia',
+                    'sale_selectors' => 'Configurar selectores de origen y destino',
                 ],
             ],
             'buses' => [
                 'label' => 'Colectivos',
+                'actions' => self::standardActions(),
+            ],
+            'lineas' => [
+                'label' => 'Líneas',
                 'actions' => self::standardActions(),
             ],
             'bus_layout_areas' => [
@@ -254,7 +262,8 @@ final class Permissions
      *
      * Sólo AGREGA: nunca revoca permisos, ni de roles custom ni de los roles
      * del sistema. Los permisos "habilitables por bandera" (p. ej.
-     * `tickets.vender_sin_fecha`, `tickets.vender_pasado_limite`) no vienen en
+     * `tickets.vender_sin_fecha`, `tickets.vender_pasado_limite`,
+     * `tickets.vender_dia_sin_servicio`) no vienen en
      * los defaults, se otorgan a mano desde la matriz de la UI: con un sync
      * destructivo desaparecían al correr `permissions:sync`.
      */

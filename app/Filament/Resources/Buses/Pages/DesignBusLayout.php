@@ -4,11 +4,8 @@ namespace App\Filament\Resources\Buses\Pages;
 
 use App\Filament\Resources\Buses\BusResource;
 use App\Models\Bus;
-use App\Models\BusLayoutArea;
 use App\Models\Seat;
 use App\Services\BusLayoutService;
-use Filament\Actions\Action;
-use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\Concerns\InteractsWithRecord;
@@ -394,6 +391,8 @@ class DesignBusLayout extends ResourcePage
             'luggage' => 'EQUIPAJE',
             'driver' => 'CONDUCTOR',
             'pasillo' => 'PASILLO',
+            'stairs' => 'ESCALERA',
+            'bar' => 'BAR',
             default => 'ÁREA',
         };
     }

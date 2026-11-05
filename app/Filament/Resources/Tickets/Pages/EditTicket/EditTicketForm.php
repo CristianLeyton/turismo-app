@@ -5,6 +5,7 @@ namespace App\Filament\Resources\Tickets\Pages\EditTicket;
 use App\Filament\Resources\Tickets\Pages\EditTicket;
 use App\Models\Clients;
 use App\Models\PaymentMethod;
+use App\Models\Setting;
 use App\Models\Ticket;
 use App\Support\LiveValidation;
 use Filament\Forms\Components\Checkbox;
@@ -123,6 +124,14 @@ class EditTicketForm
 
                 Section::make('Acompañante del pasajero')
                     ->columnSpanFull()
+                    // Parámetro visual (Parámetros → "Venta con acompañante"):
+                    // con la venta desactivada la sección entera no se muestra.
+                    // dehydratedWhenHidden() es clave: conserva el estado actual
+                    // de los switches en el payload de guardado, así un boleto
+                    // que ya tiene menor/mascota no pierde esos datos (ni se
+                    // borran) al editar otros campos con la sección oculta.
+                    ->visible(fn (): bool => Setting::permiteAcompanantes())
+                    ->dehydratedWhenHidden()
                     ->schema([
                         Checkbox::make('travels_with_child')
                             ->label('Viaja con un menor')

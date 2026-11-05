@@ -175,6 +175,57 @@ class SellWithoutDateTest extends TestCase
         $this->assertSame(0, Passenger::count(), 'Ningún pasajero debió crearse.');
     }
 
+    /**
+     * @return array<string, array{bool}>
+     */
+    public static function clientPanelStates(): array
+    {
+        return ['panel activo' => [true], 'panel desactivado' => [false]];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('clientPanelStates')]
+    public function test_el_rechazo_por_padron_menciona_el_panel_de_clientes_solo_si_esta_activo(bool $panelActivo): void
+    {
+        \App\Models\Setting::set(\App\Models\Setting::PANEL_CLIENTES_ACTIVO, $panelActivo ? '1' : '0');
+        $this->travelTo(\Carbon\Carbon::parse('2026-10-01 09:00:00'));
+
+        $seller = User::factory()->vendedor()->create();
+        $seller->givePermissionTo('tickets.vender_sin_fecha');
+        $this->actingAs($seller);
+
+        $oran = Location::create(['name' => 'Orán P', 'is_active' => true]);
+        $salta = Location::create(['name' => 'Salta P', 'is_active' => true]);
+        $bus = Bus::create(['name' => 'Linea P', 'plate' => 'PPP111', 'seat_count' => 4, 'floors' => 1]);
+
+        $data = $this->pendingSaleData(originId: $oran->id, destinationId: $salta->id, busId: $bus->id);
+        $data['passengers'][0]['dni'] = '88888888';
+
+        try {
+            $this->invokeHandleRecordCreation($data);
+            $this->fail('La venta sin fecha a un pasajero fuera del padrón debió ser rechazada.');
+        } catch (\Filament\Support\Exceptions\Halt $e) {
+            // OK: la exigencia del padrón no depende del panel.
+        }
+
+        $this->assertSame(0, Sale::count());
+
+        $body = collect(session('filament.notifications', []))->pluck('body')->implode(' ');
+
+        $this->assertStringContainsString('DNIs sin registrar: 88888888.', $body);
+        $this->assertSame($panelActivo, str_contains($body, 'panel de clientes'));
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('clientPanelStates')]
+    public function test_la_ayuda_de_los_switches_sin_fecha_sigue_al_panel_de_clientes(bool $panelActivo): void
+    {
+        \App\Models\Setting::set(\App\Models\Setting::PANEL_CLIENTES_ACTIVO, $panelActivo ? '1' : '0');
+
+        $helperText = \App\Filament\Resources\Tickets\Schemas\TicketForm::withoutDateHelperText();
+
+        $this->assertStringContainsString('"reprogramar boleto"', $helperText);
+        $this->assertSame($panelActivo, str_contains($helperText, 'el pasajero los elige desde el panel de clientes'));
+    }
+
     public function test_la_venta_con_fecha_no_exige_pasajeros_del_padron(): void
     {
         // La restricción sólo aplica a tramos sin fecha: una venta NORMAL (con
@@ -956,7 +1007,139 @@ class SellWithoutDateTest extends TestCase
         $this->assertSame($returnTrip->id, (int) $ida->return_trip_id);
     }
 
+    // ====================== Marca del tramo de vuelta a precio 0 (H2) ======================
+
+    public function test_venta_mixta_a_precio_0_deja_la_ida_como_ida(): void
+    {
+        $fixture = $this->roundTripFixture();
+
+        $data = $this->pendingSaleData(originId: $fixture['oran']->id, destinationId: $fixture['salta']->id, busId: $fixture['bus']->id);
+        $data['passengers'][0]['price'] = 0;
+        $data['sell_without_date_ida'] = null;
+        $data['sell_without_date_vuelta'] = true;
+        $data['is_round_trip'] = true;
+        $data['trip_id'] = $fixture['trip']->id;
+        $data['seat_ids'] = [$fixture['seats'][0]->id];
+
+        $tickets = $this->invokeHandleRecordCreation($data)->sale->tickets()->orderBy('id')->get();
+
+        $this->assertCount(2, $tickets);
+        [$ida, $vuelta] = [$tickets->first(), $tickets->last()];
+
+        $this->assertSame($fixture['trip']->id, $ida->trip_id);
+        $this->assertNotNull($ida->seat_id);
+        $this->assertFalse((bool) $ida->is_return_leg);
+        $this->assertFalse($ida->isReturnLeg());
+        $this->assertTrue($ida->isPartOfRoundTrip());
+
+        $this->assertTrue($vuelta->isPendingDate());
+        $this->assertTrue((bool) $vuelta->is_return_leg);
+    }
+
+    public function test_ambos_tramos_sin_fecha_a_precio_0_crean_una_ida_y_una_vuelta(): void
+    {
+        $fixture = $this->roundTripFixture();
+
+        $data = $this->pendingSaleData(originId: $fixture['oran']->id, destinationId: $fixture['salta']->id, busId: $fixture['bus']->id);
+        $data['passengers'][0]['price'] = 0;
+        $data['sell_without_date_ida'] = true;
+        $data['sell_without_date_vuelta'] = true;
+        $data['is_round_trip'] = true;
+
+        $tickets = $this->invokeHandleRecordCreation($data)->sale->tickets()->orderBy('id')->get();
+
+        $this->assertCount(2, $tickets);
+        [$ida, $vuelta] = [$tickets->first(), $tickets->last()];
+
+        $this->assertFalse((bool) $ida->is_return_leg);
+        $this->assertSame($fixture['oran']->id, $ida->origin_location_id);
+        $this->assertTrue((bool) $vuelta->is_return_leg);
+        $this->assertSame($fixture['salta']->id, $vuelta->origin_location_id);
+    }
+
+    public function test_venta_con_fecha_a_precio_0_marca_ida_y_vuelta(): void
+    {
+        $fixture = $this->roundTripFixture();
+
+        $data = $this->pendingSaleData(originId: $fixture['oran']->id, destinationId: $fixture['salta']->id, busId: $fixture['bus']->id);
+        $data['passengers'][0]['price'] = 0;
+        $data['sell_without_date_ida'] = null;
+        $data['sell_without_date_vuelta'] = null;
+        $data['is_round_trip'] = true;
+        $data['trip_id'] = $fixture['trip']->id;
+        $data['seat_ids'] = [$fixture['seats'][0]->id];
+        $data['return_trip_id'] = $fixture['returnTrip']->id;
+        $data['return_seat_ids'] = [$fixture['seats'][1]->id];
+
+        $tickets = $this->invokeHandleRecordCreation($data)->sale->tickets()->orderBy('id')->get();
+
+        $this->assertCount(2, $tickets);
+        [$ida, $vuelta] = [$tickets->first(), $tickets->last()];
+
+        $this->assertSame($fixture['trip']->id, $ida->trip_id);
+        $this->assertSame($fixture['returnTrip']->id, (int) $ida->return_trip_id);
+        $this->assertFalse((bool) $ida->is_return_leg);
+        $this->assertSame($fixture['returnTrip']->id, $vuelta->trip_id);
+        $this->assertTrue((bool) $vuelta->is_return_leg);
+    }
+
     // ====================== Helpers ======================
+
+    /**
+     * Colectivo con una ruta por dirección y un viaje de ida (02/10) y otro de
+     * vuelta (10/10), para ventas de ida y vuelta.
+     *
+     * @return array{oran: Location, salta: Location, bus: Bus, seats: list<Seat>, trip: Trip, returnTrip: Trip}
+     */
+    private function roundTripFixture(): array
+    {
+        $this->travelTo(\Carbon\Carbon::parse('2026-10-01 09:00:00'));
+
+        $seller = User::factory()->vendedor()->create();
+        $seller->givePermissionTo('tickets.vender_sin_fecha');
+        $this->actingAs($seller);
+
+        $oran = Location::create(['name' => 'Orán', 'is_active' => true]);
+        $salta = Location::create(['name' => 'Salta', 'is_active' => true]);
+
+        $bus = Bus::create(['name' => 'Linea Z', 'plate' => 'ZZZ111', 'seat_count' => 4, 'floors' => 1]);
+        $seats = [];
+        foreach ([1, 2, 3, 4] as $n) {
+            $seats[] = Seat::create(['bus_id' => $bus->id, 'seat_number' => (string) $n, 'is_active' => true, 'floor' => '1']);
+        }
+
+        $routeIda = Route::create(['name' => 'Orán - Salta Z', 'bus_id' => $bus->id, 'is_active' => true]);
+        RouteStop::create(['route_id' => $routeIda->id, 'location_id' => $oran->id, 'stop_order' => 1]);
+        RouteStop::create(['route_id' => $routeIda->id, 'location_id' => $salta->id, 'stop_order' => 2]);
+
+        $routeVuelta = Route::create(['name' => 'Salta - Orán Z', 'bus_id' => $bus->id, 'is_active' => true]);
+        RouteStop::create(['route_id' => $routeVuelta->id, 'location_id' => $salta->id, 'stop_order' => 1]);
+        RouteStop::create(['route_id' => $routeVuelta->id, 'location_id' => $oran->id, 'stop_order' => 2]);
+
+        $scheduleIda = Schedule::create([
+            'route_id' => $routeIda->id,
+            'name' => 'Mañana Z',
+            'departure_time' => '08:00',
+            'arrival_time' => '12:00',
+            'is_active' => true,
+        ]);
+        $scheduleVuelta = Schedule::create([
+            'route_id' => $routeVuelta->id,
+            'name' => 'Tarde Z',
+            'departure_time' => '14:00',
+            'arrival_time' => '18:00',
+            'is_active' => true,
+        ]);
+
+        return [
+            'oran' => $oran,
+            'salta' => $salta,
+            'bus' => $bus,
+            'seats' => $seats,
+            'trip' => Trip::findOrCreateForBooking($scheduleIda->id, '2026-10-02', $oran->id, $salta->id)['trip'],
+            'returnTrip' => Trip::findOrCreateForBooking($scheduleVuelta->id, '2026-10-10', $salta->id, $oran->id)['trip'],
+        ];
+    }
 
     /**
      * Invoca CreateTicket::handleRecordCreation (protected) con el payload dado,

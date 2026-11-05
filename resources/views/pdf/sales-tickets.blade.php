@@ -1,3 +1,8 @@
+{{-- Colores de marca: paleta del color de la empresa en hex (dompdf no
+     entiende var() ni oklch). Se calcula acá si quien renderiza no la pasa. --}}
+@php
+    $brand = $brand ?? \App\Support\BrandPalette::currentAsHex();
+@endphp
 <!DOCTYPE html>
 <html lang="es">
 
@@ -27,7 +32,7 @@
         .title {
             font-size: 16px;
             font-weight: bold;
-            color: #155DFC;
+            color: {{ $brand[600] }};
         }
 
         .subtitle {
@@ -69,7 +74,7 @@
         }
 
         .sale-row td {
-            background: #faf5ff;
+            background: {{ $brand[50] }};
             font-weight: bold;
         }
 
@@ -111,8 +116,8 @@
         }
 
         .badge-seat {
-            background: #f5d0fe;
-            color: #86198f;
+            background: {{ $brand[200] }};
+            color: {{ $brand[800] }};
         }
 
         .badge-round {
@@ -223,14 +228,8 @@
             color: #0369a1;
         }
 
-        .rb-fuchsia {
-            background: #fdf4ff;
-        }
-
-        .rb-fuchsia .rlabel,
-        .rb-fuchsia .rvalue {
-            color: #a21caf;
-        }
+        .rb-brand { background: {{ $brand[50] }}; }
+        .rb-brand .rlabel, .rb-brand .rvalue { color: {{ $brand[700] }}; }
 
         .rb-amber {
             background: #fffbeb;
@@ -316,7 +315,7 @@
 
     <div style="margin-bottom: 3mm;">
         <h1 style="font-size: 13px; color: #2b2b2b; margin: 0; text-align: left;">
-            Detalle de ventas de <span style="color: #155DFC;">{{ $user->name }} {{ $user->surname }}</span>
+            Detalle de ventas de <span style="color: {{ $brand[600] }};">{{ $user->name }} {{ $user->surname }}</span>
         </h1>
     </div>
 
@@ -367,18 +366,8 @@
         @if ($filters['type'] !== 'payments')
             <table class="rgrid">
                 <tr>
-                    <td>
-                        <div class="rbox rb-gray">
-                            <p class="rlabel">Boletos vendidos</p>
-                            <p class="rvalue">{{ $totals['tickets_count'] }}</p>
-                        </div>
-                    </td>
-                    <td>
-                        <div class="rbox rb-fuchsia">
-                            <p class="rlabel">Total ventas</p>
-                            <p class="rvalue">{{ $fmt($totals['ventas_total']) }}</p>
-                        </div>
-                    </td>
+                    <td><div class="rbox rb-gray"><p class="rlabel">Boletos vendidos</p><p class="rvalue">{{ $totals['tickets_count'] }}</p></div></td>
+                    <td><div class="rbox rb-brand"><p class="rlabel">Total ventas</p><p class="rvalue">{{ $fmt($totals['ventas_total']) }}</p></div></td>
                 </tr>
             </table>
         @endif

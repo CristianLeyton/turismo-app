@@ -3,30 +3,61 @@
 @php
     use Carbon\Carbon;
 
-    // Obtener el registro actual del infolist
-    $record = $getRecord();
+    /* Resuelve el registro tanto desde el infolist Filament (ViewEntry le
+       pasa $getRecord() como closure) como al incluir la vista manualmente
+       con ['record' => $ticket]. */
+    $record = $record ?? null;
+    if (! $record && isset($getRecord) && is_callable($getRecord)) {
+        $record = $getRecord();
+    }
 
-    // Si no hay registro, mostrar valores por defecto
-    if (!$record) {
-        $originLocation = null;
-        $destinationLocation = null;
-        $trip = null;
-        $returnTrip = null;
-        $schedule = null;
-        $returnSchedule = null;
-        $route = null;
-        $returnRoute = null;
-        $bus = null;
-    } else {
-        $originLocation = $record->origin;
-        $destinationLocation = $record->destination;
-        $trip = $record->trip;
-        $returnTrip = $record->returnTrip;
-        $schedule = $trip?->schedule;
-        $returnSchedule = $returnTrip?->schedule;
-        $route = $trip?->route;
-        $returnRoute = $returnTrip?->route;
-        $bus = $trip?->bus;
+    $originLocation = $record?->origin;
+    $destinationLocation = $record?->destination;
+    $trip = $record?->trip;
+    $schedule = $trip?->schedule;
+    $route = $trip?->route;
+    $bus = $trip?->bus;
+
+    /* El tramo sale sólo de la marca del boleto (is_return_leg): ni el
+       precio ni el viaje lo deciden. */
+    $isReturnLeg = $record?->isReturnLeg() ?? false;
+    $isRoundTrip = $record && ($isReturnLeg || (bool) $record->is_round_trip);
+    $legLabel = $isReturnLeg ? 'Vuelta' : 'Ida';
+    $seatLabel = $isReturnLeg ? 'Asiento vuelta' : 'Asiento ida';
+
+    /* Ida de un diferido: la sección "Vuelta" se arma con el boleto de
+       vuelta hermano, que refleja su viaje y asiento actuales (aunque se
+       haya reprogramado). Sin hermano (datos viejos), cae en el viaje de
+       vuelta guardado en la ida. */
+    $returnTicket = null;
+    $outboundTicket = null;
+    $returnLegTrip = null;
+    $returnLegSeat = null;
+    $returnLegDeparture = null;
+    $returnLegArrival = null;
+
+    if ($record && $isRoundTrip && ! $isReturnLeg) {
+        $returnTicket = $record->roundTripReturnTicket();
+
+        if ($returnTicket) {
+            $returnLegTrip = $returnTicket->trip;
+            $returnLegSeat = $returnTicket->seat?->seat_number;
+            $returnLegDeparture = $returnTicket->getBoardingDepartureTime() ?? $returnLegTrip?->schedule?->departure_time;
+            $returnLegArrival = $returnTicket->getBoardingArrivalTime() ?? $returnLegTrip?->schedule?->arrival_time;
+        } elseif ($record->return_trip_id && $record->returnTrip) {
+            $returnLegTrip = $record->returnTrip;
+            $returnLegSeat = \App\Models\Ticket::query()
+                ->where('passenger_id', $record->passenger_id)
+                ->where('trip_id', $returnLegTrip->id)
+                ->whereNotNull('seat_id')
+                ->first()?->seat?->seat_number;
+            $returnLegDeparture = $record->getBoardingDepartureTime(null, true) ?? $returnLegTrip->schedule?->departure_time;
+            $returnLegArrival = $record->getBoardingArrivalTime(null, true) ?? $returnLegTrip->schedule?->arrival_time;
+        }
+    }
+
+    if ($record && $isReturnLeg) {
+        $outboundTicket = $record->roundTripOutboundTicket();
     }
 @endphp
 
@@ -41,44 +72,43 @@
         <div class="flex flex-col md:flex-row md:justify-between gap-4">
             <div>
                 <h2 class="text-2xl font-bold text-gray-900 dark:text-gray-100">
-                    <span class="text-blue-600">{{ $originLocation?->name ?? 'Origen' }} </span>
+                    <span class="text-primary-600 dark:text-primary-400">{{ $originLocation?->name ?? 'Origen' }} </span>
                     →
-                    <span class="text-blue-600">{{ $destinationLocation?->name ?? 'Destino' }}</span>
+                    <span class="text-primary-600 dark:text-primary-400">{{ $destinationLocation?->name ?? 'Destino' }}</span>
                 </h2>
 
                 @if ($trip)
                     @php
-                        $idaDepartureTime = $record->getBoardingDepartureTime() ?? $schedule?->departure_time;
-                        $idaArrivalTime = $record->getBoardingArrivalTime() ?? $schedule?->arrival_time;
+                        $legDepartureTime = $record->getBoardingDepartureTime() ?? $schedule?->departure_time;
+                        $legArrivalTime = $record->getBoardingArrivalTime() ?? $schedule?->arrival_time;
                     @endphp
                     <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                        <strong class="font-semibold"> Ida: </strong>
+                        <strong class="font-semibold"> {{ $legLabel }}: </strong>
                         {{ $trip->trip_date ? Carbon::parse($trip->trip_date)->format('d/m/Y') : '--/--/----' }}
                         •
-                        {{ $idaDepartureTime ? Carbon::parse($idaDepartureTime)->format('H:i') : '--:--' }}
+                        {{ $legDepartureTime ? Carbon::parse($legDepartureTime)->format('H:i') : '--:--' }}
                         →
-                        {{ $idaArrivalTime ? Carbon::parse($idaArrivalTime)->format('H:i') : '--:--' }}
+                        {{ $legArrivalTime ? Carbon::parse($legArrivalTime)->format('H:i') : '--:--' }}
                     </p>
 
                     @if ($bus)
-                        <p class="text-sm text-gray-600 dark:text-gray-400">
-                            <span class="font-semibold">Colectivo:</span>
-                            <span class="text-blue-600 dark:text-blue-400">{{ $bus->name }}</span>
-                        </p>
+                    <p class="text-sm text-gray-600 dark:text-gray-400">
+                        <span class="font-semibold">Colectivo:</span>
+                        <span class="text-primary-600 dark:text-primary-400">{{ $bus->name }}</span>
+                    </p>
                     @endif
 
                     <p class="text-sm text-gray-600 dark:text-gray-400">
                         <span class="font-semibold"> Ruta: </span>
-                        <span class="text-blue-600 dark:text-blue-400">
+                        <span class="text-primary-600 dark:text-primary-400">
                             {{ $route?->name ?? 'No especificada' }}
                         </span>
                     </p>
                 @else
                     <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                        <strong class="font-semibold"> Ida: </strong>
-                        @if ($record->isPendingDate())
-                            <span class="font-semibold text-amber-600 dark:text-amber-400">Fecha y horario a
-                                confirmar</span>
+                        <strong class="font-semibold"> {{ $legLabel }}: </strong>
+                        @if ($record?->isPendingDate())
+                            <span class="font-semibold text-amber-600 dark:text-amber-400">Fecha y horario a confirmar</span>
                         @else
                             No hay información del viaje
                         @endif
@@ -87,88 +117,70 @@
             </div>
             <div class="text-left md:text-right">
                 <div class="text-sm text-gray-500 dark:text-gray-400 uppercase">
-                    Asiento ida
+                    {{ $seatLabel }}
                 </div>
-                <div class="text-3xl font-bold text-blue-600 dark:text-blue-400">
-                    {{ $record->seat?->seat_number ?? ($record->isPendingDate() ? 'A asignar' : '—') }}
+                <div class="text-3xl font-bold text-primary-600 dark:text-primary-400">
+                    {{ $record?->seat?->seat_number ?? ($record?->isPendingDate() ? 'A asignar' : '—') }}
                 </div>
             </div>
         </div>
 
-        @if ($record?->is_round_trip)
-            @if ($record->return_trip_id && $returnTrip)
-                @php
-                    $vueltaDepartureTime =
-                        $record->getBoardingDepartureTime(null, true) ?? $returnSchedule?->departure_time;
-                    $vueltaArrivalTime = $record->getBoardingArrivalTime(null, true) ?? $returnSchedule?->arrival_time;
-                @endphp
-                <div
-                    class="flex flex-col md:flex-row gap-3 justify-between border-t border-gray-200 dark:border-gray-700 md:items-center mt-3 pt-3">
-                    <div class="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                        <strong class="font-semibold"> Vuelta: </strong>
-                        {{ $returnTrip->trip_date ? Carbon::parse($returnTrip->trip_date)->format('d/m/Y') : '--/--/----' }}
+        {{-- Ida de un diferido: datos de su vuelta --}}
+        @if ($isRoundTrip && ! $isReturnLeg)
+            <div
+                class="flex flex-col md:flex-row gap-3 justify-between border-t border-gray-200 dark:border-gray-700 md:items-center mt-3 pt-3">
+                <div class="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                    <strong class="font-semibold"> Vuelta: </strong>
+                    @if ($returnLegTrip)
+                        {{ $returnLegTrip->trip_date ? Carbon::parse($returnLegTrip->trip_date)->format('d/m/Y') : '--/--/----' }}
                         •
-                        {{ $vueltaDepartureTime ? Carbon::parse($vueltaDepartureTime)->format('H:i') : '--:--' }}
+                        {{ $returnLegDeparture ? Carbon::parse($returnLegDeparture)->format('H:i') : '--:--' }}
                         →
-                        {{ $vueltaArrivalTime ? Carbon::parse($vueltaArrivalTime)->format('H:i') : '--:--' }}
+                        {{ $returnLegArrival ? Carbon::parse($returnLegArrival)->format('H:i') : '--:--' }}
 
-                        @if ($returnTrip->bus)
-                            <br> <span class="font-semibold">Colectivo:</span>
-                            <span class="text-blue-600 dark:text-blue-400">{{ $returnTrip->bus->name }}</span>
+                        @if ($returnLegTrip->bus)
+                        <br> <span class="font-semibold">Colectivo:</span>
+                        <span class="text-primary-600 dark:text-primary-400">{{ $returnLegTrip->bus->name }}</span>
                         @endif
                         <br>
-                        <p class="">
-                            <span class="font-semibold ">Ruta:</span>
-                            <span class="text-blue-600 dark:text-blue-400">
-                                {{ $returnRoute?->name ?? 'No especificada' }}</span>
-                        </p>
-                    </div>
+                        <span class="font-semibold">Ruta:</span>
+                        <span class="text-primary-600 dark:text-primary-400">
+                            {{ $returnLegTrip->route?->name ?? 'No especificada' }}</span>
+                    @else
+                        <span class="font-semibold text-amber-600 dark:text-amber-400">Fecha y horario a confirmar</span>
+                    @endif
 
+                    @if ($returnTicket)
+                        <br> <span class="font-semibold">Boleto de vuelta N°{{ $returnTicket->id }}</span>
+                    @endif
+                </div>
+
+                @if ($returnLegTrip)
                     <div class="text-left md:text-right">
                         <div class="text-sm text-gray-500 dark:text-gray-400 uppercase">
                             Asiento vuelta
                         </div>
-                        <div class="text-3xl font-bold text-blue-600 dark:text-blue-400">
-                            {{-- Buscar el asiento asignado a este ticket en el viaje de vuelta --}}
-                            @php
-                                $returnSeatNumber = '—';
-                                if ($returnTrip && $record) {
-                                    // Buscar si este ticket tiene un asiento asignado en el viaje de vuelta
-                                    $returnTicketForSeat = \App\Models\Ticket::where(
-                                        'passenger_id',
-                                        $record->passenger_id,
-                                    )
-                                        ->where('trip_id', $returnTrip->id)
-                                        ->whereNotNull('seat_id')
-                                        ->first();
-
-                                    if ($returnTicketForSeat && $returnTicketForSeat->seat) {
-                                        $returnSeatNumber = $returnTicketForSeat->seat->seat_number;
-                                    }
-                                }
-                            @endphp
-                            {{ $returnSeatNumber }}
+                        <div class="text-3xl font-bold text-primary-600 dark:text-primary-400">
+                            {{ $returnLegSeat ?? '—' }}
                         </div>
                     </div>
+                @endif
+            </div>
+        @endif
+
+        {{-- Vuelta de un diferido: referencia a su boleto de ida --}}
+        @if ($isReturnLeg)
+            <div class="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                <div
+                    class="bg-sky-100 border border-sky-400 text-sky-700 px-4 py-3 rounded dark:bg-sky-800 dark:border-sky-700 dark:text-sky-300">
+                    <strong class="font-semibold">Tramo de vuelta de un pasaje diferido</strong><br>
+                    @if ($outboundTicket)
+                        <span class="text-sm">Boleto de ida N°{{ $outboundTicket->id }}. El precio del pasaje está en ese boleto.</span>
+                    @else
+                        <span class="text-sm">El boleto de ida de este pasaje no está disponible.</span>
+                    @endif
                 </div>
-            @else
-                <div class="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-                    <div
-                        class="bg-sky-100 border border-sky-400 text-sky-700 px-4 py-3 rounded dark:bg-sky-800 dark:border-sky-700 dark:text-sky-300">
-                        <strong class="font-semibold">Viaje de vuelta</strong><br>
-                        @if ($record->isReturnLeg())
-                            <span class="text-sm">Este ticket es el viaje de vuelta de un pasaje diferido. </span>
-                        @else
-                            <span class="text-sm">Este boleto forma parte de un pasaje diferido: su tramo de vuelta
-                                todavía no tiene viaje asignado. </span>
-                        @endif
-                        @if ($record->isPendingDate())
-                            <span class="font-semibold text-amber-600 dark:text-amber-400">Fecha y horario a
-                                confirmar.</span>
-                        @endif
-                    </div>
-                </div>
-            @endif
+            </div>
         @endif
     </div>
 
@@ -200,7 +212,7 @@
                     class="self-start md:self-center
                                  px-3 py-1 rounded-full text-xs font-medium
                                  bg-gray-100 dark:bg-gray-800
-                                 text-blue-600 dark:text-blue-400">
+                                 text-primary-600 dark:text-primary-400">
                     Adulto
                 </span>
             </div>
@@ -210,16 +222,16 @@
             <div class="mt-4">
                 @foreach ($record->passenger->children as $child)
                     <div
-                        class="border-l-4 border-blue-500 pl-4 py-2 my-2
+                        class="border-l-4 border-primary-500 pl-4 py-2 my-2
                                 bg-gray-50 dark:bg-gray-800 rounded">
                         <div
-                            class="text-sm font-semibold text-blue-600 dark:text-blue-400 flex flex-row justify-between gap-3 mb-1 flex-nowrap">
+                            class="text-sm font-semibold text-primary-600 dark:text-primary-400 flex flex-row justify-between gap-3 mb-1 flex-nowrap">
                             <span> Acompañante </span>
                             <span
                                 class="self-start md:self-center
                                  px-3 py-1 rounded-full text-xs font-medium
                                  bg-gray-100 dark:bg-gray-900
-                                 text-blue-600 dark:text-blue-400 mr-3">
+                                 text-primary-600 dark:text-primary-400 mr-3">
                                 Menor
                             </span>
                         </div>

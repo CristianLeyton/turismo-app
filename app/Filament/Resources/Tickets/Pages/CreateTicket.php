@@ -382,10 +382,16 @@ class CreateTicket extends CreateRecord
             if ($unregistered->isNotEmpty()) {
                 $details = $unregistered->implode(', ');
 
+                // La consecuencia para el pasajero solo aplica con el panel
+                // de clientes activo; la exigencia del padrón, siempre.
+                $panelConsequence = Setting::panelClientesActivo()
+                    ? ' Si no, el pasajero no podría ver su boleto desde el panel de clientes.'
+                    : '';
+
                 Notification::make()
                     ->title('No se puede completar la venta')
                     ->icon('heroicon-m-shield-exclamation')
-                    ->body("Los boletos sin fecha sólo se venden a pasajeros registrados en el padrón de clientes. DNIs sin registrar: {$details}. Si no, el pasajero no podría ver su boleto desde el panel de clientes. Registralo en Clientes (o con la acción «Crear cliente» del pasajero) y volvé a intentar la venta.")
+                    ->body("Los boletos sin fecha sólo se venden a pasajeros registrados en el padrón de clientes. DNIs sin registrar: {$details}.{$panelConsequence} Registralo en Clientes (o con la acción «Crear cliente» del pasajero) y volvé a intentar la venta.")
                     ->danger()
                     ->persistent()
                     ->send();

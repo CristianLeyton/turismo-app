@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Clients;
+use App\Models\Setting;
 use App\Models\User;
 use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -18,6 +19,14 @@ use Tests\TestCase;
 class ClientAuthenticationTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        // El panel de clientes viene apagado por defecto.
+        Setting::set(Setting::PANEL_CLIENTES_ACTIVO, '1');
+    }
 
     public function test_un_cliente_vigente_se_autentica_con_dni_y_contraseña(): void
     {

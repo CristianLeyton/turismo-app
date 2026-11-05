@@ -7,6 +7,7 @@ use App\Http\Controllers\ClientLogoutController;
 use App\Http\Controllers\ClientTicketPdfController;
 use App\Http\Controllers\TicketDownloadController;
 use App\Http\Controllers\TicketShareController;
+use App\Http\Middleware\EnsureClientPanelIsEnabled;
 use App\Models\Trip;
 use App\Services\TripExcelService;
 use App\Services\TripPdfService;
@@ -16,18 +17,22 @@ Route::get('/', function () {
     return redirect('/admin');
 });
 
-// Dirección anterior del ingreso de clientes: puede estar compartida.
-Route::redirect('clientes/ingresar', '/clientes/login', 301);
+// Rutas sueltas del panel de clientes: como el panel, 404 mientras el
+// parámetro "Panel de clientes activo" esté apagado.
+Route::middleware(EnsureClientPanelIsEnabled::class)->group(function () {
+    // Dirección anterior del ingreso de clientes: puede estar compartida.
+    Route::redirect('clientes/ingresar', '/clientes/login', 301);
 
-// "Salir" del panel de clientes: cierra sólo el guard `client`.
-Route::post('clientes/salir', ClientLogoutController::class)->name('clientes.logout');
+    // "Salir" del panel de clientes: cierra sólo el guard `client`.
+    Route::post('clientes/salir', ClientLogoutController::class)->name('clientes.logout');
 
-// PDF de boletos para el panel público de clientes (valida propiedad por DNI del cliente autenticado)
-Route::get('clientes/boletos/{ticket}/pdf', [ClientTicketPdfController::class, 'download'])->name('clientes.boletos.pdf');
+    // PDF de boletos para el panel público de clientes (valida propiedad por DNI del cliente autenticado)
+    Route::get('clientes/boletos/{ticket}/pdf', [ClientTicketPdfController::class, 'download'])->name('clientes.boletos.pdf');
 
-// "Ver boleto" del panel de clientes: según DESCARGA_AUTOMATICA_PDF, el link
-// compartible del boleto (desactivado) o el PDF (activado / sin configurar).
-Route::get('clientes/boletos/{ticket}', [ClientTicketPdfController::class, 'show'])->name('clientes.boletos.show');
+    // "Ver boleto" del panel de clientes: según DESCARGA_AUTOMATICA_PDF, el link
+    // compartible del boleto (desactivado) o el PDF (activado / sin configurar).
+    Route::get('clientes/boletos/{ticket}', [ClientTicketPdfController::class, 'show'])->name('clientes.boletos.show');
+});
 
 // Links compartibles de boletos: quien tenga el link ve el PDF y puede
 // compartirlo/descargarlo (sin login; el token es el permiso).

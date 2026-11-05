@@ -475,7 +475,7 @@ class TicketForm
                                 // trae implícito por bypass, no cuenta como encendido).
                                 Toggle::make('sell_without_date_ida')
                                     ->label('Viaje de ida sin fecha')
-                                    ->helperText('El boleto se vende sin fecha ni horario y se asignan después desde la opción "reprogramar boleto".')
+                                    ->helperText(fn (): string => self::withoutDateHelperText())
                                     ->default(false)
                                     ->columnSpan(2)
                                     ->visible(fn (): bool => (bool) Auth::user()?->can('tickets.vender_sin_fecha')
@@ -929,7 +929,7 @@ class TicketForm
                             ->schema([
                                 Toggle::make('sell_without_date_vuelta')
                                     ->label('Viaje de vuelta sin fecha')
-                                    ->helperText('El boleto se vende sin fecha ni horario y se asignan después desde la opción "reprogramar boleto".')
+                                    ->helperText(fn (): string => self::withoutDateHelperText())
                                     ->default(false)
                                     ->columnSpan(2)
                                     ->visible(fn (Get $get): bool => (bool) $get('is_round_trip')
@@ -2891,6 +2891,17 @@ class TicketForm
         return $busName !== null
             ? "{$schedule->display_name} · {$busName}"
             : $schedule->display_name;
+    }
+
+    /**
+     * Ayuda de los interruptores de venta sin fecha (ida y vuelta). Menciona
+     * el panel de clientes solo cuando está activo.
+     */
+    public static function withoutDateHelperText(): string
+    {
+        return Setting::panelClientesActivo()
+            ? 'El boleto se vende sin fecha ni horario y se asignan después desde la opción "reprogramar boleto", o el pasajero los elige desde el panel de clientes.'
+            : 'El boleto se vende sin fecha ni horario y se asignan después desde la opción "reprogramar boleto".';
     }
 
     /**

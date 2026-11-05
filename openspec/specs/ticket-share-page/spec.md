@@ -114,3 +114,14 @@ Al cerrar una venta diferida de un solo pasajero, el link entregado SHALL ser el
 - **GIVEN** el parámetro de descarga automática desactivado
 - **WHEN** se cierra una venta diferida de un pasajero con ambos tramos sin fecha
 - **THEN** se abre el link del boleto de ida, su resumen muestra la ida con su sección de vuelta, y su PDF contiene la ida y la vuelta
+
+### Requirement: Destino del logo según el panel de clientes
+El logo de la barra superior de la página pública del link SHALL ser un enlace. Con el panel de clientes activado, MUST llevar al ingreso de clientes (`/clientes/login`). Desactivado o sin configurar, MUST llevar al inicio del sitio.
+
+#### Scenario: Panel activado
+- **WHEN** el panel de clientes está activado y alguien toca el logo en el link de un boleto
+- **THEN** va a `/clientes/login`
+
+#### Scenario: Panel desactivado
+- **WHEN** el panel de clientes está desactivado o sin configurar y alguien toca el logo en el link de un boleto
+- **THEN** va al inicio del sitio

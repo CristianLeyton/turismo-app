@@ -7,6 +7,7 @@ use App\Filament\Client\Pages\Auth\ClientLogin;
 use App\Filament\Client\Pages\MyTickets;
 use App\Filament\Client\Pages\SetPassword;
 use App\Models\Clients;
+use App\Models\Setting;
 use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
@@ -32,6 +33,9 @@ class ClientPanelProfileTest extends TestCase
         parent::setUp();
 
         Cache::flush(); // El rate limiter de identificación usa la caché
+
+        // El panel de clientes viene apagado por defecto.
+        Setting::set(Setting::PANEL_CLIENTES_ACTIVO, '1');
     }
 
     private function createInitialClient(string $dni = '33445566'): Clients

@@ -22,12 +22,12 @@ class ClientLogin extends Login
 {
     public function getHeading(): string|Htmlable|null
     {
-        return 'Ingresá a tus boletos';
+        return 'Panel de clientes';
     }
 
     public function getSubheading(): string|Htmlable|null
     {
-        return 'Tu usuario es tu DNI. Si no podés entrar, comunicate con nosotros por favor.';
+        return 'Ingresá con tu DNI';
     }
 
     protected function getEmailFormComponent(): Component

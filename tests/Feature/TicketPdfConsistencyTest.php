@@ -151,6 +151,8 @@ class TicketPdfConsistencyTest extends TestCase
 
     public function test_el_panel_de_clientes_entrega_la_variante_y_el_nombre_del_boleto(): void
     {
+        Setting::set(Setting::PANEL_CLIENTES_ACTIVO, '1');
+
         foreach ($this->fixtures() as $ticket) {
             $client = Clients::query()->firstOrCreate(
                 ['dni' => $ticket->passenger->dni],

@@ -47,6 +47,9 @@ class ClientPanelTicketsTest extends TestCase
         $this->travelTo(\Carbon\Carbon::parse('2026-10-01 09:00:00'));
 
         Cache::flush(); // El rate limiter de identificación usa la caché
+
+        // El panel de clientes viene apagado por defecto.
+        Setting::set(Setting::PANEL_CLIENTES_ACTIVO, '1');
     }
 
     private function createClient(string $dni, string $nombre = 'Ana'): Clients

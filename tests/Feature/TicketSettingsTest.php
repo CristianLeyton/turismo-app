@@ -384,6 +384,72 @@ class TicketSettingsTest extends TestCase
      *
      * @return array<string, mixed>
      */
+    // ====================== Panel de clientes ======================
+
+    public function test_con_el_permiso_se_ve_la_pestana_clientes_desactivada_por_defecto(): void
+    {
+        $this->actingAs(User::factory()->superAdmin()->create());
+
+        $component = Livewire::test(TicketSettings::class)
+            ->assertSet('data.panel_clientes_activo', false)
+            ->assertSee('Panel de clientes activo');
+
+        $this->assertSame(
+            ['Venta', 'Boleto', 'Calendario', 'Seguridad', 'Clientes'],
+            array_keys($this->tabBadges($component)),
+        );
+    }
+
+    public function test_sin_el_permiso_no_se_ve_la_pestana_clientes(): void
+    {
+        $this->actingAs($this->admin);
+
+        $this->assertFalse($this->admin->can('settings.client_panel'));
+
+        $component = Livewire::test(TicketSettings::class)
+            ->assertDontSee('Panel de clientes activo');
+
+        $this->assertSame(
+            ['Venta', 'Boleto', 'Calendario', 'Seguridad'],
+            array_keys($this->tabBadges($component)),
+        );
+    }
+
+    public function test_con_el_permiso_se_activa_el_panel_de_clientes(): void
+    {
+        $this->actingAs(User::factory()->superAdmin()->create());
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.panel_clientes_activo', true)
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertTrue(Setting::panelClientesActivo());
+        $this->get('/clientes/login')->assertOk();
+
+        Livewire::test(TicketSettings::class)
+            ->assertSet('data.panel_clientes_activo', true)
+            ->set('data.panel_clientes_activo', false)
+            ->call('save');
+
+        $this->assertFalse(Setting::panelClientesActivo());
+    }
+
+    public function test_sin_el_permiso_un_pedido_manipulado_no_cambia_el_panel(): void
+    {
+        $this->actingAs($this->admin);
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.panel_clientes_activo', true)
+            ->set('data.require_password_ticket_delete', true)
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertTrue(Setting::getBool(Setting::REQUIRE_PASSWORD_TICKET_DELETE));
+        $this->assertFalse(Setting::panelClientesActivo());
+        $this->assertDatabaseMissing('settings', ['key' => Setting::PANEL_CLIENTES_ACTIVO]);
+    }
+
     private function tabBadges(Testable $component): array
     {
         $tabs = collect($component->instance()->form->getFlatComponents())

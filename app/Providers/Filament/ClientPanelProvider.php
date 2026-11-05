@@ -6,7 +6,9 @@ use App\Filament\Client\Pages\Auth\ClientEditProfile;
 use App\Filament\Client\Pages\Auth\ClientLogin;
 use App\Filament\Client\Pages\MyTickets;
 use App\Filament\Client\Pages\SetPassword;
+use App\Http\Middleware\EnsureClientPanelIsEnabled;
 use App\Http\Middleware\EnsureClientPasswordIsSet;
+use App\Models\Setting;
 use Filament\Actions\Action;
 use Filament\Enums\ThemeMode;
 use Filament\Http\Middleware\Authenticate;
@@ -70,10 +72,26 @@ class ClientPanelProvider extends PanelProvider
                 DisableBladeIconComponents::class,
                 DispatchServingFilamentEvent::class,
             ])
+            // Panel apagado desde Parámetros: 404 en todo /clientes, ingreso
+            // incluido. Persistente para cortar también las peticiones
+            // Livewire de una página que quedó abierta.
+            ->middleware([
+                EnsureClientPanelIsEnabled::class,
+            ], isPersistent: true)
             ->authMiddleware([
                 Authenticate::class,
                 EnsureClientPasswordIsSet::class,
             ])
+            // Debajo del ingreso, las líneas de contacto configuradas en
+            // Parámetros > Boleto (si hay alguna): el subtítulo invita a
+            // comunicarse cuando no se puede entrar.
+            ->renderHook(
+                PanelsRenderHook::AUTH_LOGIN_FORM_AFTER,
+                fn (): string => view('filament.client.login-contact-lines', [
+                    'contactLines' => Setting::contactLines(),
+                ])->render(),
+                scopes: ClientLogin::class,
+            )
             /* Igual que en el panel admin: la ruedita no cambia el valor de
                los inputs numéricos enfocados. */
             ->renderHook(

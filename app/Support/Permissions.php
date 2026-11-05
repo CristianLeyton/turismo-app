@@ -119,6 +119,7 @@ final class Permissions
                 'label' => 'Configuración',
                 'actions' => [
                     'manage' => 'Administrar configuración',
+                    'client_panel' => 'Activar/desactivar panel de clientes',
                 ],
             ],
             'buses' => [

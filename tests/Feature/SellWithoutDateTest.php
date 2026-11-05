@@ -175,6 +175,57 @@ class SellWithoutDateTest extends TestCase
         $this->assertSame(0, Passenger::count(), 'Ningún pasajero debió crearse.');
     }
 
+    /**
+     * @return array<string, array{bool}>
+     */
+    public static function clientPanelStates(): array
+    {
+        return ['panel activo' => [true], 'panel desactivado' => [false]];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('clientPanelStates')]
+    public function test_el_rechazo_por_padron_menciona_el_panel_de_clientes_solo_si_esta_activo(bool $panelActivo): void
+    {
+        \App\Models\Setting::set(\App\Models\Setting::PANEL_CLIENTES_ACTIVO, $panelActivo ? '1' : '0');
+        $this->travelTo(\Carbon\Carbon::parse('2026-10-01 09:00:00'));
+
+        $seller = User::factory()->vendedor()->create();
+        $seller->givePermissionTo('tickets.vender_sin_fecha');
+        $this->actingAs($seller);
+
+        $oran = Location::create(['name' => 'Orán P', 'is_active' => true]);
+        $salta = Location::create(['name' => 'Salta P', 'is_active' => true]);
+        $bus = Bus::create(['name' => 'Linea P', 'plate' => 'PPP111', 'seat_count' => 4, 'floors' => 1]);
+
+        $data = $this->pendingSaleData(originId: $oran->id, destinationId: $salta->id, busId: $bus->id);
+        $data['passengers'][0]['dni'] = '88888888';
+
+        try {
+            $this->invokeHandleRecordCreation($data);
+            $this->fail('La venta sin fecha a un pasajero fuera del padrón debió ser rechazada.');
+        } catch (\Filament\Support\Exceptions\Halt $e) {
+            // OK: la exigencia del padrón no depende del panel.
+        }
+
+        $this->assertSame(0, Sale::count());
+
+        $body = collect(session('filament.notifications', []))->pluck('body')->implode(' ');
+
+        $this->assertStringContainsString('DNIs sin registrar: 88888888.', $body);
+        $this->assertSame($panelActivo, str_contains($body, 'panel de clientes'));
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('clientPanelStates')]
+    public function test_la_ayuda_de_los_switches_sin_fecha_sigue_al_panel_de_clientes(bool $panelActivo): void
+    {
+        \App\Models\Setting::set(\App\Models\Setting::PANEL_CLIENTES_ACTIVO, $panelActivo ? '1' : '0');
+
+        $helperText = \App\Filament\Resources\Tickets\Schemas\TicketForm::withoutDateHelperText();
+
+        $this->assertStringContainsString('"reprogramar boleto"', $helperText);
+        $this->assertSame($panelActivo, str_contains($helperText, 'el pasajero los elige desde el panel de clientes'));
+    }
+
     public function test_la_venta_con_fecha_no_exige_pasajeros_del_padron(): void
     {
         // La restricción sólo aplica a tramos sin fecha: una venta NORMAL (con

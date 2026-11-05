@@ -208,6 +208,19 @@ class RolesAndPermissionsTest extends TestCase
         $this->assertTrue(User::factory()->superAdmin()->create()->can('tickets.vender_dia_sin_servicio'));
     }
 
+    public function test_permiso_del_panel_de_clientes_se_registra_sin_asignarse_a_ningun_rol(): void
+    {
+        Permissions::syncToDatabase();
+
+        $this->assertDatabaseHas('permissions', ['name' => 'settings.client_panel']);
+
+        $this->assertFalse(Role::findByName(Permissions::ROLE_ADMIN)->hasPermissionTo('settings.client_panel'));
+        $this->assertFalse(Role::findByName(Permissions::ROLE_SELLER)->hasPermissionTo('settings.client_panel'));
+
+        $this->assertFalse(User::factory()->admin()->create()->can('settings.client_panel'));
+        $this->assertTrue(User::factory()->superAdmin()->create()->can('settings.client_panel'));
+    }
+
     public function test_permisos_de_lineas_se_registran_sin_asignarse_a_admin_ni_vendedor(): void
     {
         Permissions::syncToDatabase();

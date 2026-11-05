@@ -85,7 +85,8 @@
 
         {{-- Barra superior: logo del panel + selector de tema --}}
         <div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-            <a href="{{ url('') }}" class="inline-block">
+            {{-- Con el panel de clientes activo, el logo lleva a su ingreso. --}}
+            <a href="{{ \App\Models\Setting::panelClientesActivo() ? route('filament.clientes.auth.login') : url('') }}" class="inline-block">
                 @include('filament.admin.logo')
             </a>
 

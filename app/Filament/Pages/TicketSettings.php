@@ -33,7 +33,8 @@ use UnitEnum;
  * Página Configuración > Parámetros (solo quien tiene `settings.manage`).
  *
  * Agrupa los parámetros del sistema en pestañas según a qué afectan: Venta,
- * Boleto, Calendario y Seguridad. Un parámetro nuevo lleva una constante en
+ * Boleto, Calendario, Seguridad y Clientes (esta solo con el permiso
+ * `settings.client_panel`). Un parámetro nuevo lleva una constante en
  * Setting, su campo en la pestaña que corresponde y su entrada en TAB_FIELDS
  * (ver la sección "Parámetros" del skill filament-ui).
  */
@@ -50,7 +51,11 @@ class TicketSettings extends Page
         'Boleto' => ['descarga_automatica_pdf', 'whatsapp_mensaje', 'contact_lines'],
         'Calendario' => ['service_weekdays', 'service_exceptions'],
         'Seguridad' => ['require_password_ticket_delete', 'require_password_ticket_reschedule', 'require_password_ticket_edit'],
+        'Clientes' => ['panel_clientes_activo'],
     ];
+
+    /** Permiso para ver la pestaña Clientes y prender o apagar el panel. */
+    public const CLIENT_PANEL_PERMISSION = 'settings.client_panel';
 
     public const WHATSAPP_MENSAJE_MAX = 300;
 
@@ -118,7 +123,16 @@ class TicketSettings extends Page
                 Setting::serviceExceptions(),
                 fn (array $exception): bool => $exception['date'] >= $today,
             ))),
+            'panel_clientes_activo' => Setting::panelClientesActivo(),
         ];
+    }
+
+    /**
+     * ¿Quien usa la página puede ver la pestaña Clientes y cambiar el panel?
+     */
+    protected function canManageClientPanel(): bool
+    {
+        return (bool) Auth::user()?->can(self::CLIENT_PANEL_PERMISSION);
     }
 
     public function form(Schema $schema): Schema
@@ -133,6 +147,8 @@ class TicketSettings extends Page
                         $this->tab('Boleto', Heroicon::OutlinedTicket, $this->ticketComponents()),
                         $this->tab('Calendario', Heroicon::OutlinedCalendarDays, $this->calendarComponents()),
                         $this->tab('Seguridad', Heroicon::OutlinedLockClosed, $this->securityComponents()),
+                        $this->tab('Clientes', Heroicon::OutlinedUsers, $this->clientComponents())
+                            ->visible(fn (): bool => $this->canManageClientPanel()),
                     ]),
             ]);
     }
@@ -367,6 +383,24 @@ class TicketSettings extends Page
     }
 
     /**
+     * @return array<Component>
+     */
+    protected function clientComponents(): array
+    {
+        return [
+            Section::make('Panel de clientes')
+                ->columnSpanFull()
+                ->schema([
+                    Toggle::make('panel_clientes_activo')
+                        ->label('Panel de clientes activo')
+                        ->helperText('Desactivado, los pasajeros no pueden entrar a ver sus boletos ni elegir la fecha de un boleto sin fecha.')
+                        ->hintIcon(Heroicon::OutlinedInformationCircle, tooltip: 'Activado, el ingreso del panel de administración muestra el acceso para pasajeros y el logo del link del boleto lleva al ingreso de clientes.')
+                        ->default(false),
+                ]),
+        ];
+    }
+
+    /**
      * Cantidad de campos de la pestaña que tienen error de validación.
      */
     protected function countTabErrors(string $tab): int
@@ -536,6 +570,15 @@ class TicketSettings extends Page
             ->values()
             ->all();
         Setting::set(Setting::SERVICE_EXCEPTIONS, json_encode($exceptions));
+
+        // Sin el permiso, la pestaña está oculta: el parámetro queda como
+        // estaba aunque el pedido lo traiga.
+        if ($this->canManageClientPanel() && array_key_exists('panel_clientes_activo', $data)) {
+            Setting::set(
+                Setting::PANEL_CLIENTES_ACTIVO,
+                $data['panel_clientes_activo'] ? '1' : '0',
+            );
+        }
 
         $body = 'Los cambios se aplicaron correctamente.';
 

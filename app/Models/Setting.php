@@ -97,6 +97,13 @@ class Setting extends Model
      */
     public const CONTACT_LINES_MAX = 3;
 
+    /**
+     * Panel de clientes (/clientes) disponible. Desactivado (default): el
+     * panel y sus rutas responden 404, el login de administración no muestra
+     * el aviso para pasajeros y el logo del boleto público va al inicio.
+     */
+    public const PANEL_CLIENTES_ACTIVO = 'clients.panel_activo';
+
     protected $fillable = ['key', 'value'];
 
     /**
@@ -164,6 +171,15 @@ class Setting extends Model
     public static function descargaAutomaticaPdf(): bool
     {
         return self::getBool(self::DESCARGA_AUTOMATICA_PDF, true);
+    }
+
+    /**
+     * ¿El panel de clientes está disponible? Desactivado por defecto: mientras
+     * nadie lo active, /clientes no existe para el público.
+     */
+    public static function panelClientesActivo(): bool
+    {
+        return self::getBool(self::PANEL_CLIENTES_ACTIVO, false);
     }
 
     /**

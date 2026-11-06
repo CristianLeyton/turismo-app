@@ -134,7 +134,7 @@
                         Ver PDF
                     </x-filament::button>
 
-                    <x-filament::button type="button" size="sm" color="info" outlined
+                    <x-filament::button type="button" size="sm" color="primary" outlined
                         icon="heroicon-m-clipboard-document"
                         x-on:click="copy('{{ $key }}', {{ \Illuminate\Support\Js::from($row['link']) }})">
                         <span x-text="copied === '{{ $key }}' ? '¡Copiado!' : 'Copiar link'">Copiar link</span>

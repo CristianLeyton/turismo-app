@@ -35,7 +35,7 @@ El modal SHALL mostrar una fila por pasajero de la venta, con el título "Boleto
 - **THEN** el modal muestra tres filas, una por boleto
 
 ### Requirement: Acciones de cada boleto
-Cada fila SHALL ofrecer, en este orden: "Enviar por WhatsApp", "Ver PDF", "Copiar link" y "Descargar PDF". "Descargar PDF" MUST usar el color de la empresa y "Copiar link" el color informativo. "Ver PDF" MUST abrir el link del boleto en una pestaña nueva. "Copiar link" MUST copiar el link del boleto al portapapeles y confirmar "¡Copiado!" durante unos segundos. "Descargar PDF" MUST descargar el PDF del boleto. Ninguna de las acciones cierra el modal.
+Cada fila SHALL ofrecer, en este orden: "Enviar por WhatsApp", "Ver PDF", "Copiar link" y "Descargar PDF". "Descargar PDF" MUST usar el color de la empresa. "Copiar link" MUST usar el color de la empresa con estilo de contorno, sin relleno. "Ver PDF" MUST abrir el link del boleto en una pestaña nueva. "Copiar link" MUST copiar el link del boleto al portapapeles y confirmar "¡Copiado!" durante unos segundos. "Descargar PDF" MUST descargar el PDF del boleto. Ninguna de las acciones cierra el modal.
 
 #### Scenario: Ver PDF
 - **WHEN** el vendedor toca "Ver PDF" en la fila de un boleto
@@ -44,6 +44,10 @@ Cada fila SHALL ofrecer, en este orden: "Enviar por WhatsApp", "Ver PDF", "Copia
 #### Scenario: Copiar link
 - **WHEN** el vendedor toca "Copiar link" en la fila de un boleto
 - **THEN** el link de ese boleto queda en el portapapeles, el botón muestra "¡Copiado!" y no se abre ni se descarga nada
+
+#### Scenario: Color de "Copiar link"
+- **WHEN** el vendedor ve el modal de entrega
+- **THEN** "Copiar link" tiene el borde y el texto del color de la empresa, sin fondo de color
 
 #### Scenario: Descargar PDF
 - **WHEN** el vendedor toca "Descargar PDF" en la fila de un boleto

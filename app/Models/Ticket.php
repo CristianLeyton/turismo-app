@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Models\Concerns\HasShareToken;
 use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -29,6 +30,7 @@ class Ticket extends Model
         'travels_with_pets',
         'pet_names',
         'pet_count',
+        'observation',
         'price',
         'payment_method',
         'origin_location_id',
@@ -44,6 +46,31 @@ class Ticket extends Model
         'travels_with_child' => 'boolean',
         'travels_with_pets' => 'boolean',
     ];
+
+    /** Largo máximo de la observación interna del boleto (como un tweet). */
+    public const MAX_OBSERVATION_LENGTH = 280;
+
+    /**
+     * Normaliza una observación: recorta espacios y convierte el vacío en null,
+     * para que la venta, la edición y el historial comparen igual.
+     */
+    public static function normalizeObservation(mixed $value): ?string
+    {
+        $text = trim((string) ($value ?? ''));
+
+        return $text === '' ? null : $text;
+    }
+
+    /**
+     * Observación interna: nunca se muestra al pasajero (PDF, link público ni
+     * panel de clientes).
+     */
+    protected function observation(): Attribute
+    {
+        return Attribute::make(
+            set: fn (mixed $value): ?string => self::normalizeObservation($value),
+        );
+    }
 
     public function getCompanionTypeAttribute()
     {
@@ -270,13 +297,22 @@ class Ticket extends Model
             return (float) $this->price;
         }
 
-        $outbound = self::where('sale_id', $this->sale_id)
+        $outbound = $this->outboundLeg();
+
+        return $outbound ? (float) $outbound->price : 0;
+    }
+
+    /**
+     * Boleto de ida vigente de este tramo de vuelta (mismo pasajero, misma
+     * venta), que es el que lleva el precio de la ida y vuelta.
+     */
+    public function outboundLeg(): ?self
+    {
+        return self::where('sale_id', $this->sale_id)
             ->where('passenger_id', $this->passenger_id)
             ->where('is_round_trip', true)
             ->where('is_return_leg', false)
             ->first();
-
-        return $outbound ? (float) $outbound->price : 0;
     }
 
     /**

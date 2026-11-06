@@ -221,6 +221,26 @@ class AdminTicketPdfTest extends TestCase
         Setting::flushCache();
     }
 
+    public function test_copiar_link_de_la_vista_previa_usa_el_color_de_la_empresa_con_contorno(): void
+    {
+        $this->actingAs(User::factory()->vendedor()->create());
+        Setting::set(Setting::DESCARGA_AUTOMATICA_PDF, '0');
+
+        $html = Livewire::test(ViewTicket::class, ['record' => $this->ticket->id])->html();
+
+        // Dos botones: el del encabezado (visor embebido) y el de la tarjeta (celular).
+        preg_match_all('/<button\b[^>]*>(?:(?!<\/button>).)*?Copiar link/s', $html, $matches);
+        $this->assertCount(2, $matches[0]);
+
+        foreach ($matches[0] as $button) {
+            $this->assertStringContainsString('fi-color-primary', $button);
+            $this->assertStringContainsString('fi-outlined', $button);
+            $this->assertStringNotContainsString('fi-color-info', $button);
+        }
+
+        Setting::flushCache();
+    }
+
     public function test_en_modo_link_el_detalle_crea_el_link_del_boleto_y_no_el_de_la_venta(): void
     {
         $this->actingAs(User::factory()->vendedor()->create());

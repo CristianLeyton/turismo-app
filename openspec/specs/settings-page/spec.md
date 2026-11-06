@@ -18,7 +18,7 @@ La página "Parámetros", con tilde, SHALL figurar en el grupo "Configuración" 
 - **THEN** no la ve en el menú y el acceso se rechaza
 
 ### Requirement: Parámetros agrupados en pestañas
-La página SHALL organizar los parámetros en pestañas, en este orden: "Venta" (acompañantes, venta fuera de término y, con su permiso, selectores de origen y destino), "Boleto" (con su permiso, emisión al finalizar la venta con el PDF automático y el mensaje de WhatsApp; y líneas de contacto), "Calendario" (días con servicio y excepciones), "Seguridad" (confirmación de contraseña), "Clientes" (panel de clientes), esta solo con el permiso del panel de clientes, y "Apariencia" (color principal), esta solo con el permiso de apariencia. Un único botón "Guardar cambios" MUST guardar todas las pestañas visibles.
+La página SHALL organizar los parámetros en pestañas, en este orden: "Venta" (acompañantes, venta fuera de término y, con su permiso, selectores de origen y destino y, con su permiso, observaciones), "Boleto" (con su permiso, emisión al finalizar la venta con el PDF automático y el mensaje de WhatsApp; y líneas de contacto), "Calendario" (días con servicio y excepciones), "Seguridad" (confirmación de contraseña), "Clientes" (panel de clientes), esta solo con el permiso del panel de clientes, y "Apariencia" (color principal), esta solo con el permiso de apariencia. Un único botón "Guardar cambios" MUST guardar todas las pestañas visibles.
 
 #### Scenario: Abrir la página
 - **WHEN** un administrador sin el permiso del panel de clientes ni el de apariencia abre Parámetros
@@ -43,6 +43,10 @@ La página SHALL organizar los parámetros en pestañas, en este orden: "Venta" 
 #### Scenario: Pestaña Venta con el permiso de los selectores
 - **WHEN** un usuario con `settings.manage` y con el permiso de los selectores de origen y destino abre la pestaña Venta
 - **THEN** ve las secciones de acompañantes, venta fuera de término y selectores de origen y destino
+
+#### Scenario: Pestaña Venta con el permiso de las observaciones
+- **WHEN** un usuario con `settings.manage` y con el permiso de las observaciones abre la pestaña Venta
+- **THEN** ve, además de las secciones que le correspondan, la sección "Observaciones"
 
 #### Scenario: Pestaña Boleto con el permiso de emisión
 - **WHEN** un usuario con `settings.manage` y con el permiso de emisión abre la pestaña Boleto
@@ -204,6 +208,30 @@ La pestaña "Venta" SHALL ofrecer el interruptor "Selectores de origen y destino
 #### Scenario: Permiso no asignado por defecto
 - **WHEN** se sincronizan los permisos y roles del sistema
 - **THEN** el rol Administrador no recibe el permiso de los selectores, y se lo puede asignar desde la matriz de roles
+
+### Requirement: Activar las observaciones de la venta
+La pestaña "Venta" SHALL ofrecer, en la sección "Observaciones", el interruptor "Observaciones en la venta", que muestra el valor guardado y, sin configurar, aparece apagado. Solo un usuario con el permiso "Activar/desactivar observaciones" (`settings.sale_observations`) del módulo Configuración MUST ver la sección y cambiar el parámetro. Si quien guarda no tiene el permiso, el parámetro MUST quedar como estaba, aunque el pedido traiga otro valor.
+
+#### Scenario: Prender las observaciones
+- **WHEN** un usuario con el permiso prende "Observaciones en la venta" y guarda
+- **THEN** el parámetro queda prendido y el paso "Resumen" de la venta muestra el campo "Observaciones"
+
+#### Scenario: Valor inicial
+- **WHEN** nadie configuró el parámetro y un usuario con el permiso abre la pestaña Venta
+- **THEN** el interruptor aparece apagado
+
+#### Scenario: Sin el permiso
+- **WHEN** un usuario con `settings.manage` pero sin el permiso de las observaciones abre la pestaña Venta
+- **THEN** no ve la sección "Observaciones"
+
+#### Scenario: Pedido manipulado
+- **GIVEN** el parámetro apagado
+- **WHEN** un usuario sin el permiso de las observaciones guarda Parámetros enviando el parámetro prendido
+- **THEN** los demás parámetros se guardan y el parámetro sigue apagado
+
+#### Scenario: Permiso no asignado por defecto
+- **WHEN** se sincronizan los permisos y roles del sistema
+- **THEN** ni el rol Administrador ni el Vendedor reciben el permiso de las observaciones, y se lo puede asignar desde la matriz de roles
 
 ### Requirement: Permiso para configurar la emisión al finalizar la venta
 Solo un usuario con el permiso "Configurar emisión al finalizar la venta" del módulo Configuración MUST ver la sección "Emisión al finalizar la venta" y cambiar el interruptor "Descargar PDF automáticamente al vender" y el mensaje de WhatsApp. Si quien guarda no tiene el permiso, los dos MUST quedar como estaban, aunque el pedido traiga otros valores o no los traiga.

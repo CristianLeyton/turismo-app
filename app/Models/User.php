@@ -59,6 +59,24 @@ class User extends Authenticatable implements FilamentUser, MustVerifyEmail
         ];
     }
 
+    /**
+     * Primer administrador creado en la instalación (el id 1 es el
+     * superadministrador). Nadie lo puede eliminar y solo un administrador
+     * lo edita (ver UserPolicy y AppServiceProvider).
+     */
+    public const FIRST_ADMIN_ID = 2;
+
+    public function isFirstAdmin(): bool
+    {
+        return (int) $this->getKey() === self::FIRST_ADMIN_ID;
+    }
+
+    /** ¿Tiene el rol Administrador o Super Administrador? */
+    public function isAdministrator(): bool
+    {
+        return $this->hasAnyRole([Permissions::ROLE_ADMIN, Permissions::ROLE_SUPER]);
+    }
+
     public function canAccessPanel(Panel $panel): bool
     {
         return true;

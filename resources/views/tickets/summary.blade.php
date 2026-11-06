@@ -36,6 +36,10 @@
     $vueltaBoardingDeparture = $vueltaTimes['departure'];
     $vueltaBoardingArrival = $vueltaTimes['arrival'];
 
+    // El paso "Resumen" renderiza la vista dos veces ('trip' y 'passengers')
+    // para ubicar el campo Observaciones entre las dos partes.
+    $section = $section ?? 'all';
+
     $passengers = $get('passengers') ?? [];
     $seatIds = $get('seat_ids') ?? [];
     $returnSeatIds = $get('return_seat_ids') ?? [];
@@ -58,6 +62,7 @@
 
 <div class="space-y-6">
 
+    @if ($section !== 'passengers')
     {{-- ================== RESUMEN GENERAL ================== --}}
     <div
         class="rounded-xl border p-5
@@ -140,6 +145,9 @@
         @endif
     </div>
 
+    @endif
+
+    @if ($section !== 'trip')
     {{-- ================== PASAJEROS ================== --}}
     <div class="space-y-4">
 
@@ -317,9 +325,21 @@
                                 Precio
                             </div>
                             <div class="text-lg font-semibold text-primary-600 dark:text-primary-400">
-                                ${{ isset($passenger['price']) && is_numeric($passenger['price'])
-                                    ? number_format($passenger['price'], 2, ',', '.')
-                                    : 'No especificado' }}
+                                @php
+                                    // Con precio fijo se muestra el calculado, no lo que traiga el formulario.
+                                    $fixedPrice = \App\Support\FixedTicketPrice::fromSnapshot(
+                                        $get('fixed_price_snapshot'),
+                                        (bool) ($passenger['travels_with_child'] ?? false),
+                                        (bool) $get('is_round_trip'),
+                                    );
+                                @endphp
+                                @if ($fixedPrice !== null)
+                                    ${{ number_format($fixedPrice, 2, ',', '.') }}
+                                @else
+                                    ${{ isset($passenger['price']) && is_numeric($passenger['price'])
+                                        ? number_format($passenger['price'], 2, ',', '.')
+                                        : 'No especificado' }}
+                                @endif
                             </div>
                         </div>
                         <div class="flex-1 text-right">
@@ -343,5 +363,7 @@
 
 
     </div>
+
+    @endif
 
 </div>

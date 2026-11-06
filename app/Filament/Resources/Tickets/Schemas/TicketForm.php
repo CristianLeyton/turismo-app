@@ -13,8 +13,10 @@ use App\Models\Schedule;
 use App\Models\Seat;
 use App\Models\SeatReservation;
 use App\Models\Setting;
+use App\Models\Ticket;
 use App\Models\Trip;
 use App\Services\TripTimesService;
+use App\Support\FixedTicketPrice;
 use App\Support\LiveValidation;
 use App\Support\Permissions;
 use App\Support\SaleCutoff;
@@ -29,9 +31,11 @@ use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TableSelect;
+use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Forms\Components\ViewField;
+use Filament\Infolists\Components\TextEntry;
 use Filament\Notifications\Notification;
 use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
@@ -719,6 +723,10 @@ class TicketForm
                         Hidden::make('return_trip_available_seats')
                             ->live(),
                         Hidden::make('reserved_trip_id'),
+                        // Configuración del precio fijo al abrir la venta: el precio
+                        // mostrado sale de acá y la emisión la compara con la vigente.
+                        Hidden::make('fixed_price_snapshot')
+                            ->default(fn (): string => FixedTicketPrice::snapshot()),
                         Hidden::make('reserved_return_trip_id'),
 
                         ViewField::make('search_trip_button')
@@ -2222,9 +2230,16 @@ class TicketForm
 
                                 Grid::make(2)
                                     ->schema([
+                                        // Con precio fijo el precio se calcula y no se edita: el
+                                        // servidor lo vuelve a calcular al emitir.
+                                        TextEntry::make('fixed_price_preview')
+                                            ->label('Precio')
+                                            ->state(fn (Get $get): ?string => self::fixedPriceLabel($get))
+                                            ->visible(fn (Get $get): bool => FixedTicketPrice::snapshotIsActive($get('../../fixed_price_snapshot'))),
                                         TextInput::make('price')
                                             ->label('Precio')
                                             ->prefix('$')
+                                            ->visible(fn (Get $get): bool => ! FixedTicketPrice::snapshotIsActive($get('../../fixed_price_snapshot')))
                                             ->required()
                                             ->numeric()
                                             ->minValue(0)
@@ -2527,12 +2542,61 @@ class TicketForm
                             ->view('tickets.summary')
                             ->viewData(fn (Get $get) => [
                                 'get' => $get,
+                                'section' => 'trip',
+                            ]),
+                        self::observationField()
+                            ->helperText('Se guarda en todos los boletos de esta venta. Opcional.'),
+                        ViewField::make('summary_passengers')
+                            ->view('tickets.summary')
+                            ->viewData(fn (Get $get) => [
+                                'get' => $get,
+                                'section' => 'passengers',
                             ]),
                     ]),
             ])
                 ->submitAction(new HtmlString('<button type="submit" class="fi-color fi-color-primary fi-bg-color-600 hover:fi-bg-color-500 dark:fi-bg-color-600 dark:hover:fi-bg-color-500 fi-text-color-0 hover:fi-text-color-0 dark:fi-text-color-0 dark:hover:fi-text-color-0 fi-btn fi-size-md  fi-ac-btn-action">Finalizar</button>'))
                 ->skippable(false),
         ])->columns(0);
+    }
+
+    /**
+     * Precio calculado de un pasajero (desde un campo de su ítem del
+     * repeater), con la fotografía del precio fijo que guardó la venta.
+     */
+    public static function fixedPriceLabel(Get $get): ?string
+    {
+        $price = FixedTicketPrice::fromSnapshot(
+            $get('../../fixed_price_snapshot'),
+            (bool) $get('travels_with_child'),
+            (bool) $get('../../is_round_trip'),
+        );
+
+        return $price === null ? null : '$'.number_format($price, 0, ',', '.');
+    }
+
+    /**
+     * Campo "Observaciones" (nota interna del boleto, nunca visible para el
+     * pasajero). Lo comparten la venta y la edición del boleto, y solo se
+     * muestra con el parámetro "Observaciones en la venta" prendido. El contador
+     * se calcula en el navegador para no hacer un request por tecla.
+     */
+    public static function observationField(): Textarea
+    {
+        $max = Ticket::MAX_OBSERVATION_LENGTH;
+
+        return Textarea::make('observation')
+            ->label('Observaciones')
+            ->placeholder('Ej: Baja en el peaje de Metán. Paga el saldo al subir.')
+            ->rows(3)
+            ->maxLength($max)
+            ->columnSpanFull()
+            ->visible(fn (): bool => Setting::observacionesActivas())
+            ->hint(new HtmlString(
+                '<span class="tabular-nums" x-data x-text="(($wire.data?.observation ?? \'\').length) + \' / '.$max.'\'">0 / '.$max.'</span>'
+            ))
+            ->validationMessages([
+                'max' => 'La observación no puede superar los :max caracteres.',
+            ]);
     }
 
     /**

@@ -286,6 +286,21 @@ class TicketShareLinkModeTest extends TestCase
         $this->assertStringContainsString('https://wa.me/', $html);
     }
 
+    public function test_copiar_link_del_modal_usa_el_color_de_la_empresa_con_contorno(): void
+    {
+        $this->sellLinkMode(['81000003']);
+        $html = $this->renderDeliveryModal(TicketDelivery::ticketsForSale(Sale::sole()));
+
+        preg_match_all('/<button\b[^>]*>(?:(?!<\/button>).)*?Copiar link/s', $html, $matches);
+        $this->assertNotEmpty($matches[0], 'Falta el botón "Copiar link".');
+
+        foreach ($matches[0] as $button) {
+            $this->assertStringContainsString('fi-color-primary', $button);
+            $this->assertStringContainsString('fi-outlined', $button);
+            $this->assertStringNotContainsString('fi-color-info', $button);
+        }
+    }
+
     public function test_los_enlaces_del_modal_no_navegan_dentro_del_panel(): void
     {
         $ticket = $this->sellLinkMode(['81000001'], ['81000001' => '3881234567']);

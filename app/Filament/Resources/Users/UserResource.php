@@ -102,6 +102,9 @@ class UserResource extends Resource
                     ->preload()
                     ->searchable()
                     ->visible(fn (): bool => (bool) Auth::user()?->can('roles.assign'))
+                    // El primer administrador siempre sigue siendo administrador:
+                    // deshabilitado no se deshidrata y sus roles no se tocan.
+                    ->disabled(fn (?Model $record): bool => $record instanceof User && $record->isFirstAdmin())
                     // Obligatorio: no se permiten usuarios sin rol. Se valida
                     // sólo cuando el campo es visible (quien no tiene
                     // roles.assign no puede asignar roles de todos modos).
@@ -166,38 +169,68 @@ class UserResource extends Resource
                 // Menú de tres puntitos (sólo celular): los ítems conservan
                 // su label para que el menú abierto muestre el texto.
                 ActionGroup::make([
-                    EditAction::make()
-                        ->disabled(fn (User $record): bool => $record->id === 2)->button()
-                        ->after(fn (User $record) => $record->syncIsAdminFlag()),
+                    static::editAction()->button(),
                     static::resetPasswordAction()->button(),
-                    DeleteAction::make()->button()->disabled(fn (User $record): bool => $record->id === 2),
-                    ForceDeleteAction::make()->button()->disabled(fn (User $record): bool => $record->id === 2),
-                    RestoreAction::make()->button()->disabled(fn (User $record): bool => $record->id === 2),
+                    static::deleteAction()->button(),
+                    static::forceDeleteAction()->button(),
+                    static::restoreAction()->button(),
                 ])->icon('heroicon-m-ellipsis-vertical')
                     ->hiddenLabel()
                     ->size('sm')
                     ->extraAttributes(['class' => 'md:hidden']),
 
-                EditAction::make()
-                    ->disabled(fn (User $record): bool => $record->id === 2)
-                    ->button()->hiddenLabel()->extraAttributes([
-                        'title' => 'Editar', 'class' => 'hidden md:inline-flex',
-                    ])
-                    ->after(fn (User $record) => $record->syncIsAdminFlag()),
+                static::editAction()->button()->hiddenLabel()->extraAttributes([
+                    'title' => 'Editar', 'class' => 'hidden md:inline-flex',
+                ]),
                 static::resetPasswordAction()->button()->hiddenLabel()->extraAttributes([
                     'title' => 'Restablecer contraseña', 'class' => 'hidden md:inline-flex',
                 ]),
-                DeleteAction::make()->disabled(fn (User $record): bool => $record->id === 2)->button()->hiddenLabel()->extraAttributes([
+                static::deleteAction()->button()->hiddenLabel()->extraAttributes([
                     'title' => 'Eliminar', 'class' => 'hidden md:inline-flex',
                 ]),
-                ForceDeleteAction::make()->disabled(fn (User $record): bool => $record->id === 2)->button()->hiddenLabel()->extraAttributes([
+                static::forceDeleteAction()->button()->hiddenLabel()->extraAttributes([
                     'title' => 'Eliminar permanentemente', 'class' => 'hidden md:inline-flex',
                 ]),
-                RestoreAction::make()->disabled(fn (User $record): bool => $record->id === 2)->button()->hiddenLabel()->extraAttributes([
+                static::restoreAction()->button()->hiddenLabel()->extraAttributes([
                     'title' => 'Restaurar', 'class' => 'hidden md:inline-flex',
                 ]),
             ])
             ->toolbarActions([]);
+    }
+
+    /**
+     * Editar: la policy decide (al primer administrador solo lo edita un
+     * administrador). En su fila la acción se ve deshabilitada en vez de
+     * desaparecer, para que se entienda por qué no se puede.
+     */
+    private static function editAction(): EditAction
+    {
+        return EditAction::make()
+            ->authorizationTooltip(fn (User $record): bool => $record->isFirstAdmin())
+            ->authorizationMessage('Solo un administrador puede editar al primer administrador.')
+            ->after(fn (User $record) => $record->syncIsAdminFlag());
+    }
+
+    /** Eliminar: al primer administrador no lo elimina nadie (UserPolicy). */
+    private static function deleteAction(): DeleteAction
+    {
+        return DeleteAction::make()
+            ->authorizationTooltip(fn (User $record): bool => $record->isFirstAdmin())
+            ->authorizationMessage('El primer administrador no se puede eliminar.');
+    }
+
+    private static function forceDeleteAction(): ForceDeleteAction
+    {
+        return ForceDeleteAction::make()
+            ->authorizationTooltip(fn (User $record): bool => $record->isFirstAdmin())
+            ->authorizationMessage('El primer administrador no se puede eliminar.');
+    }
+
+    /** Nunca aplica al primer administrador: no se lo puede eliminar. */
+    private static function restoreAction(): RestoreAction
+    {
+        return RestoreAction::make()
+            ->disabled(fn (User $record): bool => $record->isFirstAdmin());
     }
 
     /**
@@ -226,7 +259,8 @@ class UserResource extends Resource
                     ->send();
             })
             ->requiresConfirmation()
-            ->disabled(fn (User $record): bool => $record->id === 2);
+            // Al primer administrador solo le restablece la contraseña un administrador.
+            ->disabled(fn (User $record): bool => $record->isFirstAdmin() && ! Auth::user()?->isAdministrator());
     }
 
     public static function getPages(): array

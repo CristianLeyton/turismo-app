@@ -653,6 +653,248 @@ class TicketSettingsTest extends TestCase
         $this->assertDatabaseMissing('settings', ['key' => Setting::SELECTORES_DETALLADOS]);
     }
 
+    // ====================== Observaciones de la venta ======================
+
+    public function test_las_observaciones_estan_apagadas_por_defecto(): void
+    {
+        $this->assertFalse(Setting::observacionesActivas());
+
+        Setting::set(Setting::OBSERVACIONES_VENTA, '1');
+        $this->assertTrue(Setting::observacionesActivas());
+    }
+
+    public function test_con_el_permiso_se_ve_la_seccion_de_observaciones_apagada_en_venta(): void
+    {
+        $this->actingAs($this->adminWithPermissions(TicketSettings::SALE_OBSERVATIONS_PERMISSION));
+
+        $component = Livewire::test(TicketSettings::class)
+            ->assertSet('data.observaciones_activas', false)
+            ->assertSee('Observaciones en la venta')
+            ->assertSee('Venta con acompañante');
+
+        // Es una sección de Venta, no una pestaña nueva.
+        $this->assertSame(
+            ['Venta', 'Boleto', 'Calendario', 'Seguridad'],
+            array_keys($this->tabBadges($component)),
+        );
+        $this->assertContains('observaciones_activas', TicketSettings::TAB_FIELDS['Venta']);
+    }
+
+    public function test_sin_el_permiso_no_se_ve_la_seccion_de_observaciones(): void
+    {
+        $this->actingAs($this->admin);
+
+        $this->assertFalse($this->admin->can(TicketSettings::SALE_OBSERVATIONS_PERMISSION));
+
+        Livewire::test(TicketSettings::class)
+            ->assertDontSee('Observaciones en la venta');
+    }
+
+    public function test_con_el_permiso_se_prenden_y_apagan_las_observaciones(): void
+    {
+        $this->actingAs($this->adminWithPermissions(TicketSettings::SALE_OBSERVATIONS_PERMISSION));
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.observaciones_activas', true)
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertTrue(Setting::observacionesActivas());
+
+        Livewire::test(TicketSettings::class)
+            ->assertSet('data.observaciones_activas', true)
+            ->set('data.observaciones_activas', false)
+            ->call('save');
+
+        $this->assertFalse(Setting::observacionesActivas());
+    }
+
+    public function test_sin_el_permiso_un_pedido_manipulado_no_cambia_las_observaciones(): void
+    {
+        $this->actingAs($this->admin);
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.observaciones_activas', true)
+            ->set('data.require_password_ticket_delete', true)
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertTrue(Setting::getBool(Setting::REQUIRE_PASSWORD_TICKET_DELETE));
+        $this->assertFalse(Setting::observacionesActivas());
+        $this->assertDatabaseMissing('settings', ['key' => Setting::OBSERVACIONES_VENTA]);
+    }
+
+    // ====================== Precio fijo de los boletos ======================
+
+    private function fixedPriceAdmin(): User
+    {
+        return $this->adminWithPermissions(TicketSettings::FIXED_PRICE_PERMISSION);
+    }
+
+    public function test_con_el_permiso_se_ve_la_seccion_de_precio_fijo_apagada_y_sin_montos(): void
+    {
+        $this->actingAs($this->fixedPriceAdmin());
+
+        $component = Livewire::test(TicketSettings::class)
+            ->assertSet('data.precio_fijo_activo', false)
+            ->assertSee('Precio de los boletos')
+            ->assertSee('Precio fijo activo')
+            ->assertDontSee('Seguro para menores');
+
+        $this->assertSame(
+            ['Venta', 'Boleto', 'Calendario', 'Seguridad'],
+            array_keys($this->tabBadges($component)),
+        );
+        $this->assertContains('precio_fijo_activo', TicketSettings::TAB_FIELDS['Venta']);
+        $this->assertContains('precio_fijo_boleto', TicketSettings::TAB_FIELDS['Venta']);
+        $this->assertContains('precio_fijo_seguro_menor', TicketSettings::TAB_FIELDS['Venta']);
+    }
+
+    public function test_sin_el_permiso_no_se_ve_la_seccion_de_precio_fijo(): void
+    {
+        $this->actingAs($this->admin);
+
+        $this->assertFalse($this->admin->can(TicketSettings::FIXED_PRICE_PERMISSION));
+
+        Livewire::test(TicketSettings::class)
+            ->assertDontSee('Precio de los boletos')
+            ->assertDontSee('Precio fijo activo');
+    }
+
+    public function test_con_el_permiso_se_prende_el_precio_fijo_con_sus_montos(): void
+    {
+        $this->actingAs($this->fixedPriceAdmin());
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.precio_fijo_activo', true)
+            ->assertSee('Seguro para menores')
+            ->assertSet('data.precio_fijo_boleto', null)
+            ->set('data.precio_fijo_boleto', '5000')
+            ->set('data.precio_fijo_seguro_menor', '800')
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertTrue(Setting::precioFijoActivo());
+        $this->assertSame(5000, Setting::precioFijoBoleto());
+        $this->assertSame(800, Setting::precioFijoSeguroMenor());
+    }
+
+    public function test_apagar_el_precio_fijo_conserva_los_montos(): void
+    {
+        Setting::set(Setting::PRECIO_FIJO_ACTIVO, '1');
+        Setting::set(Setting::PRECIO_FIJO_BOLETO, '5000');
+        Setting::set(Setting::PRECIO_FIJO_SEGURO_MENOR, '800');
+        $this->actingAs($this->fixedPriceAdmin());
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.precio_fijo_activo', false)
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertFalse(Setting::precioFijoActivo());
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.precio_fijo_activo', true)
+            ->assertSet('data.precio_fijo_boleto', 5000)
+            ->assertSet('data.precio_fijo_seguro_menor', 800);
+    }
+
+    public function test_prender_el_precio_fijo_sin_montos_no_guarda_nada(): void
+    {
+        $this->actingAs($this->fixedPriceAdmin());
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.venta_limite_horas', 8)
+            ->set('data.precio_fijo_activo', true)
+            ->call('save')
+            ->assertHasErrors([
+                'data.precio_fijo_boleto' => 'Ingresá el precio del boleto.',
+                'data.precio_fijo_seguro_menor' => 'Ingresá el seguro para menores.',
+            ]);
+
+        $this->assertFalse(Setting::precioFijoActivo());
+        $this->assertSame(Setting::VENTA_LIMITE_HORAS_DEFAULT, Setting::ventaLimiteHoras());
+    }
+
+    /**
+     * @return array<string, array{string, string, string, string}>
+     */
+    public static function invalidFixedPriceAmounts(): array
+    {
+        return [
+            'precio en cero' => ['precio_fijo_boleto', '0', '800', 'El monto tiene que ser de al menos $1.'],
+            'precio con centavos' => ['precio_fijo_boleto', '5000.50', '800', 'El monto tiene que ser un número entero, sin centavos.'],
+            'seguro fuera de rango' => ['precio_fijo_seguro_menor', '5000', '1000000', 'El monto no puede ser mayor a $999.999.'],
+            'seguro negativo' => ['precio_fijo_seguro_menor', '5000', '-1', 'El monto no puede ser negativo.'],
+        ];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('invalidFixedPriceAmounts')]
+    public function test_los_montos_invalidos_del_precio_fijo_no_se_guardan(string $field, string $price, string $insurance, string $message): void
+    {
+        $this->actingAs($this->fixedPriceAdmin());
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.precio_fijo_activo', true)
+            ->set('data.precio_fijo_boleto', $price)
+            ->set('data.precio_fijo_seguro_menor', $insurance)
+            ->call('save')
+            ->assertHasErrors(["data.{$field}" => $message]);
+
+        $this->assertFalse(Setting::precioFijoActivo());
+        $this->assertDatabaseMissing('settings', ['key' => Setting::PRECIO_FIJO_BOLETO]);
+    }
+
+    public function test_el_seguro_en_cero_se_guarda(): void
+    {
+        $this->actingAs($this->fixedPriceAdmin());
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.precio_fijo_activo', true)
+            ->set('data.precio_fijo_boleto', '5000')
+            ->set('data.precio_fijo_seguro_menor', '0')
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertTrue(Setting::precioFijoActivo());
+        $this->assertSame(0, Setting::precioFijoSeguroMenor());
+    }
+
+    public function test_sin_el_permiso_guardar_conserva_el_precio_fijo(): void
+    {
+        Setting::set(Setting::PRECIO_FIJO_ACTIVO, '1');
+        Setting::set(Setting::PRECIO_FIJO_BOLETO, '5000');
+        Setting::set(Setting::PRECIO_FIJO_SEGURO_MENOR, '800');
+        $this->actingAs($this->admin);
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.venta_limite_horas', 8)
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertSame(8, Setting::ventaLimiteHoras());
+        $this->assertTrue(Setting::precioFijoActivo());
+        $this->assertSame(5000, Setting::precioFijoBoleto());
+        $this->assertSame(800, Setting::precioFijoSeguroMenor());
+    }
+
+    public function test_sin_el_permiso_un_pedido_manipulado_no_cambia_el_precio_fijo(): void
+    {
+        $this->actingAs($this->admin);
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.precio_fijo_activo', true)
+            ->set('data.precio_fijo_boleto', '1')
+            ->set('data.require_password_ticket_delete', true)
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertTrue(Setting::getBool(Setting::REQUIRE_PASSWORD_TICKET_DELETE));
+        $this->assertFalse(Setting::precioFijoActivo());
+        $this->assertDatabaseMissing('settings', ['key' => Setting::PRECIO_FIJO_ACTIVO]);
+        $this->assertDatabaseMissing('settings', ['key' => Setting::PRECIO_FIJO_BOLETO]);
+    }
+
     // ====================== Emisión al finalizar la venta ======================
 
     public function test_con_el_permiso_de_emision_la_pestana_boleto_muestra_emision_y_contacto(): void

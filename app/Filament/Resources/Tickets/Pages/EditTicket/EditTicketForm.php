@@ -3,10 +3,12 @@
 namespace App\Filament\Resources\Tickets\Pages\EditTicket;
 
 use App\Filament\Resources\Tickets\Pages\EditTicket;
+use App\Filament\Resources\Tickets\Schemas\TicketForm;
 use App\Models\Clients;
 use App\Models\PaymentMethod;
 use App\Models\Setting;
 use App\Models\Ticket;
+use App\Support\FixedTicketPrice;
 use App\Support\LiveValidation;
 use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\Select;
@@ -44,6 +46,7 @@ class EditTicketForm
             'pet_count' => 'Cantidad de mascotas',
             'payment_method' => 'Método de pago',
             'price' => 'Precio',
+            'observation' => 'Observación',
             default => $field,
         };
     }
@@ -201,12 +204,16 @@ class EditTicketForm
                                 ->numeric()
                                 ->minValue(0)
                                 ->maxValue(999999)
-                                ->disabled(fn (): bool => self::isSharedPriceReturnLeg())
-                                ->dehydrated(fn (): bool => ! self::isSharedPriceReturnLeg())
+                                // Con precio fijo nadie lo edita: el seguro del menor
+                                // se ajusta solo al guardar (ver EditTicket).
+                                ->disabled(fn (): bool => self::isSharedPriceReturnLeg() || FixedTicketPrice::isActive())
+                                ->dehydrated(fn (): bool => ! self::isSharedPriceReturnLeg() && ! FixedTicketPrice::isActive())
                                 ->hint(
-                                    fn () => self::isSharedPriceReturnLeg()
-                                        ? 'El precio viaja en el boleto de ida'
-                                        : null
+                                    fn () => match (true) {
+                                        self::isSharedPriceReturnLeg() => 'El precio viaja en el boleto de ida',
+                                        FixedTicketPrice::isActive() => 'Lo calcula el precio fijo',
+                                        default => null,
+                                    }
                                 )
                                 ->validationMessages([
                                     'numeric' => 'El precio debe ser un número.',
@@ -224,6 +231,10 @@ class EditTicketForm
                                     'in' => 'El método de pago seleccionado no es válido.',
                                 ]),
                         ]),
+                        // Editable también en el tramo de vuelta: la observación
+                        // es de cada boleto, no se comparte con la ida.
+                        TicketForm::observationField()
+                            ->helperText('Cambia solo este boleto: los demás boletos de la venta conservan la suya.'),
                     ]),
 
                 Section::make('Motivo de la corrección')

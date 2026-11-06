@@ -140,11 +140,13 @@ class PendingTicketPdfTest extends TestCase
         $html = $this->renderPdfHtmlFor(collect([$ida->fresh(), $vuelta]));
 
         $this->assertSame(1, preg_match_all("/class='leg-label'>IDA</", $html));
-        $this->assertStringContainsString("VUELTA de N°{$ida->id}", $html);
+        $this->assertSame(1, preg_match_all("/class='leg-label'>VUELTA</", $html));
+        // La vuelta ya no muestra el N° de la ida (confundía al pasajero).
+        $this->assertStringNotContainsString('VUELTA de N°', $html);
         $this->assertSame(2, substr_count($html, "class='leg-label'"));
     }
 
-    public function test_el_pdf_de_la_venta_rotula_cada_vuelta_con_la_ida_de_su_pasajero(): void
+    public function test_el_pdf_de_la_venta_rotula_cada_tramo_de_cada_pasajero(): void
     {
         $idaUno = $this->createPendingTicket();
         $idaUno->update(['is_round_trip' => true]);
@@ -165,8 +167,8 @@ class PendingTicketPdfTest extends TestCase
         $html = $this->renderPdfHtmlFor(collect([$idaUno->fresh(), $idaDos, $vueltaUno, $vueltaDos]));
 
         $this->assertSame(2, preg_match_all("/class='leg-label'>IDA</", $html));
-        $this->assertSame(1, substr_count($html, "VUELTA de N°{$idaUno->id}"));
-        $this->assertSame(1, substr_count($html, "VUELTA de N°{$idaDos->id}"));
+        $this->assertSame(2, preg_match_all("/class='leg-label'>VUELTA</", $html));
+        $this->assertStringNotContainsString('VUELTA de N°', $html);
     }
 
     public function test_el_pdf_de_un_boleto_solo_de_ida_no_lleva_etiqueta(): void
@@ -205,8 +207,8 @@ class PendingTicketPdfTest extends TestCase
         // En el HTML: la vuelta 1 aparece antes que la ida 2.
         $html = $this->renderPdfHtmlFor(collect([$idaUno->fresh(), $idaDos, $vueltaUno, $vueltaDos]));
         $this->assertLessThan(
-            strpos($html, "VUELTA de N°{$idaDos->id}"),
-            strpos($html, "VUELTA de N°{$idaUno->id}"),
+            strpos($html, $this->ticketNumber($idaDos)),
+            strpos($html, $this->ticketNumber($vueltaUno)),
         );
         $this->assertSame(2, substr_count($html, "<div class='sheet'>"));
     }
@@ -275,5 +277,11 @@ class PendingTicketPdfTest extends TestCase
 
         $this->assertNotEmpty($pdf);
         $this->assertSame('%PDF', substr($pdf, 0, 4));
+    }
+
+    /** N° de boleto tal como lo imprime el PDF: marcador único de cada boleto. */
+    private function ticketNumber(Ticket $ticket): string
+    {
+        return 'BOLETO N°'.str_pad((string) $ticket->id, 10, '0', STR_PAD_LEFT);
     }
 }

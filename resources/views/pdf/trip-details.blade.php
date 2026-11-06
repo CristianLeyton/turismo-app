@@ -160,6 +160,19 @@
             margin-top: 2px;
         }
 
+        /* Observación interna: gris para que se distinga también impresa en blanco y negro. */
+        .observation {
+            background: #eeeeee;
+            border-left: 3px solid #9ca3af;
+            border-radius: 6px;
+            padding: 4px 6px;
+            word-wrap: break-word;
+        }
+
+        .observation-empty {
+            color: #9ca3af;
+        }
+
         .empty {
             padding: 20px;
             font-size: 11px;
@@ -267,17 +280,36 @@
 
 
 
+        @php
+            // Con observaciones activas, la columna Observación reemplaza a
+            // Teléfono (que no se borra: queda listo para cuando la lista
+            // permita elegir qué columnas mostrar). Apagadas, queda como antes.
+            $showObservation = $showObservation ?? \App\Models\Setting::observacionesActivas();
+            $showPhone = $showPhone ?? ! $showObservation;
+            $widths = match (true) {
+                $showObservation && $showPhone => ['ticket' => 7, 'name' => 18, 'dni' => 10, 'phone' => 10, 'seat' => 7, 'origin' => 12, 'destination' => 12, 'observation' => 24],
+                $showObservation => ['ticket' => 7, 'name' => 20, 'dni' => 11, 'phone' => 0, 'seat' => 8, 'origin' => 13, 'destination' => 13, 'observation' => 28],
+                $showPhone => ['ticket' => 8, 'name' => 22, 'dni' => 12, 'phone' => 12, 'seat' => 10, 'origin' => 18, 'destination' => 18, 'observation' => 0],
+                default => ['ticket' => 8, 'name' => 28, 'dni' => 14, 'phone' => 0, 'seat' => 10, 'origin' => 20, 'destination' => 20, 'observation' => 0],
+            };
+        @endphp
+
         @if (($passengersCount ?? 0) > 0)
             <table>
                 <thead>
                     <tr>
-                        <th width="8%">Boleto</th>
-                        <th width="22%">Nombre</th>
-                        <th width="12%">DNI</th>
-                        <th width="12%">Teléfono</th>
-                        <th width="10%" style="text-align: center;">Asiento</th>
-                        <th width="18%" style="text-align: center;">Origen</th>
-                        <th width="18%" style="text-align: center;">Destino</th>
+                        <th width="{{ $widths['ticket'] }}%">Boleto</th>
+                        <th width="{{ $widths['name'] }}%">Nombre</th>
+                        <th width="{{ $widths['dni'] }}%">DNI</th>
+                        @if ($showPhone)
+                            <th width="{{ $widths['phone'] }}%">Teléfono</th>
+                        @endif
+                        <th width="{{ $widths['seat'] }}%" style="text-align: center;">Asiento</th>
+                        <th width="{{ $widths['origin'] }}%" style="text-align: center;">Origen</th>
+                        <th width="{{ $widths['destination'] }}%" style="text-align: center;">Destino</th>
+                        @if ($showObservation)
+                            <th width="{{ $widths['observation'] }}%">Observación</th>
+                        @endif
                     </tr>
                 </thead>
                 <tbody>
@@ -307,7 +339,9 @@
 
                             <td>{{ $passenger['dni'] == 'N/A' ? '-' : $passenger['dni'] }}</td>
 
-                            <td>{{ $passenger['phone'] == 'N/A' ? '-' : $passenger['phone'] }}</td>
+                            @if ($showPhone)
+                                <td>{{ $passenger['phone'] == 'N/A' ? '-' : $passenger['phone'] }}</td>
+                            @endif
 
                             <td style="text-align: center;">
                                 @if ($passenger['type'] === 'pet')
@@ -326,6 +360,18 @@
                             <td style="text-align: center;">
                                 <span class="badge badge-location">{{ $passenger['destination'] }}</span>
                             </td>
+
+                            {{-- Solo en la fila del adulto; el menor y la mascota quedan vacíos.
+                                 Recuadro redondeado como en el detalle del boleto. --}}
+                            @if ($showObservation)
+                                @if ($passenger['type'] === 'adult' && filled($passenger['observation'] ?? null))
+                                    <td><div class="observation">{{ $passenger['observation'] }}</div></td>
+                                @elseif ($passenger['type'] === 'adult')
+                                    <td class="observation-empty">-</td>
+                                @else
+                                    <td></td>
+                                @endif
+                            @endif
                         </tr>
                     @endforeach
                 </tbody>

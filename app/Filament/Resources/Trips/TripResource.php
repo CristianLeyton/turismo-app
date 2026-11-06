@@ -275,6 +275,24 @@ class TripResource extends Resource
 
                         return $query->whereHas('tickets');
                     }),
+
+                // Solo los viajes de hoy (zona horaria de la app), aunque su
+                // horario ya haya pasado. Va al lado del switch de vacíos y,
+                // como él, cede ante una búsqueda por "Viaje Nº".
+                Filter::make('only_today_trips')
+                    ->schema([
+                        Toggle::make('only_today')
+                            ->label('Mostrar solo los viajes que parten hoy')
+                            ->default(false),
+                    ])
+                    ->columnSpan(2)
+                    ->query(function (Builder $query, array $data, HasTable $livewire): Builder {
+                        if (! (bool) ($data['only_today'] ?? false) || filled($livewire->getTableFilterState('trip_id')['id'] ?? null)) {
+                            return $query;
+                        }
+
+                        return $query->whereDate('trip_date', today());
+                    }),
             ])
             ->filtersLayout(FiltersLayout::AboveContent)
             ->deferFilters(false)

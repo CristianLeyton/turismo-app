@@ -28,7 +28,15 @@ class AppServiceProvider extends ServiceProvider
         // Super Administrador: bypass de todas las verificaciones de
         // autorización (policies y Gate). Debe devolver null para el resto
         // de los usuarios para que se ejecuten las policies normales.
-        Gate::before(function (User $user, string $ability) {
+        // Excepción: al primer administrador no lo elimina nadie, ni siquiera
+        // el superadministrador (se delega en UserPolicy, que lo rechaza).
+        Gate::before(function (User $user, string $ability, array $arguments = []) {
+            $target = $arguments[0] ?? null;
+
+            if (in_array($ability, ['delete', 'forceDelete'], true) && $target instanceof User && $target->isFirstAdmin()) {
+                return null;
+            }
+
             return $user->hasRole(Permissions::ROLE_SUPER) ? true : null;
         });
 

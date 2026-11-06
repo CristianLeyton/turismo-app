@@ -420,10 +420,10 @@
                                     moleste al público ni al personal, y pueda llevarse en las bodegas
                                     destinadas a tal fin.<br><br>
 
-                                    <strong>PROMOCIÓN IDA Y VUELTA:</strong><br>
+{{--                                     <strong>PROMOCIÓN IDA Y VUELTA:</strong><br>
                                     • La promoción ida y vuelta no admite devolución, sin excepción.<br>
                                     • Tiene una validez de 14 días corridos desde la fecha de emisión.<br>
-                                    • No se permiten cambios ni reutilización una vez vencido el plazo.<br><br>
+                                    • No se permiten cambios ni reutilización una vez vencido el plazo.<br><br> --}}
 
                                     <strong>DEVOLUCIONES:</strong><br>
                                     • Más de 48hs antes de la salida del servicio: 10% de retención.<br>

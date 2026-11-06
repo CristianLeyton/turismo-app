@@ -1,3 +1,11 @@
+@php
+    // Con observaciones activas, la columna Observación reemplaza a Teléfono
+    // (que no se borra: queda listo para cuando la lista permita elegir
+    // qué columnas mostrar). Apagadas, la tabla queda como antes.
+    $showObservation = $showObservation ?? \App\Models\Setting::observacionesActivas();
+    $showPhone = $showPhone ?? ! $showObservation;
+@endphp
+
 <div class="space-y-4">
     <!-- Encabezado principal del viaje -->
     <div class="rounded-xl border p-5 bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-700">
@@ -64,9 +72,11 @@
                             <th
                                 class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
                                 DNI</th>
-                            <th
-                                class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
-                                Teléfono</th>
+                            @if ($showPhone)
+                                <th
+                                    class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
+                                    Teléfono</th>
+                            @endif
                             <th
                                 class="px-4 py-2 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
                                 Asiento</th>
@@ -76,6 +86,11 @@
                             <th
                                 class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
                                 Destino</th>
+                            @if ($showObservation)
+                                <th
+                                    class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
+                                    Observación</th>
+                            @endif
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
@@ -106,8 +121,10 @@
                                 <td class="px-4 py-2 text-sm text-gray-900 dark:text-gray-100">
                                     {{ $passenger['dni'] == 'N/A' ? '-' : $passenger['dni'] }}
                                 </td>
-                                <td class="px-4 py-2 text-sm text-gray-900 dark:text-gray-100">
-                                    {{ $passenger['phone'] == 'N/A' ? '-' : $passenger['phone'] }}</td>
+                                @if ($showPhone)
+                                    <td class="px-4 py-2 text-sm text-gray-900 dark:text-gray-100">
+                                        {{ $passenger['phone'] == 'N/A' ? '-' : $passenger['phone'] }}</td>
+                                @endif
                                 <td class="px-4 py-2 text-sm text-gray-900 dark:text-gray-100 text-center">
 
                                     <span
@@ -123,6 +140,20 @@
                                     <span
                                         class="inline-block px-2 py-1 text-xs bg-orange-100 dark:bg-orange-900/30 text-orange-800 dark:text-orange-300 rounded-lg">{{ $passenger['destination'] }}</span>
                                 </td>
+                                {{-- La observación va solo en la fila del adulto; el menor y la mascota quedan vacíos.
+                                     Recuadro con el mismo estilo que el detalle del boleto. --}}
+                                @if ($showObservation)
+                                    @if ($passenger['type'] === 'adult' && filled($passenger['observation'] ?? null))
+                                        <td class="min-w-56 max-w-sm px-4 py-2">
+                                            <div
+                                                class="rounded-lg border-l-4 border-amber-400 bg-amber-50 px-3 py-2 text-sm break-words whitespace-pre-line text-gray-900 dark:border-amber-500 dark:bg-amber-900/20 dark:text-gray-100">{{ $passenger['observation'] }}</div>
+                                        </td>
+                                    @elseif ($passenger['type'] === 'adult')
+                                        <td class="px-4 py-2 text-sm text-gray-400 dark:text-gray-500">-</td>
+                                    @else
+                                        <td class="px-4 py-2"></td>
+                                    @endif
+                                @endif
                             </tr>
                         @endforeach
                     </tbody>

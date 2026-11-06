@@ -112,6 +112,7 @@ class EditTicket extends ResourcePage
                 ? (float) $ticket->display_price
                 : $ticket->price,
             'payment_method' => $ticket->payment_method,
+            'observation' => $ticket->observation,
             'edit_reason' => null,
         ];
     }
@@ -292,6 +293,12 @@ class EditTicket extends ResourcePage
                 $pmNewLabel = \App\Models\PaymentMethod::label($pmNew);
                 $details[] = "Método de pago: \"$pmOldLabel\" → \"$pmNewLabel\"";
             }
+        }
+
+        $obsOld = $ticket->observation;
+        $obsNew = Ticket::normalizeObservation($data['observation'] ?? null);
+        if (Setting::observacionesActivas() && $obsOld !== $obsNew) {
+            $details[] = 'Observación: "'.($obsOld ?? '').'" → "'.($obsNew ?? '').'"';
         }
 
         if ($details === []) {
@@ -487,6 +494,27 @@ class EditTicket extends ResourcePage
             }
         }
 
+        // ---- 5. Observación interna (solo de este boleto) ----
+        // Con el parámetro apagado el campo no se muestra: la observación
+        // guardada queda como estaba y no se registra en el historial.
+        $observationOld = $ticket->observation;
+        $observationNew = Setting::observacionesActivas()
+            ? Ticket::normalizeObservation($data['observation'] ?? null)
+            : $observationOld;
+
+        if (mb_strlen((string) $observationNew) > Ticket::MAX_OBSERVATION_LENGTH) {
+            $this->notifyProblem(
+                'No se puede guardar la edición',
+                'La observación no puede superar los '.Ticket::MAX_OBSERVATION_LENGTH.' caracteres. Acortala y volvé a intentar.',
+            );
+
+            return false;
+        }
+
+        if ($observationOld !== $observationNew) {
+            $changes[] = ['observation', $observationOld, $observationNew];
+        }
+
         if ($changes === []) {
             Notification::make()
                 ->title('No hay cambios para guardar')
@@ -613,6 +641,9 @@ class EditTicket extends ResourcePage
             if (filled($data['price'] ?? null)) {
                 $ticket->price = $data['price'];
             }
+        }
+        if (Setting::observacionesActivas()) {
+            $ticket->observation = $data['observation'] ?? null;
         }
         $ticket->save();
 

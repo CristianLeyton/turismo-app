@@ -507,6 +507,27 @@ class CreateTicket extends CreateRecord
             $this->assertServiceDay(Trip::find($data['return_trip_id']), 'vuelta');
         }
 
+        // 0.g Observación interna: máximo 280 caracteres, también si llega
+        // salteando el formulario (el Textarea ya lo limita en pantalla). Con
+        // el parámetro apagado no se guarda aunque el pedido la traiga.
+        $data['observation'] = Setting::observacionesActivas()
+            ? Ticket::normalizeObservation($data['observation'] ?? null)
+            : null;
+
+        if (mb_strlen((string) $data['observation']) > Ticket::MAX_OBSERVATION_LENGTH) {
+            Notification::make()
+                ->title('No se puede completar la venta')
+                ->icon('heroicon-m-chat-bubble-bottom-center-text')
+                ->body('La observación no puede superar los '.Ticket::MAX_OBSERVATION_LENGTH.' caracteres. Acortala y volvé a intentar.')
+                ->danger()
+                ->persistent()
+                ->send();
+
+            $this->halt();
+
+            return $data;
+        }
+
         // 0.f Una persona por venta y por viaje: sin DNI repetidos dentro de
         // la venta (adultos y menores) y sin DNI que ya tengan boleto en el
         // viaje de ida o de vuelta. Sin excepciones por permiso. Se repite
@@ -635,6 +656,7 @@ class CreateTicket extends CreateRecord
                         'travels_with_pets' => $travelsWithPets,
                         'pet_names' => $petNames,
                         'pet_count' => $petCount,
+                        'observation' => $data['observation'] ?? null,
                         'origin_location_id' => $data['origin_location_id'],
                         'destination_location_id' => $data['destination_location_id'],
                         'price' => $passengerData['price'] ?? 0,
@@ -701,6 +723,7 @@ class CreateTicket extends CreateRecord
                             'travels_with_pets' => $travelsWithPets,
                             'pet_names' => $petNames,
                             'pet_count' => $petCount,
+                            'observation' => $data['observation'] ?? null,
                             'origin_location_id' => $data['destination_location_id'],
                             'destination_location_id' => $data['origin_location_id'],
                             'price' => 0, // Return trip price is already captured on the outbound ticket
@@ -915,6 +938,7 @@ class CreateTicket extends CreateRecord
                     'travels_with_pets' => $passengerData['travels_with_pets'] ?? false,
                     'pet_names' => $passengerData['pet_data']['pet_names'] ?? null,
                     'pet_count' => $passengerData['pet_data']['pet_count'] ?? null,
+                    'observation' => $data['observation'] ?? null,
                     'origin_location_id' => $data['origin_location_id'],
                     'destination_location_id' => $data['destination_location_id'],
                     'price' => $passengerData['price'] ?? 0,
@@ -968,6 +992,7 @@ class CreateTicket extends CreateRecord
                     'travels_with_pets' => $passengerData['travels_with_pets'] ?? false,
                     'pet_names' => $passengerData['pet_data']['pet_names'] ?? null,
                     'pet_count' => $passengerData['pet_data']['pet_count'] ?? null,
+                    'observation' => $data['observation'] ?? null,
                     'origin_location_id' => $data['origin_location_id'],
                     'destination_location_id' => $data['destination_location_id'],
                     'price' => $passengerData['price'] ?? 0,
@@ -997,6 +1022,7 @@ class CreateTicket extends CreateRecord
                         'travels_with_pets' => $passengerData['travels_with_pets'] ?? false,
                         'pet_names' => $passengerData['pet_data']['pet_names'] ?? null,
                         'pet_count' => $passengerData['pet_data']['pet_count'] ?? null,
+                        'observation' => $data['observation'] ?? null,
                         'origin_location_id' => $data['destination_location_id'],
                         'destination_location_id' => $data['origin_location_id'],
                         'price' => 0, // El precio vive en el boleto de ida.
@@ -1044,6 +1070,7 @@ class CreateTicket extends CreateRecord
                         'travels_with_pets' => $passengerData['travels_with_pets'] ?? false,
                         'pet_names' => $passengerData['pet_data']['pet_names'] ?? null,
                         'pet_count' => $passengerData['pet_data']['pet_count'] ?? null,
+                        'observation' => $data['observation'] ?? null,
                         'origin_location_id' => $data['destination_location_id'],
                         'destination_location_id' => $data['origin_location_id'],
                         'price' => 0, // El precio vive en el boleto de ida.

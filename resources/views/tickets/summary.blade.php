@@ -36,6 +36,10 @@
     $vueltaBoardingDeparture = $vueltaTimes['departure'];
     $vueltaBoardingArrival = $vueltaTimes['arrival'];
 
+    // El paso "Resumen" renderiza la vista dos veces ('trip' y 'passengers')
+    // para ubicar el campo Observaciones entre las dos partes.
+    $section = $section ?? 'all';
+
     $passengers = $get('passengers') ?? [];
     $seatIds = $get('seat_ids') ?? [];
     $returnSeatIds = $get('return_seat_ids') ?? [];
@@ -58,6 +62,7 @@
 
 <div class="space-y-6">
 
+    @if ($section !== 'passengers')
     {{-- ================== RESUMEN GENERAL ================== --}}
     <div
         class="rounded-xl border p-5
@@ -140,6 +145,9 @@
         @endif
     </div>
 
+    @endif
+
+    @if ($section !== 'trip')
     {{-- ================== PASAJEROS ================== --}}
     <div class="space-y-4">
 
@@ -343,5 +351,7 @@
 
 
     </div>
+
+    @endif
 
 </div>

@@ -51,7 +51,7 @@ class TicketSettings extends Page
      * @var array<string, list<string>>
      */
     public const TAB_FIELDS = [
-        'Venta' => ['permitir_acompanantes', 'venta_limite_horas', 'selectores_detallados'],
+        'Venta' => ['permitir_acompanantes', 'venta_limite_horas', 'selectores_detallados', 'observaciones_activas'],
         'Boleto' => ['descarga_automatica_pdf', 'whatsapp_mensaje', 'contact_lines'],
         'Calendario' => ['service_weekdays', 'service_exceptions'],
         'Seguridad' => ['require_password_ticket_delete', 'require_password_ticket_reschedule', 'require_password_ticket_edit'],
@@ -67,6 +67,9 @@ class TicketSettings extends Page
 
     /** Permiso para ver y cambiar el estilo de los selectores de origen y destino. */
     public const SALE_SELECTORS_PERMISSION = 'settings.sale_selectors';
+
+    /** Permiso para ver y prender o apagar las observaciones de la venta. */
+    public const SALE_OBSERVATIONS_PERMISSION = 'settings.sale_observations';
 
     /** Permiso para ver y cambiar la emisión al finalizar la venta (PDF automático y mensaje de WhatsApp). */
     public const TICKET_EMISSION_PERMISSION = 'settings.ticket_emission';
@@ -141,6 +144,7 @@ class TicketSettings extends Page
             ))),
             'panel_clientes_activo' => Setting::panelClientesActivo(),
             'selectores_detallados' => Setting::selectoresDetallados(),
+            'observaciones_activas' => Setting::observacionesActivas(),
             'primary_color' => Setting::primaryColor(),
         ];
     }
@@ -167,6 +171,14 @@ class TicketSettings extends Page
     protected function canManageSaleSelectors(): bool
     {
         return (bool) Auth::user()?->can(self::SALE_SELECTORS_PERMISSION);
+    }
+
+    /**
+     * ¿Quien usa la página puede prender o apagar las observaciones de la venta?
+     */
+    protected function canManageSaleObservations(): bool
+    {
+        return (bool) Auth::user()?->can(self::SALE_OBSERVATIONS_PERMISSION);
     }
 
     /**
@@ -257,6 +269,17 @@ class TicketSettings extends Page
                         ->label('Selectores de origen y destino detallados')
                         ->helperText('Apagado, origen y destino se eligen de una lista simple.')
                         ->hintIcon(Heroicon::OutlinedInformationCircle, tooltip: 'Prendido, cada parada se muestra numerada según el recorrido, los destinos se agrupan por sentido ("Hacia Salta") y la lista tiene buscador cuando hay más de 10 paradas. No cambia qué paradas se pueden vender.')
+                        ->default(false),
+                ]),
+
+            Section::make('Observaciones')
+                ->columnSpanFull()
+                ->visible(fn (): bool => $this->canManageSaleObservations())
+                ->schema([
+                    Toggle::make('observaciones_activas')
+                        ->label('Observaciones en la venta')
+                        ->helperText('Apagado, no se cargan ni se muestran observaciones; las ya cargadas se conservan.')
+                        ->hintIcon(Heroicon::OutlinedInformationCircle, tooltip: 'Prendido, la venta y "Editar boleto" ofrecen una nota interna de hasta 280 caracteres. Se ve en la lista de pasajeros del viaje (modal, PDF y Excel), en el detalle del boleto y en la auditoría; nunca en el boleto del pasajero. En el modal y el PDF del viaje reemplaza a la columna Teléfono.')
                         ->default(false),
                 ]),
         ];
@@ -691,6 +714,13 @@ class TicketSettings extends Page
             Setting::set(
                 Setting::SELECTORES_DETALLADOS,
                 $data['selectores_detallados'] ? '1' : '0',
+            );
+        }
+
+        if ($this->canManageSaleObservations() && array_key_exists('observaciones_activas', $data)) {
+            Setting::set(
+                Setting::OBSERVACIONES_VENTA,
+                $data['observaciones_activas'] ? '1' : '0',
             );
         }
 

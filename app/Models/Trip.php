@@ -638,6 +638,9 @@ class Trip extends Model
                         'ticket_id' => $ticket->id,
                         'price' => $ticket->price,
                         'is_round_trip' => $ticket->is_round_trip,
+                        // Solo en la fila del adulto: el menor y la mascota
+                        // son del mismo boleto y no la repiten.
+                        'observation' => $ticket->observation,
                     ]);
                 }
 

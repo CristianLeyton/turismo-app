@@ -13,6 +13,7 @@ use App\Models\Schedule;
 use App\Models\Seat;
 use App\Models\SeatReservation;
 use App\Models\Setting;
+use App\Models\Ticket;
 use App\Models\Trip;
 use App\Services\TripTimesService;
 use App\Support\LiveValidation;
@@ -29,6 +30,7 @@ use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TableSelect;
+use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Forms\Components\ViewField;
@@ -2527,12 +2529,46 @@ class TicketForm
                             ->view('tickets.summary')
                             ->viewData(fn (Get $get) => [
                                 'get' => $get,
+                                'section' => 'trip',
+                            ]),
+                        self::observationField()
+                            ->helperText('Se guarda en todos los boletos de esta venta. Opcional.'),
+                        ViewField::make('summary_passengers')
+                            ->view('tickets.summary')
+                            ->viewData(fn (Get $get) => [
+                                'get' => $get,
+                                'section' => 'passengers',
                             ]),
                     ]),
             ])
                 ->submitAction(new HtmlString('<button type="submit" class="fi-color fi-color-primary fi-bg-color-600 hover:fi-bg-color-500 dark:fi-bg-color-600 dark:hover:fi-bg-color-500 fi-text-color-0 hover:fi-text-color-0 dark:fi-text-color-0 dark:hover:fi-text-color-0 fi-btn fi-size-md  fi-ac-btn-action">Finalizar</button>'))
                 ->skippable(false),
         ])->columns(0);
+    }
+
+    /**
+     * Campo "Observaciones" (nota interna del boleto, nunca visible para el
+     * pasajero). Lo comparten la venta y la edición del boleto, y solo se
+     * muestra con el parámetro "Observaciones en la venta" prendido. El contador
+     * se calcula en el navegador para no hacer un request por tecla.
+     */
+    public static function observationField(): Textarea
+    {
+        $max = Ticket::MAX_OBSERVATION_LENGTH;
+
+        return Textarea::make('observation')
+            ->label('Observaciones')
+            ->placeholder('Ej: Baja en el peaje de Metán. Paga el saldo al subir.')
+            ->rows(3)
+            ->maxLength($max)
+            ->columnSpanFull()
+            ->visible(fn (): bool => Setting::observacionesActivas())
+            ->hint(new HtmlString(
+                '<span class="tabular-nums" x-data x-text="(($wire.data?.observation ?? \'\').length) + \' / '.$max.'\'">0 / '.$max.'</span>'
+            ))
+            ->validationMessages([
+                'max' => 'La observación no puede superar los :max caracteres.',
+            ]);
     }
 
     /**

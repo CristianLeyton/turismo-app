@@ -653,6 +653,77 @@ class TicketSettingsTest extends TestCase
         $this->assertDatabaseMissing('settings', ['key' => Setting::SELECTORES_DETALLADOS]);
     }
 
+    // ====================== Observaciones de la venta ======================
+
+    public function test_las_observaciones_estan_apagadas_por_defecto(): void
+    {
+        $this->assertFalse(Setting::observacionesActivas());
+
+        Setting::set(Setting::OBSERVACIONES_VENTA, '1');
+        $this->assertTrue(Setting::observacionesActivas());
+    }
+
+    public function test_con_el_permiso_se_ve_la_seccion_de_observaciones_apagada_en_venta(): void
+    {
+        $this->actingAs($this->adminWithPermissions(TicketSettings::SALE_OBSERVATIONS_PERMISSION));
+
+        $component = Livewire::test(TicketSettings::class)
+            ->assertSet('data.observaciones_activas', false)
+            ->assertSee('Observaciones en la venta')
+            ->assertSee('Venta con acompañante');
+
+        // Es una sección de Venta, no una pestaña nueva.
+        $this->assertSame(
+            ['Venta', 'Boleto', 'Calendario', 'Seguridad'],
+            array_keys($this->tabBadges($component)),
+        );
+        $this->assertContains('observaciones_activas', TicketSettings::TAB_FIELDS['Venta']);
+    }
+
+    public function test_sin_el_permiso_no_se_ve_la_seccion_de_observaciones(): void
+    {
+        $this->actingAs($this->admin);
+
+        $this->assertFalse($this->admin->can(TicketSettings::SALE_OBSERVATIONS_PERMISSION));
+
+        Livewire::test(TicketSettings::class)
+            ->assertDontSee('Observaciones en la venta');
+    }
+
+    public function test_con_el_permiso_se_prenden_y_apagan_las_observaciones(): void
+    {
+        $this->actingAs($this->adminWithPermissions(TicketSettings::SALE_OBSERVATIONS_PERMISSION));
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.observaciones_activas', true)
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertTrue(Setting::observacionesActivas());
+
+        Livewire::test(TicketSettings::class)
+            ->assertSet('data.observaciones_activas', true)
+            ->set('data.observaciones_activas', false)
+            ->call('save');
+
+        $this->assertFalse(Setting::observacionesActivas());
+    }
+
+    public function test_sin_el_permiso_un_pedido_manipulado_no_cambia_las_observaciones(): void
+    {
+        $this->actingAs($this->admin);
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.observaciones_activas', true)
+            ->set('data.require_password_ticket_delete', true)
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertTrue(Setting::getBool(Setting::REQUIRE_PASSWORD_TICKET_DELETE));
+        $this->assertFalse(Setting::observacionesActivas());
+        $this->assertDatabaseMissing('settings', ['key' => Setting::OBSERVACIONES_VENTA]);
+    }
+
     // ====================== Emisión al finalizar la venta ======================
 
     public function test_con_el_permiso_de_emision_la_pestana_boleto_muestra_emision_y_contacto(): void

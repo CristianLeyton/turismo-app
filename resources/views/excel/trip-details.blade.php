@@ -1,3 +1,6 @@
+@php
+    $showObservation = $showObservation ?? \App\Models\Setting::observacionesActivas();
+@endphp
 <table>
     <thead>
         <tr>
@@ -9,6 +12,9 @@
             <th>Origen</th>
             <th>Destino</th>
             <th>Viaja con</th>
+            @if ($showObservation)
+                <th>Observaciones</th>
+            @endif
         </tr>
     </thead>
     <tbody>
@@ -34,11 +40,15 @@
                             -
                         @endif
                     </td>
+                    {{-- Solo en la fila del adulto: el menor y la mascota son del mismo boleto. --}}
+                    @if ($showObservation)
+                        <td>{{ $passenger['type'] === 'adult' ? ($passenger['observation'] ?? '') : '' }}</td>
+                    @endif
                 </tr>
             @endforeach
         @else
             <tr>
-                <td colspan="8">No hay pasajeros registrados para este viaje.</td>
+                <td colspan="{{ $showObservation ? 9 : 8 }}">No hay pasajeros registrados para este viaje.</td>
             </tr>
         @endif
     </tbody>

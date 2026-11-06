@@ -122,6 +122,7 @@ final class Permissions
                     'client_panel' => 'Activar/desactivar panel de clientes',
                     'appearance' => 'Cambiar apariencia',
                     'sale_selectors' => 'Configurar selectores de origen y destino',
+                    'sale_observations' => 'Activar/desactivar observaciones',
                     'ticket_emission' => 'Configurar emisión al finalizar la venta',
                 ],
             ],

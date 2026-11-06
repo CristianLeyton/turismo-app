@@ -171,6 +171,16 @@
         </div>
     </div>
 
+    {{-- ================== OBSERVACIÓN ================== --}}
+    @if (filled($record?->observation) && \App\Models\Setting::observacionesActivas())
+        {{-- Observación interna: nunca va en el PDF del pasajero. --}}
+        <div
+            class="rounded-lg border-l-4 border-amber-400 bg-amber-50 px-4 py-3 dark:border-amber-500 dark:bg-amber-900/20">
+            <div class="text-xs uppercase tracking-wide text-amber-800 dark:text-amber-300">Observación</div>
+            <div class="mt-1 text-sm break-words whitespace-pre-line text-gray-900 dark:text-gray-100">{{ $record->observation }}</div>
+        </div>
+    @endif
+
     {{-- ================== ELIMINACIÓN ================== --}}
     @if ($isDeleted)
         <div

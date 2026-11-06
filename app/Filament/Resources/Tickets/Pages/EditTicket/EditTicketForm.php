@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\Tickets\Pages\EditTicket;
 
 use App\Filament\Resources\Tickets\Pages\EditTicket;
+use App\Filament\Resources\Tickets\Schemas\TicketForm;
 use App\Models\Clients;
 use App\Models\PaymentMethod;
 use App\Models\Setting;
@@ -44,6 +45,7 @@ class EditTicketForm
             'pet_count' => 'Cantidad de mascotas',
             'payment_method' => 'Método de pago',
             'price' => 'Precio',
+            'observation' => 'Observación',
             default => $field,
         };
     }
@@ -224,6 +226,10 @@ class EditTicketForm
                                     'in' => 'El método de pago seleccionado no es válido.',
                                 ]),
                         ]),
+                        // Editable también en el tramo de vuelta: la observación
+                        // es de cada boleto, no se comparte con la ida.
+                        TicketForm::observationField()
+                            ->helperText('Cambia solo este boleto: los demás boletos de la venta conservan la suya.'),
                     ]),
 
                 Section::make('Motivo de la corrección')

@@ -21,7 +21,7 @@ class TicketAuditDetailSchema
     {
         return [
             ViewEntry::make('audit_detail')
-                ->label('')
+                ->hiddenLabel()
                 ->view('filament.resources.ticket-audit.ticket-audit-detail')
                 ->columnSpanFull(),
         ];

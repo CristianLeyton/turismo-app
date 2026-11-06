@@ -4,8 +4,11 @@ namespace App\Filament\Resources\TicketAudit\Classes;
 
 use App\Filament\Resources\TicketAudit\Schemas\TicketAuditDetailSchema;
 use App\Models\Ticket;
+use Carbon\CarbonInterface;
 use Filament\Actions\Action;
+use Filament\Actions\ActionGroup;
 use Filament\Support\Enums\Width;
+use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Filters\Filter;
@@ -13,7 +16,6 @@ use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
-use Carbon\CarbonInterface;
 
 /**
  * Tabla de auditoría compacta: boletos eliminados y reprogramados.
@@ -25,6 +27,23 @@ use Carbon\CarbonInterface;
  */
 class TicketAuditTable
 {
+    /**
+     * Acción "Ver": abre el detalle de auditoría en un modal de solo lectura.
+     * Se usa en el menú del celular y en el botón de escritorio.
+     */
+    private static function viewAction(): Action
+    {
+        return Action::make('ver')
+            ->label('Ver detalles')
+            ->icon(Heroicon::Eye)
+            ->color('gray')
+            ->modalHeading(fn (Ticket $record): string => "Boleto N°{$record->id}")
+            ->modalWidth(Width::FiveExtraLarge)
+            ->modalSubmitAction(false)
+            ->modalCancelActionLabel('Cerrar')
+            ->schema(fn (Ticket $record): array => TicketAuditDetailSchema::make());
+    }
+
     public static function configure(Table $table): Table
     {
         return $table
@@ -53,9 +72,9 @@ class TicketAuditTable
                     ->label('Pasajero')
                     ->limit(24)
                     ->visibleFrom('md')
-                    ->tooltip(fn($state, $record) => $record->passenger?->last_name . ' ' . $record->passenger?->first_name)
+                    ->tooltip(fn ($state, $record) => $record->passenger?->last_name.' '.$record->passenger?->first_name)
                     ->formatStateUsing(
-                        fn($state, $record) => ($record->passenger?->last_name ?? '') . ' ' . ($record->passenger?->first_name ?? ''),
+                        fn ($state, $record) => ($record->passenger?->last_name ?? '').' '.($record->passenger?->first_name ?? ''),
                     )
                     ->placeholder('—'),
 
@@ -67,8 +86,8 @@ class TicketAuditTable
                 TextColumn::make('estado')
                     ->label('Estado')
                     ->badge()
-                    ->state(fn(Ticket $record): string => TicketAuditDetailSchema::estado($record))
-                    ->color(fn(Ticket $record): string => match (true) {
+                    ->state(fn (Ticket $record): string => TicketAuditDetailSchema::estado($record))
+                    ->color(fn (Ticket $record): string => match (true) {
                         $record->trashed() => 'danger',
                         $record->dateChanges->isNotEmpty() => 'warning',
                         default => 'info',
@@ -103,7 +122,7 @@ class TicketAuditTable
                     )
                     ->visibleFrom('md'),
 
- /*                TextColumn::make('last_change_at')
+                /*                TextColumn::make('last_change_at')
                     ->label('Última modificación')
                     ->state(fn(Ticket $record): string => self::ultimaModificacion($record))
                     ->badge()
@@ -114,20 +133,18 @@ class TicketAuditTable
             ->recordUrl(null)
             ->recordAction(null)
             ->recordActions([
-                Action::make('ver')
-                    ->label('Ver')
+                // Menú de tres puntitos (sólo celular): el ítem conserva su label.
+                ActionGroup::make([
+                    self::viewAction()->button(),
+                ])->icon('heroicon-m-ellipsis-vertical')
                     ->hiddenLabel()
-                    ->icon('heroicon-m-eye')
-                    ->button()
-                    ->extraAttributes([
-                        'title' => 'Ver detalles'
-                    ])
-                    ->color('gray')
-                    ->modalHeading(fn(Ticket $record): string => "Boleto N°{$record->id}")
-                    ->modalWidth(Width::FiveExtraLarge)
-                    ->modalSubmitAction(false)
-                    ->modalCancelActionLabel('Cerrar')
-                    ->schema(fn(Ticket $record): array => TicketAuditDetailSchema::make()),
+                    ->size('sm')
+                    ->extraAttributes(['class' => 'md:hidden']),
+
+                self::viewAction()->button()->hiddenLabel()->extraAttributes([
+                    'title' => 'Ver detalles',
+                    'class' => 'hidden md:inline-flex',
+                ]),
             ])
             ->toolbarActions([])
             ->paginated([5, 10, 25, 50, 100])
@@ -169,12 +186,12 @@ class TicketAuditTable
                     ->query(function (Builder $query, array $data): Builder {
                         return $query->when(
                             $data['id'],
-                            fn(Builder $query, int $id): Builder => $query->where('tickets.id', $id),
+                            fn (Builder $query, int $id): Builder => $query->where('tickets.id', $id),
                         );
                     })
                     ->indicateUsing(function (array $data): array {
                         return ($data['id'] ?? null)
-                            ? ['Boleto: ' . $data['id']]
+                            ? ['Boleto: '.$data['id']]
                             : [];
                     }),
 
@@ -188,7 +205,7 @@ class TicketAuditTable
                     ->query(function (Builder $query, array $data): Builder {
                         return $query->when(
                             $data['query'],
-                            fn(Builder $query, string $search): Builder => $query->whereHas('passenger', function (Builder $q) use ($search) {
+                            fn (Builder $query, string $search): Builder => $query->whereHas('passenger', function (Builder $q) use ($search) {
                                 $q->where('first_name', 'like', "%{$search}%")
                                     ->orWhere('last_name', 'like', "%{$search}%")
                                     ->orWhere('dni', 'like', "%{$search}%");
@@ -197,7 +214,7 @@ class TicketAuditTable
                     })
                     ->indicateUsing(function (array $data): array {
                         return ($data['query'] ?? null)
-                            ? ['Pasajero: ' . $data['query']]
+                            ? ['Pasajero: '.$data['query']]
                             : [];
                     }),
             ])
@@ -248,13 +265,13 @@ class TicketAuditTable
         }
 
         $ultimo = $eventos
-            ->sortByDesc(fn(array $evento): int => $evento['at']?->getTimestamp() ?? 0)
+            ->sortByDesc(fn (array $evento): int => $evento['at']?->getTimestamp() ?? 0)
             ->first();
 
-            return $ultimo['label'];
+        return $ultimo['label'];
 
-/*         return $ultimo
-            ? $ultimo['label'] . ' el ' . $ultimo['at']->format('d/m/Y')
-            : '—'; */
+        /*         return $ultimo
+                    ? $ultimo['label'] . ' el ' . $ultimo['at']->format('d/m/Y')
+                    : '—'; */
     }
 }

@@ -45,6 +45,8 @@ use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Components\Wizard;
 use Filament\Schemas\Components\Wizard\Step;
 use Filament\Schemas\Schema;
+use Filament\Support\Enums\FontWeight;
+use Filament\Support\Enums\TextSize;
 use Filament\Support\Exceptions\Halt;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Support\Collection;
@@ -2232,9 +2234,13 @@ class TicketForm
                                     ->schema([
                                         // Con precio fijo el precio se calcula y no se edita: el
                                         // servidor lo vuelve a calcular al emitir.
+                                        // Mismo estilo que el precio del paso "Resumen".
                                         TextEntry::make('fixed_price_preview')
                                             ->label('Precio')
                                             ->state(fn (Get $get): ?string => self::fixedPriceLabel($get))
+                                            ->color('primary')
+                                            ->size(TextSize::Large)
+                                            ->weight(FontWeight::SemiBold)
                                             ->visible(fn (Get $get): bool => FixedTicketPrice::snapshotIsActive($get('../../fixed_price_snapshot'))),
                                         TextInput::make('price')
                                             ->label('Precio')
@@ -2571,7 +2577,7 @@ class TicketForm
             (bool) $get('../../is_round_trip'),
         );
 
-        return $price === null ? null : '$'.number_format($price, 0, ',', '.');
+        return $price === null ? null : '$'.number_format($price, 2, ',', '.');
     }
 
     /**

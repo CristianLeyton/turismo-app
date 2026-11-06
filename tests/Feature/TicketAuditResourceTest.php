@@ -19,6 +19,7 @@ use App\Models\TicketDateChange;
 use App\Models\TicketEdit;
 use App\Models\Trip;
 use App\Models\User;
+use Filament\Actions\ActionGroup;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Livewire\Livewire;
@@ -577,9 +578,22 @@ class TicketAuditResourceTest extends TestCase
 
         $html = $this->mountedActionHtml($component->instance());
 
-        $this->assertStringContainsString('fue ELIMINADO', $html);
-        $this->assertStringContainsString('por Admin (admin-audit)', $html, 'Debe identificar quién eliminó el boleto.');
+        $this->assertStringContainsString('Boleto eliminado', $html);
+        $this->assertMatchesRegularExpression('/Eliminado por<\/div> <div[^>]*> Admin <\/div> <div[^>]*>admin-audit<\/div>/', $html, 'Debe identificar quién eliminó el boleto.');
         $this->assertStringContainsString('no pueden restaurarse ni editarse', $html);
+
+        // La eliminación va antes que los datos del boleto, para que no pase desapercibida.
+        $this->assertLessThan(strpos($html, 'Salida actual'), strpos($html, 'Boleto eliminado'));
+    }
+
+    public function test_el_modal_muestra_el_colectivo_una_sola_vez(): void
+    {
+        $this->actingAs($this->admin);
+
+        $ticket = $this->createOneWayTicket();
+        $this->editTicket($ticket);
+
+        $this->assertSame(1, substr_count($this->mountedViewHtml($ticket), 'Colectivo Linea P'));
     }
 
     /**
@@ -594,7 +608,81 @@ class TicketAuditResourceTest extends TestCase
         $schema = $getSchema->invoke($instance);
         $this->assertNotNull($schema, 'La acción montada debe resolver un schema.');
 
-        return $schema->toHtml();
+        // Se compara el texto como lo ve el usuario: el navegador colapsa los
+        // espacios y saltos de línea, así que el formato del Blade no importa.
+        return (string) preg_replace('/\s+/', ' ', $schema->toHtml());
+    }
+
+    private function mountedViewHtml(Ticket $ticket): string
+    {
+        $component = Livewire::test(TicketAuditResource::getPages()['index']->getPage());
+        $component->mountTableAction('ver', $ticket->id);
+
+        return $this->mountedActionHtml($component->instance());
+    }
+
+    public function test_la_accion_ver_tiene_menu_para_celular_y_boton_de_escritorio(): void
+    {
+        $this->actingAs($this->admin);
+
+        $recordActions = collect(
+            Livewire::test(TicketAuditResource::getPages()['index']->getPage())
+                ->instance()
+                ->getTable()
+                ->getRecordActions(),
+        );
+
+        $mobileMenu = $recordActions->first(fn ($action): bool => $action instanceof ActionGroup
+            && str_contains($action->getExtraAttributes()['class'] ?? '', 'md:hidden'));
+
+        $this->assertNotNull($mobileMenu, 'Falta el menú de tres puntitos para celular.');
+        $this->assertSame(['ver'], collect($mobileMenu->getActions())->map(fn ($action): string => $action->getName())->values()->all());
+        $this->assertSame('Ver detalles', collect($mobileMenu->getActions())->first()->getLabel());
+
+        $desktop = $recordActions->first(fn ($action): bool => ! $action instanceof ActionGroup
+            && str_contains($action->getExtraAttributes()['class'] ?? '', 'hidden md:inline-flex'));
+
+        $this->assertNotNull($desktop, 'Falta el botón de escritorio.');
+        $this->assertSame('Ver detalles', $desktop->getExtraAttributes()['title'] ?? null);
+    }
+
+    public function test_el_modal_de_un_boleto_sin_fecha_muestra_fecha_a_confirmar(): void
+    {
+        $this->actingAs($this->admin);
+
+        $ticket = $this->createOneWayTicket();
+        $ticket->update(['trip_id' => null, 'seat_id' => null]);
+        $this->editTicket($ticket);
+
+        $html = $this->mountedViewHtml($ticket);
+
+        $this->assertStringContainsString('Salida actual:</strong> <span class="font-semibold text-amber-600 dark:text-amber-400">Fecha y horario a confirmar</span>', $html);
+    }
+
+    public function test_el_modal_de_un_tramo_de_vuelta_aclara_que_el_precio_es_el_de_la_ida(): void
+    {
+        $this->actingAs($this->admin);
+
+        $ida = $this->createOneWayTicket();
+        $ida->update(['is_round_trip' => true, 'price' => 15000]);
+
+        $vuelta = $ida->replicate(['share_token', 'active_seat_guard']);
+        $vuelta->fill([
+            'is_return_leg' => true,
+            'price' => 0,
+            'origin_location_id' => $ida->destination_location_id,
+            'destination_location_id' => $ida->origin_location_id,
+            'trip_id' => null,
+            'seat_id' => null,
+        ])->save();
+        $this->editTicket($vuelta);
+
+        $html = $this->mountedViewHtml($vuelta);
+
+        $this->assertStringContainsString('$15.000', $html);
+        $this->assertStringContainsString('Precio del boleto de ida', $html);
+
+        $this->assertStringNotContainsString('Precio del boleto de ida', $this->mountedViewHtml(tap($ida, fn (Ticket $t) => $this->editTicket($t))));
     }
 
     public function test_la_tabla_es_compacta_sin_columnas_de_detalle(): void

@@ -114,7 +114,7 @@
         }
 
         .reschedule-mark {
-            background: #fcecff;
+            background: {{ $brand[50] }};
             border: 2px solid {{ $brand[100] }};
             color: {{ $brand[500] }};
             font-size: 11px;
@@ -161,7 +161,7 @@
             border-radius: 4px;
             border: 1px solid {{ $brand[100] }};
             text-align: center;
-            background-color: #cedaf1;
+            background-color: {{ $brand[50] }};
         }
 
         .price {
@@ -201,7 +201,7 @@
             border-left: 3px solid {{ $brand[500] }};
             font-size: 9px;
             font-weight: bold;
-            color: #6b21a8;
+            color: {{ $brand[800] }};
         }
 
         .pet-warning {
@@ -264,12 +264,12 @@
             @foreach ($pair as $index => $ticket)
                 @php
                     /* Tramo del boleto según su marca: "IDA" para la ida de un
-                       diferido, "VUELTA de N°X" para la vuelta (X = su ida),
-                       sin etiqueta para un boleto sólo de ida. */
+                       diferido, "VUELTA" para la vuelta (sin el N° de la ida,
+                       que confundía al pasajero) y sin etiqueta para un
+                       boleto sólo de ida. */
                     $legLabel = null;
                     if ($ticket->isReturnLeg()) {
-                        $outboundTicket = $ticket->roundTripOutboundTicket();
-                        $legLabel = $outboundTicket ? "VUELTA de N°{$outboundTicket->id}" : 'VUELTA';
+                        $legLabel = 'VUELTA';
                     } elseif ($ticket->is_round_trip) {
                         $legLabel = 'IDA';
                     }
@@ -361,8 +361,8 @@
                                             Al adquirir el pasaje queda en responsabilidad del pasajero
                                             elegir fecha y horario con al menos 24hs de anticipación, dentro de las
                                             cuales no se aplicaran recargos.
-                                            La asignación del mismo se realizará solo si la unidad cuenta con asientos
-                                            disponibles.
+                                            La asignación del mismo se realizará solo si la unidad
+                                            cuenta con asientos disponibles.
                                         </div>
                                     @endif
                                 </div>

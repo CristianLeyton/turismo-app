@@ -60,7 +60,7 @@
 
         @if ($shareUrl)
             <div x-show="canEmbed" x-cloak>
-                <x-filament::button type="button" size="sm" color="info" outlined
+                <x-filament::button type="button" size="sm" color="primary" outlined
                     icon="heroicon-m-clipboard-document"
                     x-on:click="copy({{ \Illuminate\Support\Js::from($shareUrl) }})">
                     <span x-text="copied ? '¡Copiado!' : 'Copiar link'">Copiar link</span>
@@ -84,7 +84,7 @@
             </x-filament::button>
 
             @if ($shareUrl)
-                <x-filament::button type="button" color="info" outlined icon="heroicon-m-clipboard-document"
+                <x-filament::button type="button" color="primary" outlined icon="heroicon-m-clipboard-document"
                     x-on:click="copy({{ \Illuminate\Support\Js::from($shareUrl) }})">
                     <span x-text="copied ? '¡Copiado!' : 'Copiar link'">Copiar link</span>
                 </x-filament::button>

@@ -13,6 +13,7 @@ use App\Models\Setting;
 use App\Models\Ticket;
 use App\Models\Trip;
 use App\Support\DuplicateTicketNotification;
+use App\Support\FixedTicketPrice;
 use App\Support\SaleCutoff;
 use App\Support\ServiceDays;
 use App\Support\TicketDelivery;
@@ -528,6 +529,12 @@ class CreateTicket extends CreateRecord
             return $data;
         }
 
+        // 0.h Precio fijo: el precio lo decide el servidor con la configuración
+        // vigente, nunca el formulario. Si cambió desde que se armó la venta
+        // (montos, o se prendió/apagó), se rechaza para no cobrar un precio
+        // distinto del que se le informó al pasajero.
+        $data = $this->applyFixedPrice($data);
+
         // 0.f Una persona por venta y por viaje: sin DNI repetidos dentro de
         // la venta (adultos y menores) y sin DNI que ya tengan boleto en el
         // viaje de ida o de vuelta. Sin excepciones por permiso. Se repite
@@ -774,6 +781,50 @@ class CreateTicket extends CreateRecord
      * Bloquea los viajes de la venta (ida y vuelta) en orden de id, para que
      * dos ventas de ida y vuelta cruzadas no se bloqueen mutuamente.
      */
+    /**
+     * Con el precio fijo prendido, reemplaza el precio de cada pasajero por el
+     * calculado. Si la configuración no coincide con la que vio el vendedor,
+     * actualiza la fotografía del formulario (así ve los precios nuevos, o el
+     * campo editable si se apagó) y corta la emisión sin crear nada.
+     *
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    private function applyFixedPrice(array $data): array
+    {
+        $current = FixedTicketPrice::snapshot();
+
+        if (($data['fixed_price_snapshot'] ?? null) !== $current
+            && (FixedTicketPrice::isActive() || FixedTicketPrice::snapshotIsActive($data['fixed_price_snapshot'] ?? null))) {
+            $this->data['fixed_price_snapshot'] = $current;
+
+            Notification::make()
+                ->title('No se puede completar la venta')
+                ->icon('heroicon-m-currency-dollar')
+                ->body('Cambió la configuración de precios. Revisá los precios de la venta y volvé a emitir.')
+                ->warning()
+                ->persistent()
+                ->send();
+
+            $this->halt();
+        }
+
+        if (! FixedTicketPrice::isActive()) {
+            return $data;
+        }
+
+        $isRoundTrip = (bool) ($data['is_round_trip'] ?? false);
+
+        foreach (array_keys($data['passengers'] ?? []) as $key) {
+            $data['passengers'][$key]['price'] = FixedTicketPrice::forPassenger(
+                (bool) ($data['passengers'][$key]['travels_with_child'] ?? false),
+                $isRoundTrip,
+            );
+        }
+
+        return $data;
+    }
+
     private function lockSaleTrips(array $data): void
     {
         $tripIds = collect([$data['trip_id'] ?? null, ($data['is_round_trip'] ?? false) ? ($data['return_trip_id'] ?? null) : null])

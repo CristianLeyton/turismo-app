@@ -124,6 +124,7 @@ final class Permissions
                     'sale_selectors' => 'Configurar selectores de origen y destino',
                     'sale_observations' => 'Activar/desactivar observaciones',
                     'ticket_emission' => 'Configurar emisión al finalizar la venta',
+                    'fixed_price' => 'Configurar precio fijo de los boletos',
                 ],
             ],
             'buses' => [

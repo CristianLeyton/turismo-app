@@ -297,13 +297,22 @@ class Ticket extends Model
             return (float) $this->price;
         }
 
-        $outbound = self::where('sale_id', $this->sale_id)
+        $outbound = $this->outboundLeg();
+
+        return $outbound ? (float) $outbound->price : 0;
+    }
+
+    /**
+     * Boleto de ida vigente de este tramo de vuelta (mismo pasajero, misma
+     * venta), que es el que lleva el precio de la ida y vuelta.
+     */
+    public function outboundLeg(): ?self
+    {
+        return self::where('sale_id', $this->sale_id)
             ->where('passenger_id', $this->passenger_id)
             ->where('is_round_trip', true)
             ->where('is_return_leg', false)
             ->first();
-
-        return $outbound ? (float) $outbound->price : 0;
     }
 
     /**

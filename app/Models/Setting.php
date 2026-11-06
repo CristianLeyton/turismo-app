@@ -118,6 +118,19 @@ class Setting extends Model
     public const OBSERVACIONES_VENTA = 'sales.observaciones';
 
     /**
+     * Precio fijo de los boletos. Apagado (default): el vendedor carga el
+     * precio a mano. Prendido: el precio sale de los dos montos de abajo
+     * (ver App\Support\FixedTicketPrice) y nadie lo puede editar.
+     */
+    public const PRECIO_FIJO_ACTIVO = 'sales.precio_fijo_activo';
+
+    /** Precio del boleto por tramo, en pesos enteros. */
+    public const PRECIO_FIJO_BOLETO = 'sales.precio_fijo_boleto';
+
+    /** Seguro para menores por tramo, en pesos enteros (0 = no se cobra). */
+    public const PRECIO_FIJO_SEGURO_MENOR = 'sales.precio_fijo_seguro_menor';
+
+    /**
      * Color principal de la empresa (hex `#RRGGBB`). De él sale la paleta
      * `primary` de los paneles, la página pública del boleto y los PDFs
      * (ver App\Support\BrandPalette).
@@ -221,6 +234,30 @@ class Setting extends Model
     public static function observacionesActivas(): bool
     {
         return self::getBool(self::OBSERVACIONES_VENTA, false);
+    }
+
+    /**
+     * ¿El precio de los boletos se calcula por parámetro? Apagado por defecto.
+     */
+    public static function precioFijoActivo(): bool
+    {
+        return self::getBool(self::PRECIO_FIJO_ACTIVO, false);
+    }
+
+    /**
+     * Precio del boleto por tramo. Sin configurar (o corrupto), 0.
+     */
+    public static function precioFijoBoleto(): int
+    {
+        return max(0, self::getInt(self::PRECIO_FIJO_BOLETO, 0));
+    }
+
+    /**
+     * Seguro para menores por tramo. Sin configurar (o corrupto), 0.
+     */
+    public static function precioFijoSeguroMenor(): int
+    {
+        return max(0, self::getInt(self::PRECIO_FIJO_SEGURO_MENOR, 0));
     }
 
     /**

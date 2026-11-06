@@ -293,6 +293,19 @@ class RolesAndPermissionsTest extends TestCase
         $this->assertTrue(User::factory()->superAdmin()->create()->can('settings.ticket_emission'));
     }
 
+    public function test_permiso_de_precio_fijo_se_registra_sin_asignarse_a_ningun_rol(): void
+    {
+        Permissions::syncToDatabase();
+
+        $this->assertDatabaseHas('permissions', ['name' => 'settings.fixed_price']);
+
+        $this->assertFalse(Role::findByName(Permissions::ROLE_ADMIN)->hasPermissionTo('settings.fixed_price'));
+        $this->assertFalse(Role::findByName(Permissions::ROLE_SELLER)->hasPermissionTo('settings.fixed_price'));
+
+        $this->assertFalse(User::factory()->admin()->create()->can('settings.fixed_price'));
+        $this->assertTrue(User::factory()->superAdmin()->create()->can('settings.fixed_price'));
+    }
+
     public function test_permisos_de_lineas_se_registran_sin_asignarse_a_admin_ni_vendedor(): void
     {
         Permissions::syncToDatabase();

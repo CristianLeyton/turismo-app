@@ -79,7 +79,10 @@ final class Permissions
             ],
             'sales' => [
                 'label' => 'Ventas',
-                'actions' => self::standardActions(),
+                'actions' => [
+                    ...self::standardActions(),
+                    'view_own' => 'Ver mis ventas',
+                ],
             ],
             'trips' => [
                 'label' => 'Viajes',
@@ -247,7 +250,10 @@ final class Permissions
             self::ROLE_SELLER => [
                 // Boletos: ver y vender (no reprogramar ni eliminar).
                 'tickets.view_any', 'tickets.view', 'tickets.create',
-                // Clientes y ventas: sin acceso por defecto (se habilita desde la matriz).
+                // Ventas: solo las propias (página "Mis ventas"). El Administrador
+                // no lo trae, así que solo el Super puede asignarlo a otros roles.
+                'sales.view_own',
+                // Clientes y el resto de ventas: sin acceso por defecto (se habilita desde la matriz).
                 ...self::standardActionsWithoutForceDelete('trips'),
             ],
             default => [],

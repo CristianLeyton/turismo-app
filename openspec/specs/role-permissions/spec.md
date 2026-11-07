@@ -6,7 +6,7 @@ Define qué permisos traen por defecto los roles del sistema (Super Administrado
 ## Requirements
 
 ### Requirement: Permisos por defecto del Administrador
-El rol Administrador SHALL traer por defecto acceso a boletos (ver, vender, reprogramar, eliminar y restaurar), ventas, viajes, pagos, métodos de pago, usuarios, roles, historial de boletos y configuración general. MUST NOT traer por defecto ningún permiso del módulo Clientes ni ningún permiso "Eliminar definitivamente".
+El rol Administrador SHALL traer por defecto acceso a boletos (ver, vender, reprogramar, eliminar y restaurar), ventas, viajes, pagos, métodos de pago, usuarios, roles, historial de boletos y configuración general. MUST NOT traer por defecto ningún permiso del módulo Clientes, ningún permiso "Eliminar definitivamente" ni el permiso "Ver mis ventas".
 
 #### Scenario: Administrador sin clientes
 - **WHEN** se crea un usuario con el rol Administrador en una instalación nueva
@@ -20,16 +20,26 @@ El rol Administrador SHALL traer por defecto acceso a boletos (ver, vender, repr
 - **WHEN** un Administrador con los permisos por defecto abre usuarios, pagos, roles o eliminar y restaurar boletos
 - **THEN** tiene acceso como antes
 
+#### Scenario: Administrador sin "Ver mis ventas"
+- **WHEN** se crea un usuario con el rol Administrador en una instalación nueva
+- **THEN** no tiene el permiso "Ver mis ventas"
+
 ### Requirement: Permisos por defecto del Vendedor
-El rol Vendedor SHALL traer por defecto ver y vender boletos y acceso a viajes. MUST NOT traer por defecto ningún permiso de los módulos Clientes ni Ventas, ni ningún permiso "Eliminar definitivamente".
+El rol Vendedor SHALL traer por defecto ver y vender boletos, acceso a viajes y el permiso "Ver mis ventas". MUST NOT traer por defecto ningún permiso del módulo Clientes, ningún otro permiso del módulo Ventas ni ningún permiso "Eliminar definitivamente".
 
 #### Scenario: Vendedor sin clientes ni ventas
 - **WHEN** se crea un usuario con el rol Vendedor en una instalación nueva
-- **THEN** no tiene ningún permiso de Clientes ni de Ventas
+- **THEN** no tiene ningún permiso de Clientes
+- **AND** del módulo Ventas solo tiene "Ver mis ventas"
 
 #### Scenario: Vendedor sigue vendiendo
 - **WHEN** un Vendedor con los permisos por defecto abre la venta de boletos o el listado de viajes
 - **THEN** puede vender y ver los viajes
+
+#### Scenario: Instalación existente recibe "Ver mis ventas"
+- **GIVEN** un rol Vendedor existente sin el permiso "Ver mis ventas"
+- **WHEN** se corre la sincronización de permisos
+- **THEN** el rol Vendedor recibe "Ver mis ventas" y conserva sus demás permisos
 
 ### Requirement: Sincronización aditiva de permisos
 La sincronización del catálogo de permisos SHALL crear los permisos y roles del sistema que falten y agregarles sus permisos por defecto. MUST NOT quitar permisos ya asignados a ningún rol, aunque ya no estén entre los permisos por defecto.

@@ -116,42 +116,65 @@
 
     {{-- Filtros: rango de fechas + tipo de registro + método de pago --}}
     <div class="rounded-xl border border-gray-200 bg-gray-50 p-4 dark:border-white/10 dark:bg-white/5">
-        <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-            <div class="flex flex-col gap-3">
-                {{-- Rango de fechas --}}
-                <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:gap-3">
-                    <div class="w-full sm:w-auto">
-                        <label for="tickets-from"
-                            class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400">Desde</label>
-                        <input id="tickets-from" type="date" wire:model.live="from"
-                            class="w-full rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 focus:border-primary-500 focus:ring-1 focus:ring-primary-500 dark:border-white/10 dark:bg-gray-900 dark:text-gray-200 sm:w-auto">
-                    </div>
-                    <div class="w-full sm:w-auto">
-                        <label for="tickets-to"
-                            class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400">Hasta</label>
-                        <input id="tickets-to" type="date" wire:model.live="to"
-                            class="w-full rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 focus:border-primary-500 focus:ring-1 focus:ring-primary-500 dark:border-white/10 dark:bg-gray-900 dark:text-gray-200 sm:w-auto">
-                    </div>
+        <div class="flex flex-col gap-4">
+            {{-- Fila 1: rango de fechas + método de pago --}}
+            <div class="grid grid-cols-2 gap-3 lg:grid-cols-[11rem_11rem_minmax(0,18rem)]">
+                <div>
+                    <label for="tickets-from"
+                        class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400">Desde</label>
+                    <input id="tickets-from" type="date" wire:model.live="from"
+                        class="w-full rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 focus:border-primary-500 focus:ring-1 focus:ring-primary-500 dark:border-white/10 dark:bg-gray-900 dark:text-gray-200">
+                </div>
+                <div>
+                    <label for="tickets-to"
+                        class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400">Hasta</label>
+                    <input id="tickets-to" type="date" wire:model.live="to"
+                        class="w-full rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 focus:border-primary-500 focus:ring-1 focus:ring-primary-500 dark:border-white/10 dark:bg-gray-900 dark:text-gray-200">
                 </div>
 
-                {{-- Orden por fecha (debajo de las fechas) --}}
-                <div class="flex flex-wrap items-center gap-2">
-                    <span class="text-xs font-medium text-gray-500 dark:text-gray-400">Orden</span>
-                    <div class="inline-flex max-w-full overflow-x-auto rounded-lg bg-gray-200/80 p-1 dark:bg-white/10">
-                        @foreach (['asc' => '↑ Más antiguas', 'desc' => '↓ Más recientes'] as $value => $label)
-                            <button type="button" wire:click="$set('sort', '{{ $value }}')"
-                                title="{{ $value === 'asc' ? 'Ordenar por fecha: más antiguas primero' : 'Ordenar por fecha: más recientes primero' }}"
-                                class="whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition
-                                    {{ $this->sort === $value
-                                        ? 'bg-white text-gray-900 shadow-sm dark:bg-gray-700 dark:text-white'
-                                        : 'text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white' }}">{{ $label }}</button>
-                        @endforeach
+                {{-- Método de pago: desplegable con casillas (mismo tamaño con 2 o 10 métodos). Ninguno elegido = todos. --}}
+                <div class="relative col-span-2 lg:col-span-1" x-data="{ open: false }"
+                    x-on:click.outside="open = false" x-on:keydown.escape.window="open = false">
+                    <span id="tickets-payment-label"
+                        class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400">Método de pago</span>
+                    <button type="button" x-on:click="open = ! open" x-bind:aria-expanded="open"
+                        aria-haspopup="true" aria-labelledby="tickets-payment-label"
+                        class="flex w-full items-center justify-between gap-2 rounded-lg border bg-white px-3 py-1.5 text-left text-sm transition dark:bg-gray-900
+                            {{ $this->payments === []
+                                ? 'border-gray-300 text-gray-700 dark:border-white/10 dark:text-gray-200'
+                                : 'border-primary-400 text-gray-900 dark:border-primary-400/60 dark:text-white' }}">
+                        <span class="truncate">{{ $this->paymentsButtonLabel() }}</span>
+                        <svg class="h-4 w-4 shrink-0 text-gray-400 transition" x-bind:class="open && 'rotate-180'"
+                            fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+                        </svg>
+                    </button>
+
+                    <div x-cloak x-show="open" x-transition.opacity.duration.100ms
+                        class="absolute z-20 mt-1 w-full min-w-56 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-lg dark:border-white/10 dark:bg-gray-900">
+                        <div class="max-h-64 overflow-y-auto py-1">
+                            @foreach (\App\Models\PaymentMethod::options() as $value => $label)
+                                <label wire:key="payment-filter-{{ $value }}"
+                                    class="flex cursor-pointer items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-white/5">
+                                    <input type="checkbox" wire:model.live="payments" value="{{ $value }}"
+                                        class="h-4 w-4 rounded border-gray-300 accent-primary-600 dark:border-white/20">
+                                    <span>{{ $label }}</span>
+                                </label>
+                            @endforeach
+                        </div>
+                        <div class="border-t border-gray-100 px-3 py-2 dark:border-white/10">
+                            <button type="button" wire:click="$set('payments', [])" x-on:click="open = false"
+                                @disabled($this->payments === [])
+                                class="text-xs font-medium text-gray-500 transition hover:text-gray-800 disabled:cursor-default disabled:opacity-40 dark:text-gray-400 dark:hover:text-gray-200">
+                                Ver todos los métodos
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
 
-            <div class="flex flex-wrap items-center gap-3">
-                {{-- Tipo de registro: ventas y pagos / boletos / pagos --}}
+            {{-- Fila 2: tipo de registro + orden + restablecer --}}
+            <div class="flex flex-wrap items-center gap-x-5 gap-y-3">
                 <div class="flex flex-wrap items-center gap-2">
                     <span class="text-xs font-medium text-gray-500 dark:text-gray-400">Ver</span>
                     <div class="inline-flex max-w-full overflow-x-auto rounded-lg bg-gray-200/80 p-1 dark:bg-white/10">
@@ -165,20 +188,22 @@
                     </div>
                 </div>
 
-                {{-- Método de pago (select nativo: no desborda en mobile y escala con métodos ilimitados) --}}
-                <div class="w-full sm:w-auto">
-                    <label for="tickets-payment"
-                        class="mb-1 text-xs font-medium text-gray-500 dark:text-gray-400">Metodo de pago</label>
-                    <select id="tickets-payment" wire:model.live="payment"
-                        class="w-full rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 focus:border-primary-500 focus:ring-1 focus:ring-primary-500 dark:border-white/10 dark:bg-gray-900 dark:text-gray-200 sm:w-auto">
-                        @foreach (array_merge(['all' => 'Todos'], \App\Models\PaymentMethod::options()) as $value => $label)
-                            <option value="{{ $value }}">{{ $label }}</option>
+                <div class="flex flex-wrap items-center gap-2">
+                    <span class="text-xs font-medium text-gray-500 dark:text-gray-400">Orden</span>
+                    <div class="inline-flex max-w-full overflow-x-auto rounded-lg bg-gray-200/80 p-1 dark:bg-white/10">
+                        @foreach (['asc' => '↑ Más antiguas', 'desc' => '↓ Más recientes'] as $value => $label)
+                            <button type="button" wire:click="$set('sort', '{{ $value }}')"
+                                title="{{ $value === 'asc' ? 'Ordenar por fecha: más antiguas primero' : 'Ordenar por fecha: más recientes primero' }}"
+                                class="whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition
+                                    {{ $this->sort === $value
+                                        ? 'bg-white text-gray-900 shadow-sm dark:bg-gray-700 dark:text-white'
+                                        : 'text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white' }}">{{ $label }}</button>
                         @endforeach
-                    </select>
+                    </div>
                 </div>
 
                 <button type="button" wire:click="resetFilters"
-                    class="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-600 transition hover:bg-gray-100 dark:border-white/10 dark:bg-transparent dark:text-gray-300 dark:hover:bg-white/5">
+                    class="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-600 transition hover:bg-gray-100 sm:ml-auto dark:border-white/10 dark:bg-transparent dark:text-gray-300 dark:hover:bg-white/5">
                     <span aria-hidden="true">↺</span>
                     Restablecer
                 </button>
@@ -215,9 +240,9 @@
                 <span
                     class="font-medium text-gray-700 dark:text-gray-200">{{ $this->to ? \Carbon\Carbon::parse($this->to)->format('d/m/Y') : 'hoy' }}</span>
             @endif
-            @if ($this->payment !== 'all')
+            @if ($this->payments !== [])
                 · solo <span
-                    class="font-medium text-gray-700 dark:text-gray-200">{{ $this->paymentLabel($this->payment) }}</span>
+                    class="font-medium text-gray-700 dark:text-gray-200">{{ $this->selectedPaymentsLabel() }}</span>
             @endif
             <span wire:loading.delay class="text-xs text-gray-400 dark:text-gray-500">Actualizando…</span>
         </p>

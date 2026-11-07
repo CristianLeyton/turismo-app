@@ -4,7 +4,6 @@ namespace App\Livewire;
 
 use App\Models\Payment;
 use App\Models\PaymentMethod;
-use App\Models\Sale;
 use App\Models\Ticket;
 use App\Models\User;
 use App\Services\SalesTicketsExcelService;
@@ -13,20 +12,30 @@ use Carbon\Carbon;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Pagination\LengthAwarePaginator;
-use Illuminate\Support\Collection;
 use Illuminate\Pagination\Paginator;
+use Illuminate\Support\Collection;
+use Livewire\Attributes\Locked;
 use Livewire\Component;
 
 class SalesUserTickets extends Component
 {
+    /**
+     * Vendedor consultado. Bloqueado: el navegador no puede cambiarlo (en
+     * "Mis ventas" permitiría ver los datos de otro vendedor).
+     */
+    #[Locked]
     public int $userId;
 
     public ?string $from = null;
 
     public ?string $to = null;
 
-    /** Método de pago: 'all' o el código del método (resuelto dinámicamente) */
-    public string $payment = 'all';
+    /**
+     * Métodos de pago elegidos (códigos). Vacío = todos.
+     *
+     * @var list<string>
+     */
+    public array $payments = [];
 
     /** Tipo de registro: all (boletos + pagos) | tickets | payments */
     public string $type = 'all';
@@ -63,9 +72,20 @@ class SalesUserTickets extends Component
         return in_array($saleId, $this->expandedSales, true);
     }
 
-    public function mount(int $userId, ?string $from = null, ?string $to = null): void
+    /**
+     * El modal de Ventas pasa el rango y los métodos que tiene filtrados la
+     * tabla; "Mis ventas" pasa el mes actual.
+     *
+     * @param  array<int, string>  $payments
+     */
+    public function mount(int $userId, ?string $from = null, ?string $to = null, array $payments = []): void
     {
         $this->userId = $userId;
+
+        $this->authorizeViewer();
+
+        $this->payments = array_values(array_filter($payments, fn (mixed $code): bool => is_string($code) && $code !== ''));
+
         $this->from = filled($from) ? $from : null;
         $this->to = filled($to) ? $to : null;
     }
@@ -73,9 +93,27 @@ class SalesUserTickets extends Component
     public function updated($property): void
     {
         // Cualquier cambio de filtro o de cantidad por página vuelve a la página 1.
-        if (in_array($property, ['from', 'to', 'payment', 'type', 'perPage'], true)) {
+        if (in_array($property, ['from', 'to', 'type', 'perPage'], true) || str_starts_with((string) $property, 'payments')) {
             $this->page = 1;
         }
+    }
+
+    /**
+     * Con `sales.view` se consulta a cualquier vendedor; con `sales.view_own`,
+     * solo a uno mismo. Se llama al montar y en cada exportación, porque son
+     * peticiones independientes y los permisos pueden cambiar con el detalle
+     * abierto.
+     */
+    protected function authorizeViewer(): void
+    {
+        $viewer = auth()->user();
+
+        $canView = $viewer !== null && (
+            $viewer->can('sales.view')
+            || ($viewer->can('sales.view_own') && $this->userId === $viewer->getKey())
+        );
+
+        abort_unless($canView, 403);
     }
 
     public function getUser(): User
@@ -87,7 +125,7 @@ class SalesUserTickets extends Component
     {
         $this->from = Carbon::now()->startOfMonth()->toDateString();
         $this->to = Carbon::now()->endOfMonth()->toDateString();
-        $this->payment = 'all';
+        $this->payments = [];
         $this->type = 'all';
         $this->sort = 'asc';
         $this->page = 1;
@@ -104,7 +142,7 @@ class SalesUserTickets extends Component
                     ->when(filled($this->from), fn ($q) => $q->where('sale_date', '>=', $this->from))
                     ->when(filled($this->to), fn ($q) => $q->where('sale_date', '<=', Carbon::parse($this->to)->endOfDay()));
             })
-            ->when($this->payment !== 'all', fn ($q) => $q->where('payment_method', $this->payment))
+            ->when($this->payments !== [], fn ($q) => $q->whereIn('payment_method', $this->payments))
             ->with(['origin', 'destination', 'trip.schedule', 'trip.bus', 'passenger', 'seat', 'sale']);
     }
 
@@ -117,7 +155,7 @@ class SalesUserTickets extends Component
             ->where('user_id', $this->userId)
             ->when(filled($this->from), fn ($q) => $q->where('payment_date', '>=', $this->from))
             ->when(filled($this->to), fn ($q) => $q->where('payment_date', '<=', Carbon::parse($this->to)->endOfDay()))
-            ->when($this->payment !== 'all', fn ($q) => $q->where('payment_method', $this->payment));
+            ->when($this->payments !== [], fn ($q) => $q->whereIn('payment_method', $this->payments));
     }
 
     /**
@@ -204,7 +242,7 @@ class SalesUserTickets extends Component
         // boletos FILTRADOS de esa venta (el movimiento de dinero real).
         $this->allRecords
             ->where('type', 'ticket')
-            ->groupBy(fn (array $record) => $record['model']->sale_id ?? ('sale-' . $record['model']->id))
+            ->groupBy(fn (array $record) => $record['model']->sale_id ?? ('sale-'.$record['model']->id))
             ->each(function (Collection $tickets) use ($grouped) {
                 $first = $tickets->first()['model'];
                 $sale = $first->sale;
@@ -335,7 +373,7 @@ class SalesUserTickets extends Component
 
     public function money(float|int $amount): string
     {
-        return '$' . number_format((float) $amount, 0, ',', '.');
+        return '$'.number_format((float) $amount, 0, ',', '.');
     }
 
     /**
@@ -344,6 +382,8 @@ class SalesUserTickets extends Component
      */
     public function exportPdf()
     {
+        $this->authorizeViewer();
+
         $service = app(SalesTicketsPdfService::class);
 
         return $service->downloadPdf(
@@ -361,6 +401,8 @@ class SalesUserTickets extends Component
      */
     public function exportExcel()
     {
+        $this->authorizeViewer();
+
         $service = app(SalesTicketsExcelService::class);
 
         return $service->downloadExcel(
@@ -375,24 +417,61 @@ class SalesUserTickets extends Component
     /**
      * Contexto de filtros usado por las exportaciones.
      *
-     * @return array{from: ?string, to: ?string, payment: string, payment_label: ?string, type: string}
+     * @return array{from: ?string, to: ?string, payments: list<string>, payment_label: ?string, type: string}
      */
     protected function getExportContext(): array
     {
         return [
             'from' => $this->from,
             'to' => $this->to,
-            'payment' => $this->payment,
-            'payment_label' => $this->payment !== 'all' ? PaymentMethod::label($this->payment) : null,
+            'payments' => $this->payments,
+            'payment_label' => $this->selectedPaymentsLabel(),
             'type' => $this->type,
         ];
+    }
+
+    /**
+     * Etiquetas de los métodos elegidos unidas por coma, o null si son todos.
+     */
+    public function selectedPaymentsLabel(): ?string
+    {
+        if ($this->payments === []) {
+            return null;
+        }
+
+        return implode(', ', array_map(fn (string $code): string => PaymentMethod::label($code), $this->payments));
+    }
+
+    /**
+     * Texto del botón del desplegable de métodos: hasta dos se nombran, con
+     * más se cuentan para que el botón no crezca.
+     */
+    public function paymentsButtonLabel(): string
+    {
+        return match (true) {
+            $this->payments === [] => 'Todos los métodos',
+            count($this->payments) <= 2 => (string) $this->selectedPaymentsLabel(),
+            default => count($this->payments).' métodos',
+        };
+    }
+
+    /**
+     * Las casillas del desplegable escriben el array desde el navegador:
+     * se normaliza a una lista de códigos.
+     */
+    public function updatedPayments(): void
+    {
+        $this->payments = array_values(array_unique(array_filter(
+            $this->payments,
+            fn (mixed $code): bool => is_string($code) && $code !== '',
+        )));
     }
 
     protected function getExportFilename(string $extension): string
     {
         $from = $this->from ? Carbon::parse($this->from)->format('d-m-Y') : 'inicio';
         $to = $this->to ? Carbon::parse($this->to)->format('d-m-Y') : 'hoy';
-        $payment = $this->payment !== 'all' ? '_' . $this->payment : '';
+        $payment = $this->payments !== [] ? '_'.implode('-', $this->payments) : '';
         $type = match ($this->type) {
             'tickets' => '_solo_boletos',
             'payments' => '_solo_pagos',

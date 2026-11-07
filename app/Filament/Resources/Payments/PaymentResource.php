@@ -199,7 +199,7 @@ class PaymentResource extends Resource
                     ->label('Método')
                     ->badge()
                     ->visibleFrom('md')
-                    ->color(fn (string $state): string => PaymentMethod::color($state))
+                    ->color(fn (string $state): string|array => PaymentMethod::color($state))
                     ->formatStateUsing(fn (string $state): string => PaymentMethod::label($state))
                     ->sortable()
                     ->alignCenter(),

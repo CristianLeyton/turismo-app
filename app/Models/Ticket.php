@@ -4,11 +4,15 @@ namespace App\Models;
 
 use App\Models\Concerns\HasShareToken;
 use Carbon\Carbon;
+use Closure;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Casts\Attribute;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\ValidationException;
 
@@ -16,6 +20,9 @@ class Ticket extends Model
 {
     use HasShareToken;
     use SoftDeletes;
+
+    /** @var Collection<int, TicketEdit>|null */
+    private ?Collection $visibleEditsCache = null;
 
     protected $fillable = [
         'sale_id',
@@ -211,6 +218,56 @@ class Ticket extends Model
     public function edits(): HasMany
     {
         return $this->hasMany(TicketEdit::class)->orderBy('created_at');
+    }
+
+    /**
+     * Ediciones del historial de este boleto: las propias y las de datos del
+     * pasajero hechas desde su boleto hermano (ver TicketEdit::visibleFor()).
+     * Memorizadas: el detalle las pide varias veces por render.
+     *
+     * @return Collection<int, TicketEdit>
+     */
+    public function visibleEdits(): Collection
+    {
+        return $this->visibleEditsCache ??= TicketEdit::visibleFor($this);
+    }
+
+    /**
+     * Solo boletos con al menos una edición visible; `$constraint` filtra
+     * sobre la misma edición (tabla `visible_edits`).
+     *
+     * @param  Builder<Ticket>  $query
+     * @param  (Closure(QueryBuilder): mixed)|null  $constraint
+     * @return Builder<Ticket>
+     */
+    public function scopeWithVisibleEdits(Builder $query, ?Closure $constraint = null): Builder
+    {
+        $edits = TicketEdit::visibleForOuterTicket();
+
+        if ($constraint) {
+            $constraint($edits);
+        }
+
+        return $query->whereExists($edits);
+    }
+
+    /**
+     * Agrega `last_visible_edit_at`: fecha de la última edición visible del
+     * boleto (null si no tiene), calculada en la misma consulta de la lista.
+     *
+     * @param  Builder<Ticket>  $query
+     * @return Builder<Ticket>
+     */
+    public function scopeWithLastVisibleEditAt(Builder $query): Builder
+    {
+        if ($query->getQuery()->columns === null) {
+            $query->select('tickets.*');
+        }
+
+        return $query->selectSub(
+            TicketEdit::visibleForOuterTicket()->selectRaw('MAX(visible_edits.created_at)'),
+            'last_visible_edit_at',
+        );
     }
 
     /**

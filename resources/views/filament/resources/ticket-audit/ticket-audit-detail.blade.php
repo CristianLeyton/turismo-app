@@ -5,7 +5,8 @@
      * Detalle de auditoría de un boleto (modal "Ver" y página de vista).
      *
      * Mismo vocabulario visual que tickets/infolist-summary-header y
-     * filament/trips/trip-details: tarjeta principal con ruta en fucsia,
+     * filament/trips/trip-details: tarjeta principal con ruta en el color
+     * de la empresa,
      * cifra grande a la derecha, tiles con labels uppercase y cajas de
      * aviso con borde de color.
      *
@@ -20,7 +21,8 @@
     $sale = $record?->sale;
 
     $changes = $record?->dateChanges->sortByDesc('created_at')->values() ?? collect();
-    $edits = $record?->edits ?? collect();
+    // Propias y las del pasajero hechas desde su ida o su vuelta.
+    $edits = $record?->visibleEdits() ?? collect();
 
     $isDeleted = $record?->trashed() ?? false;
     $isRescheduled = $changes->isNotEmpty();
@@ -72,6 +74,47 @@
 
 <div class="space-y-4">
 
+    {{-- ================== ELIMINACIÓN ================== --}}
+    {{-- Va primero: es lo más importante del boleto y no tiene que perderse entre los datos. --}}
+    @if ($isDeleted)
+        <div class="rounded-xl border border-red-300 border-l-4 border-l-red-600 bg-red-50 p-4 dark:border-red-800 dark:border-l-red-500 dark:bg-red-900/20">
+            <div class="flex items-center gap-2">
+                <x-filament::icon icon="heroicon-m-trash" class="h-5 w-5 shrink-0 text-red-600 dark:text-red-400" />
+                <h3 class="text-lg font-bold text-red-800 dark:text-red-200">Boleto eliminado</h3>
+            </div>
+
+            <div class="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                <div class="rounded-lg bg-white/70 p-2.5 dark:bg-white/5">
+                    <div class="text-[11px] uppercase text-red-700 dark:text-red-300">Eliminado por</div>
+                    <div class="text-base font-bold text-gray-900 dark:text-gray-100">
+                        {{ $record->deletedBy?->name ?? 'Sin registrar' }}
+                    </div>
+                    @if ($record->deletedBy?->username)
+                        <div class="text-xs text-gray-500 dark:text-gray-400">{{ $record->deletedBy->username }}</div>
+                    @endif
+                </div>
+
+                <div class="rounded-lg bg-white/70 p-2.5 dark:bg-white/5">
+                    <div class="text-[11px] uppercase text-red-700 dark:text-red-300">Fecha</div>
+                    <div class="text-base font-bold text-gray-900 dark:text-gray-100">
+                        {{ $record->deleted_at?->format('d/m/Y H:i') ?? '—' }}
+                    </div>
+                </div>
+
+                <div class="rounded-lg bg-white/70 p-2.5 dark:bg-white/5">
+                    <div class="text-[11px] uppercase text-red-700 dark:text-red-300">Motivo</div>
+                    <div class="text-sm font-semibold break-words text-gray-900 dark:text-gray-100">
+                        {{ filled($record->deletion_reason) ? $record->deletion_reason : '—' }}
+                    </div>
+                </div>
+            </div>
+
+            <p class="mt-3 text-xs text-red-700 dark:text-red-300">
+                Los boletos eliminados no pueden restaurarse ni editarse desde la auditoría. Esta vista es informativa.
+            </p>
+        </div>
+    @endif
+
     {{-- ================== ENCABEZADO PRINCIPAL ================== --}}
     <div class="rounded-xl border p-5 bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-700">
 
@@ -93,7 +136,12 @@
 
                     <div class="text-sm text-gray-600 dark:text-gray-400">
                         <strong class="font-semibold">Salida actual:</strong>
-                        {{ $tripLabel($trip) }}
+                        {{-- Boleto vendido sin fecha: igual que en el detalle del boleto. --}}
+                        @if ($record?->isPendingDate())
+                            <span class="font-semibold text-amber-600 dark:text-amber-400">Fecha y horario a confirmar</span>
+                        @else
+                            {{ $tripLabel($trip) }}
+                        @endif
                         @if ($trip?->bus)
                             <span class="mx-2">•</span>Colectivo {{ $trip->bus->name }}
                         @endif
@@ -135,6 +183,10 @@
                     <span class="mx-1">•</span>
                     {{ \App\Models\PaymentMethod::label($record?->payment_method) ?? '—' }}
                 </div>
+                {{-- En la vuelta el precio es el de la ida: sin esto parece que cada tramo cuesta eso. --}}
+                @if ($record?->isReturnLeg())
+                    <div class="text-xs text-gray-500 dark:text-gray-400">Precio del boleto de ida</div>
+                @endif
             </div>
         </div>
     </div>
@@ -165,9 +217,6 @@
             <div class="font-semibold text-gray-900 dark:text-gray-100">
                 {{ $trip?->route?->name ?? '—' }}
             </div>
-            <div class="text-xs text-gray-500 dark:text-gray-400">
-                Colectivo {{ $trip?->bus?->name ?? '—' }}
-            </div>
         </div>
     </div>
 
@@ -178,31 +227,6 @@
             class="rounded-lg border-l-4 border-amber-400 bg-amber-50 px-4 py-3 dark:border-amber-500 dark:bg-amber-900/20">
             <div class="text-xs uppercase tracking-wide text-amber-800 dark:text-amber-300">Observación</div>
             <div class="mt-1 text-sm break-words whitespace-pre-line text-gray-900 dark:text-gray-100">{{ $record->observation }}</div>
-        </div>
-    @endif
-
-    {{-- ================== ELIMINACIÓN ================== --}}
-    @if ($isDeleted)
-        <div
-            class="rounded-lg border border-red-300 bg-red-50 dark:bg-red-900/20 dark:border-red-700 px-4 py-3 text-red-800 dark:text-red-200">
-            <div class="text-sm font-semibold">
-                ⚠ Este boleto fue ELIMINADO el {{ $record->deleted_at?->format('d/m/Y H:i') ?? '—' }}
-                @if ($record->deletedBy)
-                    por
-                    {{ $record->deletedBy->name }}{{ $record->deletedBy->username ? ' (' . $record->deletedBy->username . ')' : '' }}
-                @endif
-            </div>
-            <div class="mt-1 text-sm font-semibold">
-                Motivo:
-                @if (filled($record->deletion_reason))
-                    {{ $record->deletion_reason }}
-                @else
-                    <span class="font-normal text-red-700 dark:text-red-300/70">—</span>
-                @endif
-            </div>
-            <div class="mt-1 text-xs">
-                Los boletos eliminados no pueden restaurarse ni editarse desde la auditoría. Esta vista es informativa.
-            </div>
         </div>
     @endif
 
@@ -277,7 +301,7 @@
             </div>
         </div>
 
-        @include('tickets.partials.edit-history', ['edits' => $edits])
+        @include('tickets.partials.edit-history', ['edits' => $edits, 'forTicketId' => $record?->id])
     </div>
 
 </div>

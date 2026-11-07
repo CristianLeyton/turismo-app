@@ -60,7 +60,7 @@ class EditTicketForm
                     ->columns(3)
                     ->columnSpanFull()
                     ->schema([
-                        TextInput::make('last_name')
+                        TicketForm::withoutBrowserAutofill(TextInput::make('last_name'))
                             ->label('Apellido')
                             ->required()
                             ->maxLength(60)
@@ -70,7 +70,7 @@ class EditTicketForm
                                 'max' => 'El apellido no debe superar los :max caracteres.',
                                 'regex' => 'El apellido solo puede tener letras, espacios, apóstrofes, guiones y puntos.',
                             ]),
-                        TextInput::make('first_name')
+                        TicketForm::withoutBrowserAutofill(TextInput::make('first_name'))
                             ->label('Nombre')
                             ->required()
                             ->maxLength(60)
@@ -80,7 +80,7 @@ class EditTicketForm
                                 'max' => 'El nombre no debe superar los :max caracteres.',
                                 'regex' => 'El nombre solo puede tener letras, espacios, apóstrofes, guiones y puntos.',
                             ]),
-                        TextInput::make('dni')
+                        TicketForm::withoutBrowserAutofill(TextInput::make('dni'))
                             ->label('DNI')
                             ->required()
                             ->numeric()
@@ -114,7 +114,7 @@ class EditTicketForm
                                     $fail("El cliente {$banned->nombre} {$banned->apellido} (DNI {$banned->dni}) está baneado y no se le pueden vender/editar boletos.{$reason}");
                                 }
                             }),
-                        TextInput::make('phone_number')
+                        TicketForm::withoutBrowserAutofill(TextInput::make('phone_number'))
                             ->label('Teléfono')
                             ->tel()
                             ->maxLength(30)
@@ -142,7 +142,7 @@ class EditTicketForm
                         Grid::make(3)
                             ->visible(fn (callable $get) => (bool) $get('travels_with_child'))
                             ->schema([
-                                TextInput::make('child_data.last_name')
+                                TicketForm::withoutBrowserAutofill(TextInput::make('child_data.last_name'))
                                     ->label('Apellido del menor')
                                     ->regex('/^[\pL\s\'\-\\.]+$/u')
                                     ->maxLength(60)
@@ -150,7 +150,7 @@ class EditTicketForm
                                         'max' => 'El apellido del menor no debe superar los :max caracteres.',
                                         'regex' => 'El apellido del menor solo puede tener letras, espacios, apóstrofes, guiones y puntos.',
                                     ]),
-                                TextInput::make('child_data.first_name')
+                                TicketForm::withoutBrowserAutofill(TextInput::make('child_data.first_name'))
                                     ->label('Nombre del menor')
                                     ->regex('/^[\pL\s\'\-\\.]+$/u')
                                     ->maxLength(60)
@@ -158,7 +158,7 @@ class EditTicketForm
                                         'max' => 'El nombre del menor no debe superar los :max caracteres.',
                                         'regex' => 'El nombre del menor solo puede tener letras, espacios, apóstrofes, guiones y puntos.',
                                     ]),
-                                TextInput::make('child_data.dni')
+                                TicketForm::withoutBrowserAutofill(TextInput::make('child_data.dni'))
                                     ->label('DNI del menor')
                                     ->numeric()
                                     ->minValue(1000000)
@@ -175,7 +175,7 @@ class EditTicketForm
                         Grid::make(2)
                             ->visible(fn (callable $get) => (bool) $get('travels_with_pets'))
                             ->schema([
-                                TextInput::make('pet_data.pet_names')
+                                TicketForm::withoutBrowserAutofill(TextInput::make('pet_data.pet_names'))
                                     ->label('Nombre(s) de mascota(s)')
                                     ->maxLength(120)
                                     ->validationMessages([
@@ -198,7 +198,7 @@ class EditTicketForm
                     ->columnSpanFull()
                     ->schema([
                         Grid::make(2)->schema([
-                            TextInput::make('price')
+                            TicketForm::withoutBrowserAutofill(TextInput::make('price'))
                                 ->label('Precio')
                                 ->prefix('$')
                                 ->numeric()
@@ -240,7 +240,7 @@ class EditTicketForm
                 Section::make('Motivo de la corrección')
                     ->columnSpanFull()
                     ->schema([
-                        Textarea::make('edit_reason')
+                        TicketForm::withoutBrowserAutofill(Textarea::make('edit_reason'))
                             ->label('Motivo (opcional)')
                             ->maxLength(250)
                             ->columnSpanFull()

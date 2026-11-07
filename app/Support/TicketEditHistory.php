@@ -21,12 +21,14 @@ class TicketEditHistory
 {
     /**
      * Agrupa las filas de `ticket_edits` en ediciones legibles, de la más
-     * reciente a la más antigua.
+     * reciente a la más antigua. Con `$forTicketId`, las ediciones hechas
+     * desde otro boleto (la ida o la vuelta del mismo pasajero) traen en
+     * `from_ticket_id` el número de ese boleto; las propias, null.
      *
      * @param  Collection<int, TicketEdit>|null  $edits
-     * @return Collection<int, array{user: \App\Models\User|null, at: \Illuminate\Support\Carbon|null, reason: string|null, changes: array<int, array{field: string, label: string, from: string, to: string}>}>
+     * @return Collection<int, array{user: \App\Models\User|null, at: \Illuminate\Support\Carbon|null, reason: string|null, from_ticket_id: int|null, changes: array<int, array{field: string, label: string, from: string, to: string}>}>
      */
-    public static function groups(?Collection $edits): Collection
+    public static function groups(?Collection $edits, ?int $forTicketId = null): Collection
     {
         if ($edits === null || $edits->isEmpty()) {
             return collect();
@@ -35,11 +37,12 @@ class TicketEditHistory
         return $edits
             ->sortBy('id')
             ->groupBy(fn (TicketEdit $edit): string => implode('|', [
+                (string) $edit->ticket_id,
                 (string) $edit->user_id,
                 $edit->created_at?->format('Y-m-d H:i:s') ?? '',
                 (string) $edit->reason,
             ]))
-            ->map(function (Collection $rows): array {
+            ->map(function (Collection $rows) use ($forTicketId): array {
                 /** @var TicketEdit $first */
                 $first = $rows->first();
 
@@ -47,6 +50,9 @@ class TicketEditHistory
                     'user' => $first->user,
                     'at' => $first->created_at,
                     'reason' => filled($first->reason) ? (string) $first->reason : null,
+                    'from_ticket_id' => $forTicketId !== null && (int) $first->ticket_id !== $forTicketId
+                        ? (int) $first->ticket_id
+                        : null,
                     'changes' => $rows
                         ->map(fn (TicketEdit $edit): array => [
                             'field' => $edit->field,

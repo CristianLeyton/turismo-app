@@ -89,7 +89,20 @@ class TicketFixedPriceSaleTest extends TestCase
             ->assertSet('data.fixed_price_snapshot', '1|5000|800')
             ->fillForm(['passengers' => [$this->formPassenger(withChild: false)]])
             ->assertFormFieldHidden('passengers.0.price')
-            ->assertSee('$5.000');
+            ->assertSee('$5.000,00');
+    }
+
+    public function test_el_precio_calculado_se_ve_destacado_como_en_el_resumen(): void
+    {
+        $html = Livewire::test(CreateTicket::class)
+            ->fillForm(['passengers' => [$this->formPassenger(withChild: false)]])
+            ->html();
+
+        // Grande, en seminegrita y con el color de la empresa, como en el paso "Resumen".
+        $this->assertMatchesRegularExpression(
+            '/<[^>]*class="[^"]*fi-color-primary[^"]*fi-size-lg[^"]*fi-font-semibold[^"]*"[^>]*>\s*\$5\.000,00/',
+            $html,
+        );
     }
 
     public function test_el_precio_mostrado_se_actualiza_con_el_menor_y_la_ida_y_vuelta(): void

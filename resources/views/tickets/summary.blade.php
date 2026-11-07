@@ -348,7 +348,7 @@
                             </div>
                             @if (filled($passenger['payment_method'] ?? null))
                                 <span
-                                    class="inline-block px-3 py-1 rounded-full text-xs font-semibold bg-gray-100 dark:bg-gray-800 {{ str_contains(\App\Models\PaymentMethod::badgeClasses($passenger['payment_method']), 'emerald') ? 'text-lime-500 dark:text-lime-400' : (str_contains(\App\Models\PaymentMethod::badgeClasses($passenger['payment_method']), 'sky') ? 'text-sky-500 dark:text-sky-400' : 'text-gray-500 dark:text-gray-300') }}">
+                                    class="inline-block px-3 py-1 rounded-full text-xs font-semibold {{ \App\Models\PaymentMethod::badgeClasses($passenger['payment_method']) }}">
                                     {{ \App\Models\PaymentMethod::label($passenger['payment_method']) }}
                                 </span>
                             @else

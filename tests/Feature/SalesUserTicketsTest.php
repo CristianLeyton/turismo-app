@@ -188,6 +188,23 @@ class SalesUserTicketsTest extends TestCase
             ->assertFileDownloaded("Detalle_{$seller->username}_01-11-2026_30-11-2026_cash-transfer.xlsx");
     }
 
+    public function test_un_metodo_personalizado_se_muestra_con_su_color_en_filas_y_desglose(): void
+    {
+        $posnet = \App\Models\PaymentMethod::create(['label' => 'Posnet', 'color' => 'rose', 'is_active' => true]);
+        \Illuminate\Support\Facades\Cache::flush();
+
+        $seller = $this->createSeller();
+        $this->createSaleFor($seller, '2026-11-10 09:00:00', [5000], $posnet->code);
+        $this->actingAs($seller);
+
+        $html = Livewire::test(SalesUserTickets::class, ['userId' => $seller->id, 'from' => '2026-11-01', 'to' => '2026-11-30'])->html();
+
+        $classes = \App\Models\PaymentMethod::PALETTE['rose']['classes'];
+
+        // Una vez en la fila de la venta y otra en el desglose por método.
+        $this->assertGreaterThanOrEqual(2, substr_count($html, $classes));
+    }
+
     public function test_un_usuario_sin_permisos_de_ventas_no_monta_el_detalle(): void
     {
         $seller = $this->createSeller();

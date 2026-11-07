@@ -9,6 +9,7 @@ use Filament\Actions\ActionGroup;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\EditAction;
 use Filament\Actions\RestoreAction;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
@@ -52,7 +53,38 @@ class PaymentMethodResource extends Resource
                         'max' => 'El nombre no debe exceder :max caracteres.',
                     ])
                     ->helperText('El código interno y el orden se generan automáticamente a partir del nombre.'),
+                Select::make('color')
+                    ->label('Color')
+                    ->options(fn (): array => static::colorOptions())
+                    ->allowHtml()
+                    ->native(false)
+                    ->required()
+                    ->in(array_keys(PaymentMethod::PALETTE))
+                    ->default(fn (): string => PaymentMethod::suggestedColor())
+                    ->columnSpanFull()
+                    ->validationMessages([
+                        'required' => 'Elegí un color para el método.',
+                        'in' => 'Elegí un color de la lista.',
+                    ])
+                    ->helperText('Se usa en los badges de ventas, pagos y boletos. Al crear se sugiere uno que no use otro método.'),
             ]);
+    }
+
+    /**
+     * Opciones del campo Color: cada una se muestra como el badge que va a
+     * tener el método. El HTML es fijo (labels y clases de la paleta).
+     *
+     * @return array<string, string>
+     */
+    public static function colorOptions(): array
+    {
+        $options = [];
+
+        foreach (PaymentMethod::PALETTE as $key => $entry) {
+            $options[$key] = '<span class="inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold '.$entry['classes'].'">'.e($entry['label']).'</span>';
+        }
+
+        return $options;
     }
 
     public static function table(Table $table): Table
@@ -66,6 +98,10 @@ class PaymentMethodResource extends Resource
                     ->sortable(), */
                 TextColumn::make('label')
                     ->label('Nombre')
+                    ->badge()
+                    // Desde el color guardado del registro (no desde el cache
+                    // por código): refleja el cambio apenas se edita.
+                    ->color(fn (PaymentMethod $record): string|array => PaymentMethod::paletteEntry($record->getAttributes()['color'] ?? null)['filament'] ?? 'gray')
                     ->sortable(),
                 /*                 TextColumn::make('code')
                     ->label('Código')

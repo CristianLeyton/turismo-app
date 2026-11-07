@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Filament\Support\Colors\Color;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -10,6 +11,30 @@ use Illuminate\Support\Facades\Cache;
 class PaymentMethod extends Model
 {
     use SoftDeletes;
+
+    /**
+     * Paleta de colores de los métodos de pago, en orden de asignación.
+     * Mismo estilo que los badges del panel (fondo suave, texto del tono y
+     * variante oscura). Sin rojo (error), gris (inactivo) ni el color de la
+     * empresa (cambia por instalación). `filament` es null cuando la clave ya
+     * es un color registrado en el panel; si no, la constante de Color.
+     *
+     * @var array<string, array{label: string, filament: ?string, classes: string}>
+     */
+    public const PALETTE = [
+        'success' => ['label' => 'Verde', 'filament' => null, 'classes' => 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400'],
+        'info' => ['label' => 'Celeste', 'filament' => null, 'classes' => 'bg-sky-500/10 text-sky-700 dark:text-sky-400'],
+        'warning' => ['label' => 'Ámbar', 'filament' => null, 'classes' => 'bg-amber-500/10 text-amber-700 dark:text-amber-400'],
+        'teal' => ['label' => 'Verde azulado', 'filament' => 'Teal', 'classes' => 'bg-teal-500/10 text-teal-700 dark:text-teal-400'],
+        'indigo' => ['label' => 'Índigo', 'filament' => 'Indigo', 'classes' => 'bg-indigo-500/10 text-indigo-700 dark:text-indigo-400'],
+        'orange' => ['label' => 'Naranja', 'filament' => 'Orange', 'classes' => 'bg-orange-500/10 text-orange-700 dark:text-orange-400'],
+        'rose' => ['label' => 'Rosa', 'filament' => 'Rose', 'classes' => 'bg-rose-500/10 text-rose-700 dark:text-rose-400'],
+        'cyan' => ['label' => 'Cian', 'filament' => 'Cyan', 'classes' => 'bg-cyan-500/10 text-cyan-700 dark:text-cyan-400'],
+        'lime' => ['label' => 'Lima', 'filament' => 'Lime', 'classes' => 'bg-lime-500/10 text-lime-700 dark:text-lime-400'],
+    ];
+
+    /** Badge para códigos o colores desconocidos. */
+    public const NEUTRAL_BADGE_CLASSES = 'bg-gray-500/10 text-gray-600 dark:text-gray-300';
 
     protected $fillable = [
         'code',
@@ -44,6 +69,14 @@ class PaymentMethod extends Model
         static::creating(function (PaymentMethod $method) {
             $method->code = static::uniqueCodeFrom((string) $method->label);
             $method->sort_order = (int) static::withTrashed()->max('sort_order') + 1;
+
+            // Sin color (o con uno fuera de la paleta): el sugerido, también
+            // para altas que no pasan por el panel.
+            // Se lee el atributo crudo: sin cargar, `$method->color` choca con
+            // el helper estático color() (Eloquent lo toma por una relación).
+            if (static::paletteEntry($method->getAttributes()['color'] ?? null) === null) {
+                $method->color = static::suggestedColor();
+            }
         });
 
         // Inmutabilidad: code y sort_order no cambian nunca tras el alta.
@@ -103,42 +136,88 @@ class PaymentMethod extends Model
     }
 
     /**
-     * Color de badge de Filament para un código.
+     * Color de badge de Filament para un código: el nombre registrado en el
+     * panel (success/info/warning) o el array de tonos de Filament para los
+     * colores que el panel no trae. Gris si el código o su color no existen.
+     *
+     * @return string|array<int, string>
      */
-    public static function color(?string $code): string
+    public static function color(?string $code): string|array
     {
-        if ($code === null || $code === '') {
-            return 'gray';
-        }
-
-        $method = static::resolve($code);
-
-        return $method['color'] ?? 'gray';
+        return static::paletteEntry(static::resolve($code)['color'] ?? null)['filament'] ?? 'gray';
     }
 
     /**
-     * Clases CSS para badges en vistas blade custom (modal, exports).
-     * Mapa fijo de colores de Filament -> clases Tailwind.
+     * Clases Tailwind del badge para vistas Blade (detalle de ventas, boleto,
+     * resumen). Escritas completas en PALETTE para que Tailwind las compile.
      */
     public static function badgeClasses(?string $code): string
     {
-        $map = [
-            'success' => 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400',
-            'info' => 'bg-sky-500/10 text-sky-700 dark:text-sky-400',
-            'warning' => 'bg-amber-500/10 text-amber-700 dark:text-amber-400',
-            'danger' => 'bg-red-500/10 text-red-700 dark:text-red-400',
-            'primary' => 'bg-indigo-500/10 text-indigo-700 dark:text-indigo-400',
-            'gray' => 'bg-gray-500/10 text-gray-600 dark:text-gray-300',
-        ];
+        return static::paletteEntry(static::resolve($code)['color'] ?? null)['classes'] ?? self::NEUTRAL_BADGE_CLASSES;
+    }
 
-        if ($code === null || $code === '') {
-            return $map['gray'];
+    /**
+     * Entrada de la paleta para una clave de color, o null si no pertenece.
+     *
+     * @return array{label: string, filament: string|array<int, string>, classes: string}|null
+     */
+    public static function paletteEntry(?string $color): ?array
+    {
+        if ($color === null || ! array_key_exists($color, self::PALETTE)) {
+            return null;
         }
 
-        $method = static::resolve($code);
-        $color = $method['color'] ?? 'gray';
+        $entry = self::PALETTE[$color];
 
-        return $map[$color] ?? $map['gray'];
+        return [
+            'label' => $entry['label'],
+            'filament' => $entry['filament'] === null ? $color : constant(Color::class.'::'.$entry['filament']),
+            'classes' => $entry['classes'],
+        ];
+    }
+
+    /**
+     * Opciones [clave => label] de la paleta para el formulario.
+     *
+     * @return array<string, string>
+     */
+    public static function paletteOptions(): array
+    {
+        return array_map(fn (array $entry): string => $entry['label'], self::PALETTE);
+    }
+
+    /**
+     * Color que recibe un método nuevo: el primero de la paleta que no usa
+     * ningún método vigente; si están todos en uso, el menos repetido (en
+     * empate, el primero de la paleta).
+     */
+    public static function suggestedColor(): string
+    {
+        $usage = static::query()
+            ->whereIn('color', array_keys(self::PALETTE))
+            ->pluck('color')
+            ->countBy()
+            ->all();
+
+        return static::leastUsedColor($usage);
+    }
+
+    /**
+     * La clave de la paleta con menos usos según el conteo dado.
+     *
+     * @param  array<string, int>  $usage
+     */
+    public static function leastUsedColor(array $usage): string
+    {
+        $best = array_key_first(self::PALETTE);
+
+        foreach (array_keys(self::PALETTE) as $color) {
+            if (($usage[$color] ?? 0) < ($usage[$best] ?? 0)) {
+                $best = $color;
+            }
+        }
+
+        return $best;
     }
 
     /**

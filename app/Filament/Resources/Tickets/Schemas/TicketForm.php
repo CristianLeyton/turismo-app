@@ -27,6 +27,7 @@ use Closure;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\DatePicker;
+use Filament\Forms\Components\Field;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
@@ -1946,7 +1947,7 @@ class TicketForm
                                 // padrón de clientes.
                                 Grid::make(2)
                                     ->schema([
-                                        TextInput::make('dni')
+                                        self::withoutBrowserAutofill(TextInput::make('dni'))
                                             ->label('DNI')
                                             ->required()
                                             // Se valida en el momento: el aviso de cliente
@@ -2043,7 +2044,7 @@ class TicketForm
                                                 'numeric' => 'El DNI debe ser numérico.',
                                                 'digits_between' => 'El DNI debe tener entre 7 y 8 dígitos.',
                                             ]),
-                                        TextInput::make('phone_number')
+                                        self::withoutBrowserAutofill(TextInput::make('phone_number'))
                                             ->label('Teléfono')
                                             ->numeric()
                                             ->rules([
@@ -2060,7 +2061,7 @@ class TicketForm
                                 // pasajero existe en el padrón, ya vienen llenos.
                                 Grid::make(2)
                                     ->schema([
-                                        TextInput::make('last_name')
+                                        self::withoutBrowserAutofill(TextInput::make('last_name'))
                                             ->label('Apellido')
                                             ->minLength(2)
                                             ->maxLength(80)
@@ -2073,7 +2074,7 @@ class TicketForm
                                                 'maxLength' => 'El apellido no puede tener más de :max caracteres.',
                                                 'regex' => 'El apellido solo puede contener letras y espacios.',
                                             ]),
-                                        TextInput::make('first_name')
+                                        self::withoutBrowserAutofill(TextInput::make('first_name'))
                                             ->label('Nombre')
                                             ->minLength(2)
                                             ->maxLength(80)
@@ -2137,7 +2138,7 @@ class TicketForm
                                 // Sección de datos del menor (condicional)
                                 Grid::make(2)
                                     ->schema([
-                                        TextInput::make('child_data.last_name')
+                                        self::withoutBrowserAutofill(TextInput::make('child_data.last_name'))
                                             ->label('Apellido del menor')
                                             ->required()
                                             ->minLength(2)
@@ -2150,7 +2151,7 @@ class TicketForm
                                                 'regex' => 'El apellido solo puede contener letras y espacios.',
                                             ]),
 
-                                        TextInput::make('child_data.first_name')
+                                        self::withoutBrowserAutofill(TextInput::make('child_data.first_name'))
                                             ->label('Nombre del menor')
                                             ->required()
                                             ->minLength(2)
@@ -2163,7 +2164,7 @@ class TicketForm
                                                 'regex' => 'El nombre solo puede contener letras y espacios.',
                                             ]),
 
-                                        TextInput::make('child_data.dni')
+                                        self::withoutBrowserAutofill(TextInput::make('child_data.dni'))
                                             ->label('DNI del menor')
                                             ->required()
                                             ->numeric()
@@ -2183,7 +2184,7 @@ class TicketForm
                                                 'digits_between' => 'El DNI debe tener entre 7 y 8 dígitos.',
                                             ]),
 
-                                        /* TextInput::make('child_data.age')
+                                        /* self::withoutBrowserAutofill(TextInput::make('child_data.age'))
                                             ->label('Edad del menor')
                                             ->numeric()
                                             ->minValue(0)
@@ -2198,7 +2199,7 @@ class TicketForm
                                 // Sección de datos de mascotas (condicional)
                                 Grid::make(2)
                                     ->schema([
-                                        TextInput::make('pet_data.pet_names')
+                                        self::withoutBrowserAutofill(TextInput::make('pet_data.pet_names'))
                                             ->label('Mascotas')
                                             ->required()
                                             ->placeholder('Ej: Perro, Gato, etc')
@@ -2242,7 +2243,7 @@ class TicketForm
                                             ->size(TextSize::Large)
                                             ->weight(FontWeight::SemiBold)
                                             ->visible(fn (Get $get): bool => FixedTicketPrice::snapshotIsActive($get('../../fixed_price_snapshot'))),
-                                        TextInput::make('price')
+                                        self::withoutBrowserAutofill(TextInput::make('price'))
                                             ->label('Precio')
                                             ->prefix('$')
                                             ->visible(fn (Get $get): bool => ! FixedTicketPrice::snapshotIsActive($get('../../fixed_price_snapshot')))
@@ -2267,7 +2268,7 @@ class TicketForm
                                             ->createOptionAction(fn ($action) => $action
                                                 ->visible(fn (): bool => (bool) Auth::user()?->can('payment_methods.create')))
                                             ->createOptionForm([
-                                                TextInput::make('label')
+                                                self::withoutBrowserAutofill(TextInput::make('label'))
                                                     ->label('Nombre')
                                                     ->required()
                                                     ->maxLength(100)
@@ -2315,7 +2316,7 @@ class TicketForm
 
                                         Grid::make(2)
                                             ->schema([
-                                                TextInput::make('apellido')
+                                                self::withoutBrowserAutofill(TextInput::make('apellido'))
                                                     ->label('Apellido')
                                                     ->minLength(2)
                                                     ->maxLength(255)
@@ -2327,7 +2328,7 @@ class TicketForm
                                                         'max' => 'El apellido no debe exceder los :max caracteres.',
                                                         'regex' => 'El apellido solo puede contener letras y espacios.',
                                                     ]),
-                                                TextInput::make('nombre')
+                                                self::withoutBrowserAutofill(TextInput::make('nombre'))
                                                     ->label('Nombre')
                                                     ->minLength(2)
                                                     ->maxLength(255)
@@ -2340,7 +2341,7 @@ class TicketForm
                                                         'regex' => 'El nombre solo puede contener letras y espacios.',
                                                     ]),
 
-                                                TextInput::make('dni')
+                                                self::withoutBrowserAutofill(TextInput::make('dni'))
                                                     ->required()
                                                     ->label('DNI')
                                                     ->unique(table: 'clients', column: 'dni')
@@ -2358,7 +2359,7 @@ class TicketForm
                                                         'numeric' => 'El DNI debe ser un número.',
                                                         'digits_between' => 'El DNI debe tener entre 7 y 8 dígitos.',
                                                     ]),
-                                                TextInput::make('telefono')
+                                                self::withoutBrowserAutofill(TextInput::make('telefono'))
                                                     ->label('Teléfono')
                                                     ->numeric()
                                                     ->minLength(6)
@@ -2581,6 +2582,29 @@ class TicketForm
     }
 
     /**
+     * Le pide al navegador que no autocomplete el campo con valores guardados:
+     * en la venta y en la edición de boletos los datos se escriben a mano o
+     * vienen del padrón (spec ticket-form-autofill). Todos los campos de texto
+     * de esos formularios pasan por acá, así un cambio de técnica se hace en un
+     * solo lugar. Chrome ignora esta indicación en su autocompletado de
+     * direcciones (nombre, apellido, teléfono); se probaron las alternativas
+     * conocidas sin éxito (ver design del cambio venta-sin-autocompletar).
+     *
+     * @template TField of Field
+     *
+     * @param  TField  $field
+     * @return TField
+     */
+    public static function withoutBrowserAutofill(Field $field): Field
+    {
+        if ($field instanceof TextInput) {
+            return $field->autocomplete(false);
+        }
+
+        return $field->extraInputAttributes(['autocomplete' => 'off'], merge: true);
+    }
+
+    /**
      * Campo "Observaciones" (nota interna del boleto, nunca visible para el
      * pasajero). Lo comparten la venta y la edición del boleto, y solo se
      * muestra con el parámetro "Observaciones en la venta" prendido. El contador
@@ -2590,7 +2614,7 @@ class TicketForm
     {
         $max = Ticket::MAX_OBSERVATION_LENGTH;
 
-        return Textarea::make('observation')
+        return self::withoutBrowserAutofill(Textarea::make('observation'))
             ->label('Observaciones')
             ->placeholder('Ej: Baja en el peaje de Metán. Paga el saldo al subir.')
             ->rows(3)

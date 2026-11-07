@@ -21,7 +21,8 @@
     $sale = $record?->sale;
 
     $changes = $record?->dateChanges->sortByDesc('created_at')->values() ?? collect();
-    $edits = $record?->edits ?? collect();
+    // Propias y las del pasajero hechas desde su ida o su vuelta.
+    $edits = $record?->visibleEdits() ?? collect();
 
     $isDeleted = $record?->trashed() ?? false;
     $isRescheduled = $changes->isNotEmpty();
@@ -300,7 +301,7 @@
             </div>
         </div>
 
-        @include('tickets.partials.edit-history', ['edits' => $edits])
+        @include('tickets.partials.edit-history', ['edits' => $edits, 'forTicketId' => $record?->id])
     </div>
 
 </div>

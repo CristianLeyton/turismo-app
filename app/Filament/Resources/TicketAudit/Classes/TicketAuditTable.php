@@ -3,10 +3,15 @@
 namespace App\Filament\Resources\TicketAudit\Classes;
 
 use App\Filament\Resources\TicketAudit\Schemas\TicketAuditDetailSchema;
+use App\Filament\Resources\Tickets\Pages\EditTicket\EditTicketForm;
 use App\Models\Ticket;
+use App\Models\TicketEdit;
+use App\Models\User;
 use Carbon\CarbonInterface;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
+use Filament\Forms\Components\DatePicker;
+use Filament\Forms\Components\Select;
 use Filament\Support\Enums\Width;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
@@ -15,6 +20,7 @@ use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Support\Carbon;
 
 /**
@@ -60,7 +66,10 @@ class TicketAuditTable
                         'dateChanges.user',
                         'edits.user',
                     ])
-                    ->withCount(['dateChanges', 'edits']);
+                    ->withCount(['dateChanges', 'edits'])
+                    // Incluye las ediciones del pasajero hechas desde su ida
+                    // o su vuelta, para el estado y la última actividad.
+                    ->withLastVisibleEditAt();
             })
             ->columns([
                 TextColumn::make('id')
@@ -109,7 +118,13 @@ class TicketAuditTable
                             // CASE WHEN funciona igual en MySQL y SQLite.
                             $eliminado = "COALESCE(tickets.deleted_at, '1970-01-01 00:00:00')";
                             $reprogramado = "COALESCE((SELECT MAX(ticket_date_changes.created_at) FROM ticket_date_changes WHERE ticket_date_changes.ticket_id = tickets.id), '1970-01-01 00:00:00')";
-                            $editado = "COALESCE((SELECT MAX(ticket_edits.created_at) FROM ticket_edits WHERE ticket_edits.ticket_id = tickets.id), '1970-01-01 00:00:00')";
+                            // Última edición visible (propias y del pasajero desde
+                            // su ida o su vuelta): misma regla que el historial.
+                            $lastEdit = TicketEdit::visibleForOuterTicket()->selectRaw('MAX(visible_edits.created_at)');
+                            $editado = "COALESCE(({$lastEdit->toSql()}), '1970-01-01 00:00:00')";
+
+                            // $editado aparece tres veces en el CASE: sus bindings también.
+                            $bindings = [...$lastEdit->getBindings(), ...$lastEdit->getBindings(), ...$lastEdit->getBindings()];
 
                             return $query->orderByRaw("
                                 CASE
@@ -117,7 +132,7 @@ class TicketAuditTable
                                     WHEN {$reprogramado} >= {$editado} THEN {$reprogramado}
                                     ELSE {$editado}
                                 END {$direction}
-                            ");
+                            ", $bindings);
                         }
                     )
                     ->visibleFrom('md'),
@@ -161,7 +176,7 @@ class TicketAuditTable
                         return match ($data['value'] ?? null) {
                             'deleted' => $query->whereNotNull('tickets.deleted_at'),
                             'rescheduled' => $query->whereHas('dateChanges'),
-                            'edited' => $query->whereHas('edits'),
+                            'edited' => $query->withVisibleEdits(),
                             default => $query,
                         };
                     })
@@ -217,6 +232,8 @@ class TicketAuditTable
                             ? ['Pasajero: '.$data['query']]
                             : [];
                     }),
+
+                self::editSearchFilter(),
             ])
             ->filtersLayout(FiltersLayout::AboveContent)
             ->filtersFormColumns(3)
@@ -235,11 +252,123 @@ class TicketAuditTable
         return collect([
             $record->deleted_at,
             $record->dateChanges->max('created_at'),
-            $record->edits->max('created_at'),
+            self::lastVisibleEditAt($record),
         ])
             ->filter()
             ->map(fn ($value) => $value instanceof CarbonInterface ? $value : Carbon::parse($value))
             ->max();
+    }
+
+    /**
+     * Campos que registra el historial de ediciones, en el orden del
+     * formulario de edición.
+     *
+     * @var list<string>
+     */
+    private const EDITABLE_FIELDS = [
+        TicketEdit::FIELD_DNI,
+        TicketEdit::FIELD_LAST_NAME,
+        TicketEdit::FIELD_FIRST_NAME,
+        TicketEdit::FIELD_PHONE,
+        TicketEdit::FIELD_TRAVELS_WITH_CHILD,
+        TicketEdit::FIELD_CHILD_NAME,
+        TicketEdit::FIELD_CHILD_DNI,
+        TicketEdit::FIELD_TRAVELS_WITH_PETS,
+        TicketEdit::FIELD_PET_NAMES,
+        TicketEdit::FIELD_PET_COUNT,
+        TicketEdit::FIELD_PRICE,
+        TicketEdit::FIELD_PAYMENT_METHOD,
+        'observation',
+    ];
+
+    /**
+     * Búsqueda de ediciones: qué campo se cambió, quién lo cambió y cuándo.
+     * Las condiciones elegidas se aplican sobre LA MISMA edición (una sola
+     * subconsulta), así "DNI + Julian + 04/11" no mezcla una edición de DNI
+     * de otro usuario con una de precio de Julian. Cuentan también las
+     * ediciones del pasajero hechas desde su ida o su vuelta.
+     */
+    private static function editSearchFilter(): Filter
+    {
+        return Filter::make('edit_search')
+            ->schema([
+                Select::make('fields')
+                    ->label('Campo cambiado')
+                    ->multiple()
+                    ->options(collect(self::EDITABLE_FIELDS)
+                        ->mapWithKeys(fn (string $field): array => [$field => EditTicketForm::fieldLabel($field)])
+                        ->all())
+                    ->placeholder('Cualquiera'),
+                Select::make('user_id')
+                    ->label('Editado por')
+                    ->options(fn (): array => User::query()->orderBy('name')->pluck('name', 'id')->all())
+                    ->searchable()
+                    ->placeholder('Cualquiera'),
+                DatePicker::make('from')
+                    ->label('Editado desde')
+                    ->displayFormat('d/m/Y'),
+                DatePicker::make('to')
+                    ->label('Editado hasta')
+                    ->displayFormat('d/m/Y'),
+            ])
+            ->columns(['default' => 1, 'sm' => 2, 'lg' => 4])
+            ->columnSpanFull()
+            ->query(function (Builder $query, array $data): Builder {
+                $fields = array_values(array_filter((array) ($data['fields'] ?? [])));
+                $userId = $data['user_id'] ?? null;
+                $from = $data['from'] ?? null;
+                $to = $data['to'] ?? null;
+
+                if ($fields === [] && blank($userId) && blank($from) && blank($to)) {
+                    return $query;
+                }
+
+                return $query->withVisibleEdits(fn (QueryBuilder $edits) => $edits
+                    ->when($fields !== [], fn (QueryBuilder $q) => $q->whereIn('visible_edits.field', $fields))
+                    ->when(filled($userId), fn (QueryBuilder $q) => $q->where('visible_edits.user_id', $userId))
+                    ->when(filled($from), fn (QueryBuilder $q) => $q->whereDate('visible_edits.created_at', '>=', $from))
+                    ->when(filled($to), fn (QueryBuilder $q) => $q->whereDate('visible_edits.created_at', '<=', $to)));
+            })
+            ->indicateUsing(function (array $data): array {
+                $indicators = [];
+                $fields = array_values(array_filter((array) ($data['fields'] ?? [])));
+
+                if ($fields !== []) {
+                    $indicators[] = 'Campo: '.implode(', ', array_map(fn (string $field): string => EditTicketForm::fieldLabel($field), $fields));
+                }
+
+                if (filled($data['user_id'] ?? null)) {
+                    $indicators[] = 'Editado por: '.(User::query()->whereKey($data['user_id'])->value('name') ?? '—');
+                }
+
+                $from = filled($data['from'] ?? null) ? Carbon::parse($data['from'])->format('d/m/Y') : null;
+                $to = filled($data['to'] ?? null) ? Carbon::parse($data['to'])->format('d/m/Y') : null;
+
+                if ($from || $to) {
+                    $indicators[] = match (true) {
+                        $from && $to => "Editado: {$from} – {$to}",
+                        (bool) $from => "Editado desde {$from}",
+                        default => "Editado hasta {$to}",
+                    };
+                }
+
+                return $indicators;
+            });
+    }
+
+    /**
+     * Fecha de la última edición visible del boleto (propias y del pasajero
+     * desde su ida o su vuelta). La tabla la trae calculada en su consulta
+     * (`last_visible_edit_at`); si el registro llegó por otro camino, se
+     * calcula acá.
+     */
+    public static function lastVisibleEditAt(Ticket $record): mixed
+    {
+        if (array_key_exists('last_visible_edit_at', $record->getAttributes())) {
+            return $record->getAttribute('last_visible_edit_at');
+        }
+
+        return $record->visibleEdits()->max('created_at');
     }
 
     /**

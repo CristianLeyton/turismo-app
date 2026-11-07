@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\TicketAudit\Schemas;
 
+use App\Filament\Resources\TicketAudit\Classes\TicketAuditTable;
 use Filament\Infolists\Components\ViewEntry;
 use Illuminate\Database\Eloquent\Model;
 
@@ -43,7 +44,8 @@ class TicketAuditDetailSchema
             $partes[] = 'Reprogramado';
         }
 
-        if ($record->edits->isNotEmpty()) {
+        // Incluye las ediciones del pasajero hechas desde su ida o su vuelta.
+        if (filled(TicketAuditTable::lastVisibleEditAt($record))) {
             $partes[] = 'Editado';
         }
 

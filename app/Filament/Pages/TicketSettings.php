@@ -36,8 +36,9 @@ use UnitEnum;
  * Página Configuración > Parámetros (solo quien tiene `settings.manage`).
  *
  * Agrupa los parámetros del sistema en pestañas según a qué afectan: Venta,
- * Boleto (la sección de emisión solo con `settings.ticket_emission`), Calendario,
- * Seguridad, Clientes (esta solo con el permiso `settings.client_panel`) y
+ * Boleto (la sección de emisión solo con `settings.ticket_emission`), Calendario
+ * (solo con `settings.calendar`), Seguridad (solo con `settings.security`),
+ * Clientes (esta solo con el permiso `settings.client_panel`) y
  * Apariencia (solo con `settings.appearance`). Un parámetro nuevo lleva una constante en
  * Setting, su campo en la pestaña que corresponde y su entrada en TAB_FIELDS
  * (ver la sección "Parámetros" del skill filament-ui).
@@ -76,6 +77,12 @@ class TicketSettings extends Page
 
     /** Permiso para ver y cambiar el precio fijo de los boletos. */
     public const FIXED_PRICE_PERMISSION = 'settings.fixed_price';
+
+    /** Permiso para ver la pestaña Calendario y cambiar los días de servicio y sus excepciones. */
+    public const CALENDAR_PERMISSION = 'settings.calendar';
+
+    /** Permiso para ver la pestaña Seguridad y cambiar la confirmación de contraseña. */
+    public const SECURITY_PERMISSION = 'settings.security';
 
     /** Tope de los montos del precio fijo (mismo máximo que el precio a mano). */
     private const FIXED_PRICE_MAX = 999999;
@@ -217,6 +224,22 @@ class TicketSettings extends Page
         return (bool) Auth::user()?->can(self::TICKET_EMISSION_PERMISSION);
     }
 
+    /**
+     * ¿Quien usa la página puede ver la pestaña Calendario y cambiar los días de servicio?
+     */
+    protected function canManageCalendar(): bool
+    {
+        return (bool) Auth::user()?->can(self::CALENDAR_PERMISSION);
+    }
+
+    /**
+     * ¿Quien usa la página puede ver la pestaña Seguridad y cambiar la confirmación de contraseña?
+     */
+    protected function canManageSecurity(): bool
+    {
+        return (bool) Auth::user()?->can(self::SECURITY_PERMISSION);
+    }
+
     public function form(Schema $schema): Schema
     {
         return $schema
@@ -227,8 +250,10 @@ class TicketSettings extends Page
                     ->tabs([
                         $this->tab('Venta', Heroicon::OutlinedShoppingCart, $this->saleComponents()),
                         $this->tab('Boleto', Heroicon::OutlinedTicket, $this->ticketComponents()),
-                        $this->tab('Calendario', Heroicon::OutlinedCalendarDays, $this->calendarComponents()),
-                        $this->tab('Seguridad', Heroicon::OutlinedLockClosed, $this->securityComponents()),
+                        $this->tab('Calendario', Heroicon::OutlinedCalendarDays, $this->calendarComponents())
+                            ->visible(fn (): bool => $this->canManageCalendar()),
+                        $this->tab('Seguridad', Heroicon::OutlinedLockClosed, $this->securityComponents())
+                            ->visible(fn (): bool => $this->canManageSecurity()),
                         $this->tab('Clientes', Heroicon::OutlinedUsers, $this->clientComponents())
                             ->visible(fn (): bool => $this->canManageClientPanel()),
                         $this->tab('Apariencia', Heroicon::OutlinedSwatch, $this->appearanceComponents())
@@ -687,26 +712,28 @@ class TicketSettings extends Page
     {
         $data = $this->form->getState();
 
+        // Sin el permiso de calendario las excepciones no se reescriben: no se
+        // limpia ninguna vencida y la notificación no debe decir que se quitaron.
+        $canManageCalendar = $this->canManageCalendar();
         $today = today()->format('Y-m-d');
-        $expiredExceptionsCount = count(array_filter(
+        $expiredExceptionsCount = $canManageCalendar ? count(array_filter(
             Setting::serviceExceptions(),
             fn (array $exception): bool => $exception['date'] < $today,
-        ));
+        )) : 0;
 
-        Setting::set(
-            Setting::REQUIRE_PASSWORD_TICKET_DELETE,
-            ($data['require_password_ticket_delete'] ?? false) ? '1' : '0',
-        );
-
-        Setting::set(
-            Setting::REQUIRE_PASSWORD_TICKET_RESCHEDULE,
-            ($data['require_password_ticket_reschedule'] ?? false) ? '1' : '0',
-        );
-
-        Setting::set(
-            Setting::REQUIRE_PASSWORD_TICKET_EDIT,
-            ($data['require_password_ticket_edit'] ?? false) ? '1' : '0',
-        );
+        // Sin el permiso, la pestaña está oculta: la confirmación de contraseña
+        // queda como estaba aunque el pedido la traiga.
+        if ($this->canManageSecurity()) {
+            foreach ([
+                Setting::REQUIRE_PASSWORD_TICKET_DELETE => 'require_password_ticket_delete',
+                Setting::REQUIRE_PASSWORD_TICKET_RESCHEDULE => 'require_password_ticket_reschedule',
+                Setting::REQUIRE_PASSWORD_TICKET_EDIT => 'require_password_ticket_edit',
+            ] as $key => $field) {
+                if (array_key_exists($field, $data)) {
+                    Setting::set($key, $data[$field] ? '1' : '0');
+                }
+            }
+        }
 
         Setting::set(
             Setting::VENTA_LIMITE_HORAS,
@@ -747,21 +774,27 @@ class TicketSettings extends Page
             ->all();
         Setting::set(Setting::CONTACT_LINES, json_encode($contactLines));
 
-        $weekdays = array_values(array_unique(array_map('intval', $data['service_weekdays'] ?? [])));
-        sort($weekdays);
-        Setting::set(Setting::SERVICE_WEEKDAYS, json_encode($weekdays));
+        // Sin el permiso, la pestaña está oculta: el calendario queda como
+        // estaba aunque el pedido lo traiga.
+        if ($canManageCalendar && array_key_exists('service_weekdays', $data)) {
+            $weekdays = array_values(array_unique(array_map('intval', $data['service_weekdays'] ?? [])));
+            sort($weekdays);
+            Setting::set(Setting::SERVICE_WEEKDAYS, json_encode($weekdays));
+        }
 
-        $exceptions = collect($data['service_exceptions'] ?? [])
-            ->filter(fn (array $exception): bool => filled($exception['date'] ?? null))
-            ->map(fn (array $exception): array => [
-                'date' => Carbon::parse($exception['date'])->format('Y-m-d'),
-                'has_service' => (bool) (int) ($exception['has_service'] ?? 0),
-                'reason' => filled($exception['reason'] ?? null) ? trim($exception['reason']) : null,
-            ])
-            ->sortBy('date')
-            ->values()
-            ->all();
-        Setting::set(Setting::SERVICE_EXCEPTIONS, json_encode($exceptions));
+        if ($canManageCalendar && array_key_exists('service_exceptions', $data)) {
+            $exceptions = collect($data['service_exceptions'] ?? [])
+                ->filter(fn (array $exception): bool => filled($exception['date'] ?? null))
+                ->map(fn (array $exception): array => [
+                    'date' => Carbon::parse($exception['date'])->format('Y-m-d'),
+                    'has_service' => (bool) (int) ($exception['has_service'] ?? 0),
+                    'reason' => filled($exception['reason'] ?? null) ? trim($exception['reason']) : null,
+                ])
+                ->sortBy('date')
+                ->values()
+                ->all();
+            Setting::set(Setting::SERVICE_EXCEPTIONS, json_encode($exceptions));
+        }
 
         // Sin el permiso, la pestaña está oculta: el color queda como estaba
         // aunque el pedido lo traiga.

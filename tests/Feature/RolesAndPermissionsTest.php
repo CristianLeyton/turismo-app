@@ -324,6 +324,24 @@ class RolesAndPermissionsTest extends TestCase
         $this->assertTrue(User::factory()->superAdmin()->create()->can('settings.ticket_emission'));
     }
 
+    public function test_permisos_de_calendario_y_seguridad_se_registran_sin_asignarse_a_ningun_rol(): void
+    {
+        Permissions::syncToDatabase();
+
+        $admin = User::factory()->admin()->create();
+        $superAdmin = User::factory()->superAdmin()->create();
+
+        foreach (['settings.calendar', 'settings.security'] as $permission) {
+            $this->assertDatabaseHas('permissions', ['name' => $permission]);
+
+            $this->assertFalse(Role::findByName(Permissions::ROLE_ADMIN)->hasPermissionTo($permission));
+            $this->assertFalse(Role::findByName(Permissions::ROLE_SELLER)->hasPermissionTo($permission));
+
+            $this->assertFalse($admin->can($permission));
+            $this->assertTrue($superAdmin->can($permission));
+        }
+    }
+
     public function test_permiso_de_precio_fijo_se_registra_sin_asignarse_a_ningun_rol(): void
     {
         Permissions::syncToDatabase();

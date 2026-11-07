@@ -250,8 +250,8 @@ La página `app/Filament/Pages/TicketSettings.php` junta los parámetros del sis
 |---|---|---|
 | Venta | Lo que ve y puede hacer el vendedor al vender | Acompañantes, venta fuera de término, selectores de origen y destino (sección con permiso `settings.sale_selectors`) |
 | Boleto | Lo que recibe el pasajero | Emisión al finalizar la venta: PDF automático y mensaje de WhatsApp (sección con permiso `settings.ticket_emission`), líneas de contacto |
-| Calendario | Cuándo hay viajes | Días de la semana, excepciones por fecha |
-| Seguridad | Qué tan protegidas están las acciones | Confirmación de contraseña |
+| Calendario (permiso `settings.calendar`) | Cuándo hay viajes | Días de la semana, excepciones por fecha |
+| Seguridad (permiso `settings.security`) | Qué tan protegidas están las acciones | Confirmación de contraseña |
 | Clientes (permiso `settings.client_panel`) | El panel de pasajeros | Panel de clientes activo |
 | Apariencia (permiso `settings.appearance`) | Cómo se ve la marca de la empresa | Color principal |
 

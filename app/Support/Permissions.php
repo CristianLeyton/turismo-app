@@ -128,6 +128,8 @@ final class Permissions
                     'sale_observations' => 'Activar/desactivar observaciones',
                     'ticket_emission' => 'Configurar emisión al finalizar la venta',
                     'fixed_price' => 'Configurar precio fijo de los boletos',
+                    'calendar' => 'Configurar calendario de servicio',
+                    'security' => 'Configurar confirmación de contraseña',
                 ],
             ],
             'buses' => [

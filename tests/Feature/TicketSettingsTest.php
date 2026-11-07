@@ -44,6 +44,22 @@ class TicketSettingsTest extends TestCase
             'password' => bcrypt('secreto123'),
             'is_admin' => true,
         ]);
+
+        // El admin de estos tests configura Calendario y Seguridad; los casos
+        // sin esos permisos usan adminWithoutTabPermissions().
+        Permissions::syncToDatabase();
+        $this->admin->givePermissionTo([TicketSettings::CALENDAR_PERMISSION, TicketSettings::SECURITY_PERMISSION]);
+    }
+
+    /**
+     * Administrador con los permisos por defecto (sin calendario ni seguridad) más los indicados.
+     */
+    private function adminWithoutTabPermissions(string ...$permissions): User
+    {
+        $admin = User::factory()->admin()->create();
+        $admin->givePermissionTo($permissions);
+
+        return $admin->refresh();
     }
 
     protected function tearDown(): void
@@ -1482,5 +1498,201 @@ class TicketSettingsTest extends TestCase
 
         $component2 = Livewire::test(RescheduleTicket::class, ['record' => $ticket->id]);
         $this->assertStringNotContainsString('Tu contraseña', $component2->html());
+    }
+
+    // ====================== Permisos de Calendario y Seguridad ======================
+
+    public function test_sin_los_permisos_de_pestanas_solo_se_ven_venta_y_boleto(): void
+    {
+        $this->actingAs($this->adminWithoutTabPermissions());
+
+        $component = Livewire::test(TicketSettings::class)
+            ->assertDontSee('Confirmación de contraseña')
+            ->assertDontSee('Días de la semana con servicio');
+
+        $this->assertSame(['Venta', 'Boleto'], array_keys($this->tabBadges($component)));
+    }
+
+    public function test_con_un_solo_permiso_de_pestana_se_ve_solo_esa(): void
+    {
+        $this->actingAs($this->adminWithoutTabPermissions(TicketSettings::SECURITY_PERMISSION));
+
+        $component = Livewire::test(TicketSettings::class)
+            ->assertSee('Confirmación de contraseña')
+            ->assertDontSee('Días de la semana con servicio');
+
+        $this->assertSame(['Venta', 'Boleto', 'Seguridad'], array_keys($this->tabBadges($component)));
+    }
+
+    public function test_sin_calendario_ni_seguridad_clientes_y_apariencia_siguen_en_orden(): void
+    {
+        $this->actingAs($this->adminWithoutTabPermissions(TicketSettings::APPEARANCE_PERMISSION));
+
+        $this->assertSame(
+            ['Venta', 'Boleto', 'Apariencia'],
+            array_keys($this->tabBadges(Livewire::test(TicketSettings::class))),
+        );
+
+        $this->actingAs($this->adminWithoutTabPermissions(
+            TicketSettings::CLIENT_PANEL_PERMISSION,
+            TicketSettings::APPEARANCE_PERMISSION,
+        ));
+
+        $this->assertSame(
+            ['Venta', 'Boleto', 'Clientes', 'Apariencia'],
+            array_keys($this->tabBadges(Livewire::test(TicketSettings::class))),
+        );
+    }
+
+    public function test_con_todos_los_permisos_se_ven_todas_las_pestanas_en_orden(): void
+    {
+        $this->actingAs($this->adminWithoutTabPermissions(
+            TicketSettings::CALENDAR_PERMISSION,
+            TicketSettings::SECURITY_PERMISSION,
+            TicketSettings::CLIENT_PANEL_PERMISSION,
+            TicketSettings::APPEARANCE_PERMISSION,
+        ));
+
+        $this->assertSame(
+            ['Venta', 'Boleto', 'Calendario', 'Seguridad', 'Clientes', 'Apariencia'],
+            array_keys($this->tabBadges(Livewire::test(TicketSettings::class))),
+        );
+    }
+
+    public function test_sin_el_permiso_de_calendario_guardar_conserva_el_calendario(): void
+    {
+        Carbon::setTestNow('2026-11-04');
+        Setting::set(Setting::SERVICE_WEEKDAYS, json_encode([1, 2, 3, 4, 5]));
+        Setting::set(Setting::SERVICE_EXCEPTIONS, json_encode([
+            ['date' => '2026-12-25', 'has_service' => false, 'reason' => 'Navidad'],
+        ]));
+
+        $this->actingAs($this->adminWithoutTabPermissions());
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.venta_limite_horas', 8)
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        Setting::flushCache();
+
+        $this->assertSame(8, Setting::getInt(Setting::VENTA_LIMITE_HORAS));
+        $this->assertSame([1, 2, 3, 4, 5], Setting::serviceWeekdays());
+        $this->assertSame([
+            ['date' => '2026-12-25', 'has_service' => false, 'reason' => 'Navidad'],
+        ], Setting::serviceExceptions());
+    }
+
+    public function test_sin_el_permiso_de_calendario_un_pedido_manipulado_no_cambia_el_calendario(): void
+    {
+        Carbon::setTestNow('2026-11-04');
+        Setting::set(Setting::SERVICE_WEEKDAYS, json_encode([1, 2, 3, 4, 5]));
+        $storedExceptions = Setting::serviceExceptions();
+
+        $this->actingAs($this->adminWithoutTabPermissions());
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.venta_limite_horas', 8)
+            ->set('data.service_weekdays', ['7'])
+            ->set('data.service_exceptions', [
+                'a' => ['date' => '2026-12-25', 'has_service' => '0', 'reason' => 'Navidad'],
+            ])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        Setting::flushCache();
+
+        $this->assertSame(8, Setting::getInt(Setting::VENTA_LIMITE_HORAS));
+        $this->assertSame([1, 2, 3, 4, 5], Setting::serviceWeekdays());
+        $this->assertSame($storedExceptions, Setting::serviceExceptions());
+        $this->assertNull(\App\Support\ServiceDays::exceptionFor('2026-12-25'));
+    }
+
+    public function test_sin_el_permiso_de_calendario_las_excepciones_vencidas_no_se_quitan_ni_se_avisan(): void
+    {
+        Carbon::setTestNow('2026-11-04');
+        Setting::set(Setting::SERVICE_EXCEPTIONS, json_encode([
+            ['date' => '2026-09-13', 'has_service' => true, 'reason' => null],
+        ]));
+
+        $this->actingAs($this->adminWithoutTabPermissions());
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.venta_limite_horas', 6)
+            ->call('save')
+            ->assertHasNoFormErrors()
+            ->assertNotified(
+                \Filament\Notifications\Notification::make()
+                    ->title('Configuración guardada')
+                    ->body('Los cambios se aplicaron correctamente.')
+                    ->success(),
+            );
+
+        Setting::flushCache();
+
+        $this->assertSame([
+            ['date' => '2026-09-13', 'has_service' => true, 'reason' => null],
+        ], Setting::serviceExceptions());
+    }
+
+    public function test_sin_el_permiso_de_seguridad_guardar_conserva_la_confirmacion(): void
+    {
+        Setting::set(Setting::REQUIRE_PASSWORD_TICKET_DELETE, '1');
+
+        $this->actingAs($this->adminWithoutTabPermissions());
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.venta_limite_horas', 8)
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        Setting::flushCache();
+
+        $this->assertSame(8, Setting::getInt(Setting::VENTA_LIMITE_HORAS));
+        $this->assertTrue(Setting::getBool(Setting::REQUIRE_PASSWORD_TICKET_DELETE));
+    }
+
+    public function test_sin_el_permiso_de_seguridad_un_pedido_manipulado_no_cambia_la_confirmacion(): void
+    {
+        Setting::set(Setting::REQUIRE_PASSWORD_TICKET_DELETE, '1');
+        Setting::set(Setting::REQUIRE_PASSWORD_TICKET_RESCHEDULE, '1');
+        Setting::set(Setting::REQUIRE_PASSWORD_TICKET_EDIT, '1');
+
+        $this->actingAs($this->adminWithoutTabPermissions());
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.venta_limite_horas', 8)
+            ->set('data.require_password_ticket_delete', false)
+            ->set('data.require_password_ticket_reschedule', false)
+            ->set('data.require_password_ticket_edit', false)
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        Setting::flushCache();
+
+        $this->assertSame(8, Setting::getInt(Setting::VENTA_LIMITE_HORAS));
+        $this->assertTrue(Setting::getBool(Setting::REQUIRE_PASSWORD_TICKET_DELETE));
+        $this->assertTrue(Setting::getBool(Setting::REQUIRE_PASSWORD_TICKET_RESCHEDULE));
+        $this->assertTrue(Setting::getBool(Setting::REQUIRE_PASSWORD_TICKET_EDIT));
+    }
+
+    public function test_la_pestana_calendario_oculta_no_aporta_errores(): void
+    {
+        $this->actingAs($this->adminWithoutTabPermissions());
+
+        $component = Livewire::test(TicketSettings::class)
+            ->set('data.contact_lines', ['a' => ['name' => 'Orán', 'phone' => 'llamar al 3878']])
+            ->set('data.service_weekdays', [])
+            ->call('save')
+            ->assertHasFormErrors(['contact_lines.a.phone'])
+            ->assertHasNoFormErrors(['service_weekdays'])
+            ->assertNotified(
+                \Filament\Notifications\Notification::make()
+                    ->title('No se guardaron los cambios')
+                    ->body('Revisá los campos marcados en Boleto.')
+                    ->danger(),
+            );
+
+        $this->assertSame(['Venta' => null, 'Boleto' => 1], $this->tabBadges($component));
     }
 }

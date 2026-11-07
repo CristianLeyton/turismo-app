@@ -301,67 +301,7 @@ class TripResource extends Resource
             ->hiddenFilterIndicators()
             ->recordClasses(fn ($record) => (int) $record->tickets_count === 0 ? 'bg-gray-100 opacity-70 dark:bg-gray-800' : '')
             ->recordActions([
-                ViewAction::make('view_details')
-                    ->label('Ver detalles')
-                    ->modalHeading(fn ($record) => "Detalles del viaje N° {$record->id} - {$record->bus->name} - ({$record->trip_date->format('d/m/Y')})")
-                    ->modalContent(function ($record) {
-                        $passengers = $record->getPassengersWithDetails();
-
-                        return view('filament.trips.trip-details', [
-                            'trip' => $record,
-                            'passengers' => $passengers,
-                        ]);
-                    })
-                    ->modalWidth('7xl')
-                    ->extraModalFooterActions(function ($record) {
-                        return [
-                            Action::make('download_pdf_modal')
-                                ->label('PDF')
-                                ->icon('heroicon-m-arrow-down-tray')
-                                ->color('primary')
-                                ->action(function ($record) {
-                                    $service = app(\App\Services\TripPdfService::class);
-                                    $pdf = $service->generateTripDetailsPdf($record);
-
-                                    $filename = 'Viaje_N°'.$record->id.'_'.preg_replace('/[^a-zA-Z0-9_-]/', '_', $record->bus->name).'_'.$record->trip_date->format('d-m-Y').'.pdf';
-
-                                    return response()->streamDownload(function () use ($pdf) {
-                                        echo $pdf->output();
-                                    }, $filename, [
-                                        'Content-Type' => 'application/pdf',
-                                        'Content-Disposition' => 'attachment; filename="'.$filename.'"',
-                                    ]);
-                                })
-                                ->disabled($record->tickets()->count() === 0)
-                                ->extraAttributes([
-                                    'title' => 'Descargar PDF',
-                                ]),
-                            Action::make('download_excel_modal')
-                                ->label('Excel')
-                                ->icon('heroicon-m-arrow-down-tray')
-                                ->color('success')
-                                ->action(function ($record) {
-                                    $service = app(\App\Services\TripExcelService::class);
-                                    $export = $service->generateTripDetailsExcel($record);
-
-                                    $tripId = $record->id;
-                                    $colectivo = str_replace(' ', '_', $record->bus->name);
-                                    $date = $record->trip_date->format('d-m-Y');
-
-                                    return \Maatwebsite\Excel\Facades\Excel::download(
-                                        $export,
-                                        "Viaje_N°{$tripId}_{$colectivo}_{$date}.xlsx"
-                                    );
-                                })
-                                ->disabled($record->tickets()->count() === 0)
-                                ->extraAttributes([
-                                    'title' => 'Descargar Excel',
-                                ]),
-
-                        ];
-                    })
-                    ->disabled(fn ($record) => $record->tickets()->count() === 0)
-                    ->button()
+                self::viewDetailsAction()
                     ->hiddenLabel()
                     ->extraAttributes([
                         'title' => 'Ver detalles',
@@ -417,67 +357,7 @@ class TripResource extends Resource
                     ]),
 
                 ActionGroup::make([
-                    ViewAction::make('view_details')
-                        ->label('Ver detalles')
-                        ->modalHeading(fn ($record) => "Detalles del viaje N° {$record->id} - {$record->bus->name} - ({$record->trip_date->format('d/m/Y')})")
-                        ->modalContent(function ($record) {
-                            $passengers = $record->getPassengersWithDetails();
-
-                            return view('filament.trips.trip-details', [
-                                'trip' => $record,
-                                'passengers' => $passengers,
-                            ]);
-                        })
-                        ->modalWidth('7xl')
-                        ->extraModalFooterActions(function ($record) {
-                            return [
-                                Action::make('download_pdf_modal')
-                                    ->label('PDF')
-                                    ->icon('heroicon-m-arrow-down-tray')
-                                    ->color('primary')
-                                    ->action(function ($record) {
-                                        $service = app(\App\Services\TripPdfService::class);
-                                        $pdf = $service->generateTripDetailsPdf($record);
-
-                                        $filename = 'Viaje_N°'.$record->id.'_'.preg_replace('/[^a-zA-Z0-9_-]/', '_', $record->bus->name).'_'.$record->trip_date->format('d-m-Y').'.pdf';
-
-                                        return response()->streamDownload(function () use ($pdf) {
-                                            echo $pdf->output();
-                                        }, $filename, [
-                                            'Content-Type' => 'application/pdf',
-                                            'Content-Disposition' => 'attachment; filename="'.$filename.'"',
-                                        ]);
-                                    })
-                                    ->disabled($record->tickets()->count() === 0)
-                                    ->extraAttributes([
-                                        'title' => 'Descargar PDF',
-                                    ]),
-                                Action::make('download_excel_modal')
-                                    ->label('Excel')
-                                    ->icon('heroicon-m-arrow-down-tray')
-                                    ->color('success')
-                                    ->action(function ($record) {
-                                        $service = app(\App\Services\TripExcelService::class);
-                                        $export = $service->generateTripDetailsExcel($record);
-
-                                        $tripId = $record->id;
-                                        $colectivo = str_replace(' ', '_', $record->bus->name);
-                                        $date = $record->trip_date->format('d-m-Y');
-
-                                        return \Maatwebsite\Excel\Facades\Excel::download(
-                                            $export,
-                                            "Viaje_N°{$tripId}_{$colectivo}_{$date}.xlsx"
-                                        );
-                                    })
-                                    ->disabled($record->tickets()->count() === 0)
-                                    ->extraAttributes([
-                                        'title' => 'Descargar Excel',
-                                    ]),
-
-                            ];
-                        })
-                        ->disabled(fn ($record) => $record->tickets()->count() === 0)
-                        ->button()
+                    self::viewDetailsAction()
                         ->extraAttributes([
                             'title' => 'Ver detalles',
                         ]),
@@ -535,6 +415,67 @@ class TripResource extends Resource
                     ForceDeleteBulkAction::make(),
                     RestoreBulkAction::make(),
                 ]), */]);
+    }
+
+    /**
+     * Modal "Ver detalles" con la lista de pasajeros para controlar la subida
+     * y bajada. Se usa en el botón de escritorio y en el menú de celular, por
+     * eso vive acá: así las dos variantes no se desincronizan.
+     */
+    public static function viewDetailsAction(): ViewAction
+    {
+        return ViewAction::make('view_details')
+            ->label('Ver detalles')
+            ->modalHeading(fn (Trip $record): string => "Detalles del viaje N° {$record->id} - {$record->bus->name} - ({$record->trip_date->format('d/m/Y')})")
+            ->modalContent(fn (Trip $record) => view('filament.trips.trip-details', [
+                'trip' => $record,
+                'passengers' => $record->getPassengersWithDetails(),
+                'stops' => $record->passengerListStops(),
+            ]))
+            ->modalWidth('7xl')
+            ->extraModalFooterActions(fn (Trip $record): array => [
+                Action::make('download_pdf_modal')
+                    ->label('PDF')
+                    ->icon('heroicon-m-arrow-down-tray')
+                    ->color('primary')
+                    ->action(function (Trip $record) {
+                        $pdf = app(\App\Services\TripPdfService::class)->generateTripDetailsPdf($record);
+
+                        $filename = 'Viaje_N°'.$record->id.'_'.preg_replace('/[^a-zA-Z0-9_-]/', '_', $record->bus->name).'_'.$record->trip_date->format('d-m-Y').'.pdf';
+
+                        return response()->streamDownload(function () use ($pdf) {
+                            echo $pdf->output();
+                        }, $filename, [
+                            'Content-Type' => 'application/pdf',
+                            'Content-Disposition' => 'attachment; filename="'.$filename.'"',
+                        ]);
+                    })
+                    ->disabled($record->tickets()->count() === 0)
+                    ->extraAttributes([
+                        'title' => 'Descargar PDF',
+                    ]),
+                Action::make('download_excel_modal')
+                    ->label('Excel')
+                    ->icon('heroicon-m-arrow-down-tray')
+                    ->color('success')
+                    ->action(function (Trip $record) {
+                        $export = app(\App\Services\TripExcelService::class)->generateTripDetailsExcel($record);
+
+                        $colectivo = str_replace(' ', '_', $record->bus->name);
+
+                        return \Maatwebsite\Excel\Facades\Excel::download(
+                            $export,
+                            "Viaje_N°{$record->id}_{$colectivo}_{$record->trip_date->format('d-m-Y')}.xlsx"
+                        );
+                    })
+                    ->disabled($record->tickets()->count() === 0)
+                    ->extraAttributes([
+                        'title' => 'Descargar Excel',
+                    ]),
+            ])
+            // Sin registro: Filament la evalúa así al abrirla desde ?tableAction=view_details.
+            ->disabled(fn (?Trip $record): bool => $record !== null && $record->tickets()->count() === 0)
+            ->button();
     }
 
     public static function getPages(): array

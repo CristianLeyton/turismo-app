@@ -3,7 +3,6 @@
 namespace App\Services;
 
 use App\Models\Trip;
-use Illuminate\Support\Facades\View;
 use Barryvdh\DomPDF\Facade\Pdf;
 
 class TripPdfService
@@ -15,12 +14,12 @@ class TripPdfService
     {
         // Obtener pasajeros del viaje
         $passengers = $trip->getPassengersWithDetails();
-        
+
         // Obtener información de paradas
         $stops = $trip->route->stops()->with('location')->get();
         $firstStop = $stops->first();
         $lastStop = $stops->last();
-        
+
         // Renderizar vista para PDF con datos simples
         $pdf = Pdf::loadView('pdf.trip-details', [
             'trip' => $trip,
@@ -29,9 +28,10 @@ class TripPdfService
             'lastStop' => $lastStop,
             'stops' => $stops,
             'stopsCount' => $stops->count(),
-            'passengersCount' => $passengers->count()
+            'passengersCount' => $passengers->count(),
+            'passengerStops' => $trip->passengerListStops(),
         ]);
-        
+
         // Configurar PDF similar al de passenger-tickets que funciona
         $pdf->setPaper('A4', 'portrait');
         $pdf->setOptions([
@@ -46,39 +46,39 @@ class TripPdfService
             'unicode' => true,
             'encoding' => 'UTF-8',
         ]);
-        
+
         return $pdf;
     }
-    
+
     /**
      * Descargar PDF del viaje
      */
     public function downloadTripPdf(Trip $trip)
     {
         $pdf = $this->generateTripDetailsPdf($trip);
-        
+
         // Generar nombre del archivo
         $tripId = $trip->id;
         $busName = str_replace(' ', '_', $trip->bus->name);
         $date = $trip->trip_date->format('d-m-Y');
-        $filename = 'Viaje_N°' . $tripId . '_' . $busName . '_' . $date . '.pdf';
-        
+        $filename = 'Viaje_N°'.$tripId.'_'.$busName.'_'.$date.'.pdf';
+
         return $pdf->download($filename);
     }
-    
+
     /**
      * Generar PDF como stream para vista previa
      */
     public function streamTripPdf(Trip $trip)
     {
         $pdf = $this->generateTripDetailsPdf($trip);
-        
+
         // Generar nombre del archivo
         $busName = str_replace(' ', '_', $trip->bus->name);
         $tripId = $trip->id;
         $date = $trip->trip_date->format('d-m-Y');
-         $filename = 'Viaje_N°' . $tripId . '_' . $busName . '_' . $date . '.pdf';
-        
+        $filename = 'Viaje_N°'.$tripId.'_'.$busName.'_'.$date.'.pdf';
+
         return $pdf->stream($filename);
     }
 }

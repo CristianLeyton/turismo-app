@@ -4,16 +4,27 @@ namespace App\Models;
 
 use App\Exceptions\SeatUnavailableException;
 use App\Support\SeatConflict;
+use App\Support\WhatsAppShare;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 class Trip extends Model
 {
     use SoftDeletes;
+
+    /**
+     * Paradas de la lista de pasajeros, memorizadas: la lista, el resumen y
+     * la vista las piden varias veces por render.
+     *
+     * @var Collection<int, array{order: int, location_id: int, name: string}>|null
+     */
+    private ?Collection $passengerListStopsCache = null;
 
     protected $fillable = [
         'route_id',        // Agregar esto
@@ -606,83 +617,175 @@ class Trip extends Model
     }
 
     /**
-     * Obtener todos los pasajeros del viaje (incluyendo menores)
+     * Paradas vigentes del recorrido, numeradas por su posición (1..n) y no
+     * por el stop_order crudo, que puede tener huecos tras eliminar paradas.
+     * Las paradas eliminadas no cuentan: sus pasajeros van "fuera del recorrido".
+     *
+     * @return Collection<int, array{order: int, location_id: int, name: string}>
      */
-    public function getPassengersWithDetails()
+    public function passengerListStops(): Collection
     {
+        if ($this->passengerListStopsCache !== null) {
+            return $this->passengerListStopsCache;
+        }
+
+        $stops = $this->route
+            ? $this->route->stops()->with('location')->get()
+            : collect();
+
+        return $this->passengerListStopsCache = $stops
+            ->unique('location_id')
+            ->values()
+            ->map(fn (RouteStop $stop, int $index): array => [
+                'order' => $index + 1,
+                'location_id' => (int) $stop->location_id,
+                'name' => $stop->location?->name ?? 'Parada',
+            ]);
+    }
+
+    /**
+     * Todos los pasajeros del viaje (adultos, menores y mascotas) en filas
+     * planas, para el modal, el PDF y el Excel. Orden: parada de subida según
+     * el recorrido (los de origen fuera del recorrido al final), asiento como
+     * número y N° de boleto; los acompañantes van debajo de su titular.
+     *
+     * @return Collection<int, array<string, mixed>>
+     */
+    public function getPassengersWithDetails(): Collection
+    {
+        $stopOrders = $this->passengerListStops()->pluck('order', 'location_id');
+
+        $sortKey = fn (Ticket $ticket): array => [
+            $stopOrders->has($ticket->origin_location_id) ? 0 : 1,
+            $stopOrders->get($ticket->origin_location_id, 0),
+            is_numeric($ticket->seat?->seat_number) ? (int) $ticket->seat->seat_number : PHP_INT_MAX,
+            (string) $ticket->seat?->seat_number,
+            $ticket->id,
+        ];
+
         $passengers = collect();
 
-        // Obtener pasajeros adultos de los tickets ordenados por orden de parada y luego por número de asiento
+        // Se ordena en PHP: evita SQL que cambia según el motor y un viaje
+        // tiene como mucho tantos boletos como asientos el colectivo.
         $this->tickets()
-            ->with(['passenger', 'seat', 'origin', 'destination'])
-            ->join('route_stops', function ($join) {
-                $join->on('route_stops.location_id', '=', 'tickets.origin_location_id')
-                    ->where('route_stops.route_id', '=', $this->route_id);
-            })
-            ->leftJoin('seats', 'seats.id', '=', 'tickets.seat_id')
-            ->orderBy('route_stops.stop_order')
-            ->orderBy('seats.seat_number')
-            ->select('tickets.*') // Asegurarnos de solo obtener las columnas de tickets
+            ->with(['passenger.children', 'seat', 'origin', 'destination'])
             ->get()
-            ->each(function ($ticket) use ($passengers) {
-                // Agregar pasajero adulto
+            ->sort(fn (Ticket $a, Ticket $b): int => $sortKey($a) <=> $sortKey($b))
+            ->each(function (Ticket $ticket) use ($passengers, $stopOrders): void {
+                $common = [
+                    'origin' => $ticket->origin?->name ?? 'N/A',
+                    'destination' => $ticket->destination?->name ?? 'N/A',
+                    'origin_location_id' => $ticket->origin_location_id,
+                    'destination_location_id' => $ticket->destination_location_id,
+                    'origin_order' => $stopOrders->get($ticket->origin_location_id),
+                    'destination_order' => $stopOrders->get($ticket->destination_location_id),
+                    'ticket_id' => $ticket->id,
+                    'is_round_trip' => $ticket->is_round_trip,
+                ];
+
+                $children = $ticket->travels_with_child && $ticket->passenger
+                    ? $ticket->passenger->children
+                    : collect();
+                $hasPets = $ticket->travels_with_pets && $ticket->pet_count > 0;
+
+                $companions = $children
+                    ->map(fn (Passenger $child): array => ['type' => 'child', 'name' => $child->full_name])
+                    ->values()
+                    ->all();
+
+                if ($hasPets) {
+                    $companions[] = ['type' => 'pet', 'name' => $ticket->pet_names ?? 'Mascota', 'count' => (int) $ticket->pet_count];
+                }
+
                 if ($ticket->passenger) {
                     $passengers->push([
                         'type' => 'adult',
                         'name' => $ticket->passenger->full_name,
                         'dni' => $ticket->passenger->dni ?? 'N/A',
                         'phone' => $ticket->passenger->phone_number ?? 'N/A',
+                        'phone_e164' => WhatsAppShare::normalizePhone($ticket->passenger->phone_number),
                         'seat_number' => $ticket->seat?->seat_number ?? 'N/A',
-                        'origin' => $ticket->origin?->name ?? 'N/A',
-                        'destination' => $ticket->destination?->name ?? 'N/A',
-                        'ticket_id' => $ticket->id,
                         'price' => $ticket->price,
-                        'is_round_trip' => $ticket->is_round_trip,
                         // Solo en la fila del adulto: el menor y la mascota
                         // son del mismo boleto y no la repiten.
                         'observation' => $ticket->observation,
+                        'companions' => $companions,
+                        'travels_with' => self::travelsWithLabel($companions),
+                        'search' => self::searchText([$ticket->passenger->full_name, $ticket->passenger->dni, $ticket->seat?->seat_number, $ticket->id]),
+                        ...$common,
                     ]);
                 }
 
-                // Si viaja con menor, agregar al menor como pasajero adicional
-                if ($ticket->travels_with_child && $ticket->passenger && $ticket->passenger->children->isNotEmpty()) {
-                    $ticket->passenger->children->each(function ($child) use ($passengers, $ticket) {
-                        $passengers->push([
-                            'type' => 'child',
-                            'name' => $child->full_name,
-                            'dni' => $child->dni ?? 'N/A',
-                            'phone' => $child->phone_number ?? 'N/A',
-                            'seat_number' => 'Acompañante',
-                            'origin' => $ticket->origin?->name ?? 'N/A',
-                            'destination' => $ticket->destination?->name ?? 'N/A',
-                            'ticket_id' => $ticket->id,
-                            'price' => 0, // Los menores no pagan
-                            'is_round_trip' => $ticket->is_round_trip,
-                            'parent_name' => $ticket->passenger->full_name,
-                        ]);
-                    });
-                }
+                $children->each(function (Passenger $child) use ($passengers, $ticket, $common): void {
+                    $passengers->push([
+                        'type' => 'child',
+                        'name' => $child->full_name,
+                        'dni' => $child->dni ?? 'N/A',
+                        'phone' => $child->phone_number ?? 'N/A',
+                        'phone_e164' => WhatsAppShare::normalizePhone($child->phone_number),
+                        'seat_number' => 'Acompañante',
+                        'price' => 0, // Los menores no pagan
+                        'parent_name' => $ticket->passenger->full_name,
+                        'search' => self::searchText([$child->full_name, $child->dni, $ticket->id]),
+                        ...$common,
+                    ]);
+                });
 
-                // Si viaja con mascotas, agregar las mascotas como pasajeros adicionales
-                if ($ticket->travels_with_pets && $ticket->pet_count > 0) {
+                if ($hasPets) {
                     $passengers->push([
                         'type' => 'pet',
                         'name' => $ticket->pet_names ?? 'Mascota',
                         'dni' => 'N/A',
                         'phone' => 'N/A',
+                        'phone_e164' => '',
                         'seat_number' => 'Acompañante',
-                        'origin' => $ticket->origin?->name ?? 'N/A',
-                        'destination' => $ticket->destination?->name ?? 'N/A',
-                        'ticket_id' => $ticket->id,
                         'price' => 0, // Las mascotas no pagan
-                        'is_round_trip' => $ticket->is_round_trip,
-                        'parent_name' => $ticket->passenger->full_name,
+                        'parent_name' => $ticket->passenger?->full_name,
                         'pet_count' => $ticket->pet_count,
                         'pet_names' => $ticket->pet_names,
+                        'search' => self::searchText([$ticket->pet_names, $ticket->id]),
+                        ...$common,
                     ]);
                 }
             });
 
-        return $passengers;
+        return $passengers->values();
+    }
+
+    /**
+     * Texto "Viaja con" del titular: "Gómez Tomás (menor), Firulais (mascota)".
+     *
+     * @param  list<array{type: string, name: string, count?: int}>  $companions
+     */
+    private static function travelsWithLabel(array $companions): ?string
+    {
+        if ($companions === []) {
+            return null;
+        }
+
+        return collect($companions)
+            ->map(function (array $companion): string {
+                if ($companion['type'] === 'child') {
+                    return "{$companion['name']} (menor)";
+                }
+
+                $count = $companion['count'] ?? 1;
+
+                return $count > 1
+                    ? "{$companion['name']} ({$count} mascotas)"
+                    : "{$companion['name']} (mascota)";
+            })
+            ->implode(', ');
+    }
+
+    /**
+     * Texto en minúsculas, sin tildes y con espacios simples para el buscador
+     * del modal (hay nombres cargados con espacios dobles).
+     *
+     * @param  list<string|int|null>  $values
+     */
+    private static function searchText(array $values): string
+    {
+        return Str::squish(Str::lower(Str::ascii(collect($values)->filter(fn ($value): bool => filled($value))->implode(' '))));
     }
 }

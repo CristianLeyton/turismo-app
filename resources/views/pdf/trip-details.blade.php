@@ -160,6 +160,36 @@
             margin-top: 2px;
         }
 
+        /* Separador por parada de subida: la hoja se recorre en el orden del viaje. */
+        .group-row td {
+            background: #f3f4f6;
+            color: {{ $brand[700] }};
+            font-size: 11px;
+            font-weight: bold;
+            padding: 5px 6px;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        .group-count {
+            color: #6b7280;
+            font-weight: normal;
+        }
+
+        .companion-row td {
+            color: #4b5563;
+        }
+
+        .companion-tag {
+            display: inline-block;
+            padding: 1px 4px;
+            border: 1px solid #d1d5db;
+            border-radius: 4px;
+            font-size: 8px;
+            font-weight: bold;
+            text-transform: uppercase;
+            color: #4b5563;
+        }
+
         /* Observación interna: gris para que se distinga también impresa en blanco y negro. */
         .observation {
             background: #eeeeee;
@@ -192,9 +222,11 @@
 <body>
 
     @php
-        $stops = $trip->route->stops()->with('location')->get();
-        $firstStop = $stops->first();
-        $lastStop = $stops->last();
+        // Paradas vigentes numeradas (1..n), las mismas del modal. Quien
+        // renderiza las pasa; si no, se calculan acá.
+        $passengerStops = $passengerStops ?? $trip->passengerListStops();
+        $passengerStopsByOrder = $passengerStops->keyBy('order');
+        $blank = fn ($value): bool => blank($value) || $value === 'N/A';
     @endphp
 
     <!-- ===== ENCABEZADO DEL VIAJE ===== -->
@@ -214,11 +246,11 @@
 
                     <div class="trip-title">
                         <span class="text-brand">
-                            {{ $firstStop?->location->name ?? 'Origen' }}
+                            {{ $passengerStops->first()['name'] ?? 'Origen' }}
                         </span>
                         >
                         <span class="text-brand">
-                            {{ $lastStop?->location->name ?? 'Destino' }}
+                            {{ $passengerStops->last()['name'] ?? 'Destino' }}
                         </span>
                     </div>
 
@@ -313,34 +345,42 @@
                     </tr>
                 </thead>
                 <tbody>
-                    @foreach ($passengers as $passenger)
-                        <tr>
+                    @foreach ($passengers->groupBy(fn (array $row): string => (string) ($row['origin_order'] ?? 'out')) as $groupKey => $groupRows)
+                        @php
+                            $groupStop = $passengerStopsByOrder->get((int) $groupKey);
+                        @endphp
+                        <tr class="group-row">
+                            <td colspan="{{ 6 + ($showPhone ? 1 : 0) + ($showObservation ? 1 : 0) }}">
+                                {{ $groupStop ? $groupStop['order'].'. '.$groupStop['name'] : 'Fuera del recorrido' }}
+                                <span class="group-count">— suben {{ $groupRows->count() }}</span>
+                            </td>
+                        </tr>
+                    @foreach ($groupRows as $passenger)
+                        <tr @class(['companion-row' => $passenger['type'] !== 'adult'])>
                             <td style="text-align: center;">
-                                {{ $passenger['ticket_id'] }}
+                                {{ $passenger['type'] === 'adult' ? $passenger['ticket_id'] : '' }}
                             </td>
                             <td>
-                                {{ $passenger['name'] }}
-                                @if ($passenger['type'] === 'child' && isset($passenger['parent_name']))
-                                    <div class="child-info">
-                                        Viaja con: {{ $passenger['parent_name'] }}
-                                    </div>
-                                @endif
-                                @if ($passenger['type'] === 'pet' && isset($passenger['parent_name']))
-                                    <div class="child-info">
-                                        Mascota de: {{ $passenger['parent_name'] }}
-                                    </div>
-                                    @if (isset($passenger['pet_count']) && $passenger['pet_count'] > 1)
+                                @if ($passenger['type'] === 'adult')
+                                    {{ $passenger['name'] }}
+                                    @if (filled($passenger['travels_with'] ?? null))
                                         <div class="child-info">
-                                            ({{ $passenger['pet_count'] }} mascotas)
+                                            Viaja con: {{ $passenger['travels_with'] }}
                                         </div>
+                                    @endif
+                                @else
+                                    <span class="companion-tag">{{ $passenger['type'] === 'child' ? 'Menor' : 'Mascota' }}</span>
+                                    {{ $passenger['name'] }}
+                                    @if ($passenger['type'] === 'pet' && ($passenger['pet_count'] ?? 0) > 1)
+                                        ({{ $passenger['pet_count'] }} mascotas)
                                     @endif
                                 @endif
                             </td>
 
-                            <td>{{ $passenger['dni'] == 'N/A' ? '-' : $passenger['dni'] }}</td>
+                            <td>{{ $blank($passenger['dni']) ? '—' : $passenger['dni'] }}</td>
 
                             @if ($showPhone)
-                                <td>{{ $passenger['phone'] == 'N/A' ? '-' : $passenger['phone'] }}</td>
+                                <td>{{ $blank($passenger['phone']) ? '—' : $passenger['phone'] }}</td>
                             @endif
 
                             <td style="text-align: center;">
@@ -373,6 +413,7 @@
                                 @endif
                             @endif
                         </tr>
+                    @endforeach
                     @endforeach
                 </tbody>
             </table>

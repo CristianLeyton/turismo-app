@@ -7,6 +7,7 @@ use App\Models\Seat;
 use App\Models\SeatReservation;
 use App\Models\Ticket;
 use App\Models\Trip;
+use App\Support\ClientAdvanceNotice;
 use App\Support\ServiceDays;
 use Carbon\Carbon;
 use Filament\Forms\Components\DatePicker;
@@ -107,9 +108,17 @@ class ClientTicketAssignForm
                 // Días de servicio: siempre filtrado, sin excepción por permiso.
                 ->disabledDates(fn (): array => ServiceDays::disabledTravelDates())
                 ->live()
-                ->afterStateUpdated(function (Set $set) {
+                ->afterStateUpdated(function (Set $set, Get $get, $state) use ($originId, $destinationId) {
                     $set('trip_id', null);
                     $set('seat_ids', []);
+
+                    // Un horario ya elegido que no cumple la anticipación en
+                    // la fecha nueva deja de valer.
+                    $scheduleId = $get('schedule_id');
+
+                    if (filled($scheduleId) && ! array_key_exists((int) $scheduleId, self::scheduleOptions($originId, $destinationId, $state))) {
+                        $set('schedule_id', null);
+                    }
                 })
                 ->validationMessages([
                     'required' => 'Elegí una fecha para tu viaje.',
@@ -122,9 +131,13 @@ class ClientTicketAssignForm
                 ->required()
                 ->live()
                 ->disabled(fn (Get $get) => blank($get('date')))
-                ->placeholder(fn (Get $get) => blank($get('date'))
-                    ? 'Elegí una fecha primero'
-                    : 'Elegí un horario')
+                ->placeholder(fn (Get $get) => match (true) {
+                    blank($get('date')) => 'Elegí una fecha primero',
+                    // El día tiene horarios, pero ninguno con la anticipación exigida.
+                    self::scheduleOptions($originId, $destinationId, $get('date')) === []
+                        && self::scheduleOptions($originId, $destinationId) !== [] => ClientAdvanceNotice::emptyOptionsMessage(),
+                    default => 'Elegí un horario',
+                })
                 ->options(function (Get $get) use ($originId, $destinationId): array {
                     $date = $get('date');
 
@@ -132,7 +145,7 @@ class ClientTicketAssignForm
                         return [];
                     }
 
-                    return self::scheduleOptions($originId, $destinationId);
+                    return self::scheduleOptions($originId, $destinationId, $date);
                 })
                 ->afterStateUpdated(function (Set $set, Get $get, $state) use ($ticket) {
                     $set('seat_ids', []);
@@ -280,8 +293,13 @@ class ClientTicketAssignForm
         return null;
     }
 
-    /** Horarios activos que cubren el segmento del boleto. */
-    private static function scheduleOptions(int $originId, int $destinationId): array
+    /**
+     * Horarios activos que cubren el segmento del boleto. Con una fecha, solo
+     * los que salen con la anticipación mínima de Parámetros > Clientes.
+     *
+     * @return array<int, string>
+     */
+    private static function scheduleOptions(int $originId, int $destinationId, mixed $date = null): array
     {
         return \App\Models\Schedule::query()
             ->bookable()
@@ -290,6 +308,7 @@ class ClientTicketAssignForm
             ->with('route.stops')
             ->get()
             ->filter(fn ($schedule) => $schedule->route->isValidSegment($originId, $destinationId))
+            ->filter(fn (\App\Models\Schedule $schedule) => blank($date) || ClientAdvanceNotice::allows($schedule, $date))
             ->sortBy(fn (\App\Models\Schedule $schedule) => $schedule->display_name, SORT_NATURAL | SORT_FLAG_CASE)
             ->mapWithKeys(fn (\App\Models\Schedule $schedule) => [$schedule->id => $schedule->display_name])
             ->toArray();

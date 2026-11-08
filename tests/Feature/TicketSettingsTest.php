@@ -489,6 +489,125 @@ class TicketSettingsTest extends TestCase
         $this->assertDatabaseMissing('settings', ['key' => Setting::PANEL_CLIENTES_ACTIVO]);
     }
 
+    // ====================== Anticipación mínima de los clientes ======================
+
+    public function test_la_anticipacion_muestra_24_horas_por_defecto(): void
+    {
+        $this->actingAs(User::factory()->superAdmin()->create());
+        Setting::set(Setting::PANEL_CLIENTES_ACTIVO, '1');
+
+        Livewire::test(TicketSettings::class)
+            ->assertSet('data.client_advance_notice_hours', 24)
+            ->assertSee('Anticipación mínima para elegir fecha');
+    }
+
+    public function test_la_anticipacion_se_guarda_incluido_cero(): void
+    {
+        $this->actingAs(User::factory()->superAdmin()->create());
+        Setting::set(Setting::PANEL_CLIENTES_ACTIVO, '1');
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.client_advance_notice_hours', 48)
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $this->assertSame(48, Setting::clientAdvanceNoticeHours());
+
+        Livewire::test(TicketSettings::class)
+            ->assertSet('data.client_advance_notice_hours', 48)
+            ->set('data.client_advance_notice_hours', 0)
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $this->assertSame(0, Setting::clientAdvanceNoticeHours());
+        $this->assertFalse(\App\Support\ClientAdvanceNotice::enabled());
+    }
+
+    /**
+     * @return array<string, array{0: mixed, 1: string}>
+     */
+    public static function invalidAdvanceNoticeValues(): array
+    {
+        return [
+            'texto' => ['abc', 'numeric'],
+            'decimal' => [1.5, 'integer'],
+            'negativo' => [-1, 'min'],
+            'mayor al máximo' => [721, 'max'],
+            'vacío' => [null, 'required'],
+        ];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('invalidAdvanceNoticeValues')]
+    public function test_la_anticipacion_rechaza_valores_invalidos(mixed $value, string $rule): void
+    {
+        $this->actingAs(User::factory()->superAdmin()->create());
+        Setting::set(Setting::PANEL_CLIENTES_ACTIVO, '1');
+        Setting::set(Setting::CLIENT_ADVANCE_NOTICE_HOURS, '48');
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.client_advance_notice_hours', $value)
+            ->call('save')
+            ->assertHasFormErrors(['client_advance_notice_hours' => $rule]);
+
+        $this->assertSame(48, Setting::clientAdvanceNoticeHours(), 'Un valor inválido no se guarda.');
+    }
+
+    public function test_el_error_de_la_anticipacion_esta_en_voseo(): void
+    {
+        $this->actingAs(User::factory()->superAdmin()->create());
+        Setting::set(Setting::PANEL_CLIENTES_ACTIVO, '1');
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.client_advance_notice_hours', null)
+            ->call('save')
+            ->assertSee('Ingresá la cantidad de horas.');
+    }
+
+    public function test_la_anticipacion_no_se_ve_con_el_panel_apagado_y_aparece_al_encenderlo(): void
+    {
+        $this->actingAs(User::factory()->superAdmin()->create());
+
+        Livewire::test(TicketSettings::class)
+            ->assertSet('data.panel_clientes_activo', false)
+            ->assertDontSee('Anticipación mínima para elegir fecha')
+            ->set('data.panel_clientes_activo', true)
+            ->assertSee('Anticipación mínima para elegir fecha');
+    }
+
+    public function test_guardar_con_el_campo_oculto_conserva_el_valor_y_no_lo_valida(): void
+    {
+        $this->actingAs(User::factory()->superAdmin()->create());
+        Setting::set(Setting::CLIENT_ADVANCE_NOTICE_HOURS, '48');
+
+        // Panel apagado: el campo no se muestra, ni se exige ni se pisa.
+        Livewire::test(TicketSettings::class)
+            ->set('data.panel_clientes_activo', false)
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $this->assertSame(48, Setting::clientAdvanceNoticeHours());
+    }
+
+    public function test_sin_el_permiso_un_pedido_manipulado_no_cambia_la_anticipacion(): void
+    {
+        $this->actingAs($this->admin);
+        Setting::set(Setting::CLIENT_ADVANCE_NOTICE_HOURS, '48');
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.panel_clientes_activo', true)
+            ->set('data.client_advance_notice_hours', 2)
+            ->set('data.require_password_ticket_delete', true)
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertSame(48, Setting::clientAdvanceNoticeHours());
+    }
+
+    public function test_la_anticipacion_pertenece_a_la_pestana_clientes(): void
+    {
+        $this->assertContains('client_advance_notice_hours', TicketSettings::TAB_FIELDS['Clientes']);
+    }
+
     // ====================== Apariencia ======================
 
     private function adminWithPermissions(string ...$permissions): User

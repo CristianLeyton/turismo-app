@@ -22,6 +22,7 @@ use App\Services\ClientTicketAssignmentService;
 use Filament\Actions\Testing\TestAction;
 use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
@@ -605,6 +606,118 @@ class ClientPanelTicketsTest extends TestCase
     }
 
     // ------------------------------------------------------------------
+    // Anticipación mínima (Parámetros > Clientes). "Ahora": 01/10/2026 09:00;
+    // el horario del fixture sale a las 08:00.
+    // ------------------------------------------------------------------
+
+    /** Intenta asignar la fecha por el servicio y devuelve el error de `schedule_id`, o null si se asignó. */
+    private function assignOn(array $f, string $date): ?string
+    {
+        try {
+            app(ClientTicketAssignmentService::class)->assign($f['ticket'], [
+                'date' => $date,
+                'schedule_id' => $f['schedule']->id,
+                'seat_id' => Seat::where('bus_id', $f['bus']->id)->where('seat_number', 1)->first()->id,
+            ]);
+        } catch (ValidationException $e) {
+            return $e->errors()['schedule_id'][0] ?? 'otro error: '.implode(' ', Arr::flatten($e->errors()));
+        }
+
+        return null;
+    }
+
+    public function test_el_servidor_rechaza_un_horario_dentro_de_las_24hs(): void
+    {
+        $f = $this->createPendingTicket('11223344');
+        $this->identify('11223344');
+
+        // 02/10 08:00 sale a menos de 24hs de las 09:00 del 01/10.
+        $this->assertSame('Elegí un horario con al menos 24hs de anticipación.', $this->assignOn($f, '2026-10-02'));
+        $this->assertNull($f['ticket']->fresh()->trip_id, 'El boleto sigue sin fecha.');
+    }
+
+    public function test_el_servidor_acepta_un_horario_con_mas_de_24hs(): void
+    {
+        $f = $this->createPendingTicket('11223344');
+        $this->identify('11223344');
+
+        $this->assertNull($this->assignOn($f, '2026-10-03'));
+        $this->assertNotNull($f['ticket']->fresh()->trip_id);
+    }
+
+    public function test_el_mensaje_dice_las_horas_configuradas(): void
+    {
+        Setting::set(Setting::CLIENT_ADVANCE_NOTICE_HOURS, '48');
+
+        $f = $this->createPendingTicket('11223344');
+        $this->identify('11223344');
+
+        // 03/10 08:00 está a menos de 48hs de las 09:00 del 01/10.
+        $this->assertSame('Elegí un horario con al menos 48hs de anticipación.', $this->assignOn($f, '2026-10-03'));
+        $this->assertNull($f['ticket']->fresh()->trip_id);
+    }
+
+    public function test_con_cero_horas_no_se_exige_anticipacion(): void
+    {
+        Setting::set(Setting::CLIENT_ADVANCE_NOTICE_HOURS, '0');
+
+        $f = $this->createPendingTicket('11223344');
+        $this->identify('11223344');
+
+        $this->assertNull($this->assignOn($f, '2026-10-02'));
+    }
+
+    public function test_el_selector_no_ofrece_un_horario_fuera_de_plazo(): void
+    {
+        $f = $this->createPendingTicket('11223344');
+        $this->identify('11223344');
+
+        $data = [
+            'schedule_id' => $f['schedule']->id,
+            'seat_ids' => [Seat::where('bus_id', $f['bus']->id)->where('seat_number', 1)->first()->id],
+        ];
+
+        Livewire::test(MyTickets::class)
+            ->callAction(TestAction::make('asignar_fecha')->table($f['ticket']), data: ['date' => '2026-10-02'] + $data)
+            ->assertHasActionErrors(['schedule_id']);
+
+        $this->assertNull($f['ticket']->fresh()->trip_id);
+
+        Livewire::test(MyTickets::class)
+            ->callAction(TestAction::make('asignar_fecha')->table($f['ticket']), data: ['date' => '2026-10-05'] + $data)
+            ->assertHasNoActionErrors();
+
+        $this->assertNotNull($f['ticket']->fresh()->trip_id);
+    }
+
+    public function test_si_el_dia_no_tiene_horarios_con_anticipacion_el_selector_lo_explica(): void
+    {
+        $f = $this->createPendingTicket('11223344');
+        $this->identify('11223344');
+
+        $component = Livewire::test(MyTickets::class)
+            ->mountTableAction('asignar_fecha', (string) $f['ticket']->id)
+            ->setTableActionData(['date' => '2026-10-02']);
+
+        // El esquema se renderiza fuera de la vista de Livewire: hay que darle $errors.
+        \Illuminate\Support\Facades\View::share('errors', new \Illuminate\Support\ViewErrorBag);
+
+        $render = function () use ($component): string {
+            $schema = (new \ReflectionMethod($component->instance(), 'getMountedActionSchema'))->invoke($component->instance());
+
+            return (string) preg_replace('/\s+/', ' ', $schema->toHtml());
+        };
+
+        $this->assertStringContainsString('No hay horarios con 24hs de anticipación para ese día. Elegí otra fecha.', $render());
+
+        // Un día con horarios en plazo muestra el texto normal.
+        $component->setTableActionData(['date' => '2026-10-05']);
+
+        $this->assertStringNotContainsString('No hay horarios con', $render());
+        $this->assertStringContainsString('Elegí un horario', $render());
+    }
+
+    // ------------------------------------------------------------------
     // Reconfirmación: un segundo paso avisa que la fecha no se podrá cambiar
     // ------------------------------------------------------------------
 
@@ -720,6 +833,31 @@ class ClientPanelTicketsTest extends TestCase
             ->first(fn ($a) => ! $a instanceof \Filament\Actions\ActionGroup && $a->getName() === 'asignar_fecha');
 
         $this->assertSame('Sí, confirmar fecha', $action->getModalSubmitActionLabel());
+    }
+
+    public function test_el_administrador_reprograma_sin_anticipacion_minima(): void
+    {
+        $f = $this->createPendingTicket('11223344');
+        $vendedor = User::factory()->vendedor()->create();
+
+        // Sale en menos de 24hs: el panel de clientes lo rechazaría, la reprogramación del admin no.
+        app(\App\Services\TicketRescheduleService::class)->rescheduleForActor($f['ticket'], [
+            'scope' => 'outbound',
+            'date' => '2026-10-02',
+            'schedule_id' => $f['schedule']->id,
+            'seat_id' => Seat::where('bus_id', $f['bus']->id)->where('seat_number', 1)->first()->id,
+        ], $vendedor->id);
+
+        $this->assertNotNull($f['ticket']->fresh()->trip_id);
+    }
+
+    public function test_un_dia_sin_servicio_sigue_rechazado_ademas_de_la_anticipacion(): void
+    {
+        $f = $this->createPendingTicket('11223344');
+        $this->identify('11223344');
+
+        // Domingo 04/10: sin servicio por defecto. Falla por el día, no por el horario.
+        $this->assertStringStartsWith('otro error:', (string) $this->assignOn($f, '2026-10-04'));
     }
 
     // ------------------------------------------------------------------
@@ -845,6 +983,45 @@ class ClientPanelTicketsTest extends TestCase
             'schedule_id' => $f['scheduleReturn']->id,
             'seat_id' => $seat1->id,
         ]);
+    }
+
+    public function test_la_anticipacion_tambien_se_exige_al_tramo_de_vuelta(): void
+    {
+        $f = $this->createRoundTripFailing();
+        $this->identify($f['client']->dni);
+
+        $seat1 = Seat::where('bus_id', $f['bus']->id)->where('seat_number', 1)->first();
+        $service = app(ClientTicketAssignmentService::class);
+
+        $service->assign($f['outbound'], [
+            'date' => '2026-10-05',
+            'schedule_id' => $f['scheduleOutbound']->id,
+            'seat_id' => $seat1->id,
+        ]);
+
+        // Pasan cuatro días: la vuelta de las 20:00 del 06/10 sale a menos de 24hs.
+        $this->travelTo(\Carbon\Carbon::parse('2026-10-05 21:00:00'));
+
+        try {
+            $service->assign($f['return'], [
+                'date' => '2026-10-06',
+                'schedule_id' => $f['scheduleReturn']->id,
+                'seat_id' => $seat1->id,
+            ]);
+            $this->fail('La vuelta dentro de las 24hs tendría que rechazarse.');
+        } catch (ValidationException $e) {
+            $this->assertSame('Elegí un horario con al menos 24hs de anticipación.', $e->errors()['schedule_id'][0]);
+        }
+
+        $this->assertNull($f['return']->fresh()->trip_id);
+
+        $service->assign($f['return'], [
+            'date' => '2026-10-07',
+            'schedule_id' => $f['scheduleReturn']->id,
+            'seat_id' => $seat1->id,
+        ]);
+
+        $this->assertNotNull($f['return']->fresh()->trip_id);
     }
 
     public function test_los_diferidos_se_identifican_con_su_tramo(): void

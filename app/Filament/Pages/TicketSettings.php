@@ -56,7 +56,7 @@ class TicketSettings extends Page
         'Boleto' => ['descarga_automatica_pdf', 'whatsapp_mensaje', 'contact_lines'],
         'Calendario' => ['service_weekdays', 'service_exceptions'],
         'Seguridad' => ['require_password_ticket_delete', 'require_password_ticket_reschedule', 'require_password_ticket_edit'],
-        'Clientes' => ['panel_clientes_activo'],
+        'Clientes' => ['panel_clientes_activo', 'client_advance_notice_hours'],
         'Apariencia' => ['primary_color'],
     ];
 
@@ -156,6 +156,7 @@ class TicketSettings extends Page
                 fn (array $exception): bool => $exception['date'] >= $today,
             ))),
             'panel_clientes_activo' => Setting::panelClientesActivo(),
+            'client_advance_notice_hours' => Setting::clientAdvanceNoticeHours(),
             'selectores_detallados' => Setting::selectoresDetallados(),
             'observaciones_activas' => Setting::observacionesActivas(),
             'precio_fijo_activo' => Setting::precioFijoActivo(),
@@ -569,7 +570,27 @@ class TicketSettings extends Page
                         ->label('Panel de clientes activo')
                         ->helperText('Desactivado, los pasajeros no pueden entrar a ver sus boletos ni elegir la fecha de un boleto sin fecha.')
                         ->hintIcon(Heroicon::OutlinedInformationCircle, tooltip: 'Activado, el ingreso del panel de administración muestra el acceso para pasajeros y el logo del link del boleto lleva al ingreso de clientes.')
-                        ->default(false),
+                        ->default(false)
+                        ->live(),
+
+                    TextInput::make('client_advance_notice_hours')
+                        ->label('Anticipación mínima para elegir fecha')
+                        ->helperText('Los pasajeros solo pueden elegir horarios que salgan con al menos estas horas de anticipación. 0 = sin mínimo.')
+                        ->hintIcon(Heroicon::OutlinedInformationCircle, tooltip: 'Cuenta desde la salida del origen del servicio. Solo afecta al panel de clientes y es el número que dice el aviso del PDF de los boletos sin fecha.')
+                        ->visible(fn (Get $get): bool => (bool) $get('panel_clientes_activo'))
+                        ->integer()
+                        ->minValue(0)
+                        ->maxValue(Setting::CLIENT_ADVANCE_NOTICE_HOURS_MAX)
+                        ->required()
+                        ->default(Setting::CLIENT_ADVANCE_NOTICE_HOURS_DEFAULT)
+                        ->suffix('horas')
+                        ->validationMessages([
+                            'required' => 'Ingresá la cantidad de horas.',
+                            'numeric' => 'La cantidad de horas tiene que ser un número.',
+                            'integer' => 'La cantidad de horas tiene que ser un número entero.',
+                            'min' => 'La cantidad de horas no puede ser negativa.',
+                            'max' => 'La cantidad de horas no puede ser mayor a :max.',
+                        ]),
                 ]),
         ];
     }
@@ -808,6 +829,15 @@ class TicketSettings extends Page
             Setting::set(
                 Setting::PANEL_CLIENTES_ACTIVO,
                 $data['panel_clientes_activo'] ? '1' : '0',
+            );
+        }
+
+        // Oculto (panel apagado en el formulario) no llega en el estado: el
+        // valor guardado se conserva. Mismo permiso que la pestaña.
+        if ($this->canManageClientPanel() && array_key_exists('client_advance_notice_hours', $data)) {
+            Setting::set(
+                Setting::CLIENT_ADVANCE_NOTICE_HOURS,
+                (string) max(0, (int) $data['client_advance_notice_hours']),
             );
         }
 

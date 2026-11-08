@@ -105,6 +105,17 @@ class Setting extends Model
     public const PANEL_CLIENTES_ACTIVO = 'clients.panel_activo';
 
     /**
+     * Horas de anticipación mínima con las que un cliente puede elegir el
+     * horario de un boleto sin fecha desde su panel. También es el número
+     * que dice el aviso del PDF de un boleto sin fecha. 0 = sin mínimo.
+     */
+    public const CLIENT_ADVANCE_NOTICE_HOURS = 'clients.anticipacion_horas';
+
+    public const CLIENT_ADVANCE_NOTICE_HOURS_DEFAULT = 24;
+
+    public const CLIENT_ADVANCE_NOTICE_HOURS_MAX = 720;
+
+    /**
      * Estilo de los selectores Origen y Destino de la venta. Apagado
      * (default): selects nativos con lista plana. Prendido: select con
      * buscador, paradas numeradas y destinos agrupados por sentido.
@@ -207,6 +218,26 @@ class Setting extends Model
     public static function descargaAutomaticaPdf(): bool
     {
         return self::getBool(self::DESCARGA_AUTOMATICA_PDF, true);
+    }
+
+    /**
+     * Horas de anticipación mínima para que un cliente elija fecha. Un valor
+     * guardado que no es un entero entre 0 y el máximo (datos corruptos)
+     * vuelve al valor por defecto.
+     */
+    public static function clientAdvanceNoticeHours(): int
+    {
+        $value = self::raw(self::CLIENT_ADVANCE_NOTICE_HOURS);
+
+        if ($value === null || ! ctype_digit(trim($value))) {
+            return self::CLIENT_ADVANCE_NOTICE_HOURS_DEFAULT;
+        }
+
+        $hours = (int) $value;
+
+        return $hours <= self::CLIENT_ADVANCE_NOTICE_HOURS_MAX
+            ? $hours
+            : self::CLIENT_ADVANCE_NOTICE_HOURS_DEFAULT;
     }
 
     /**

@@ -3,8 +3,10 @@
 namespace App\Services;
 
 use App\Models\Clients;
+use App\Models\Schedule;
 use App\Models\Ticket;
 use App\Models\Trip;
+use App\Support\ClientAdvanceNotice;
 use App\Support\ClientSession;
 use App\Support\ServiceDays;
 use Carbon\Carbon;
@@ -72,6 +74,14 @@ class ClientTicketAssignmentService
 
         if (blank($data['schedule_id'] ?? null)) {
             throw ValidationException::withMessages(['schedule_id' => 'Elegí un horario.']);
+        }
+
+        // Anticipación mínima (Parámetros > Clientes): sólo aplica al panel de
+        // clientes, no a la reprogramación del administrador.
+        $schedule = Schedule::query()->find((int) $data['schedule_id']);
+
+        if ($schedule === null || ! ClientAdvanceNotice::allows($schedule, $date)) {
+            throw ValidationException::withMessages(['schedule_id' => ClientAdvanceNotice::message()]);
         }
 
         // El form del panel manda el asiento como "seat_ids" (array del selector

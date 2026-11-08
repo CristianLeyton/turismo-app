@@ -93,7 +93,7 @@ class ClientTicketAssignmentService
             'date' => self::formatDate($date),
             'schedule_id' => (int) $data['schedule_id'],
             'seat_id' => $seatId,
-        ], null, allowServiceDayBypass: false);
+        ], null, allowServiceDayBypass: false, clientId: $client->id);
     }
 
     /**

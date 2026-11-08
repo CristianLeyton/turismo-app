@@ -418,8 +418,51 @@ class ClientPanelTicketsTest extends TestCase
         $this->assertNotNull($change);
         $this->assertSame(TicketDateChange::LEG_OUTBOUND, $change->leg);
         $this->assertNull($change->user_id); // asignó un cliente, no un admin
+        $this->assertSame(TicketDateChange::ACTOR_CLIENT, $change->actor_type);
+        $this->assertSame($f['client']->id, $change->client_id);
         $this->assertNull($change->from_trip_id);
         $this->assertSame($ticket->trip_id, $change->to_trip_id);
+    }
+
+    public function test_la_reprogramacion_de_un_vendedor_queda_a_nombre_del_usuario(): void
+    {
+        $f = $this->createPendingTicket('11223344');
+        $seat = Seat::where('bus_id', $f['bus']->id)->where('seat_number', 1)->first();
+        $vendedor = User::factory()->vendedor()->create();
+
+        app(\App\Services\TicketRescheduleService::class)->rescheduleForActor($f['ticket'], [
+            'scope' => 'outbound',
+            'date' => '2026-10-05',
+            'schedule_id' => $f['schedule']->id,
+            'seat_id' => $seat->id,
+        ], $vendedor->id);
+
+        $change = TicketDateChange::query()->where('ticket_id', $f['ticket']->id)->firstOrFail();
+
+        $this->assertSame(TicketDateChange::ACTOR_USER, $change->actor_type);
+        $this->assertSame($vendedor->id, $change->user_id);
+        $this->assertNull($change->client_id);
+    }
+
+    public function test_borrar_del_todo_al_usuario_deja_su_reprogramacion_como_de_usuario(): void
+    {
+        $f = $this->createPendingTicket('11223344');
+        $seat = Seat::where('bus_id', $f['bus']->id)->where('seat_number', 1)->first();
+        $vendedor = User::factory()->vendedor()->create();
+
+        app(\App\Services\TicketRescheduleService::class)->rescheduleForActor($f['ticket'], [
+            'scope' => 'outbound',
+            'date' => '2026-10-05',
+            'schedule_id' => $f['schedule']->id,
+            'seat_id' => $seat->id,
+        ], $vendedor->id);
+
+        $vendedor->forceDelete();
+
+        $change = TicketDateChange::query()->where('ticket_id', $f['ticket']->id)->firstOrFail();
+
+        $this->assertNull($change->user_id);
+        $this->assertSame(TicketDateChange::ACTOR_USER, $change->actor_type, 'No pasa a ser un cambio de cliente.');
     }
 
     public function test_tras_asignar_el_cliente_queda_bloqueado(): void

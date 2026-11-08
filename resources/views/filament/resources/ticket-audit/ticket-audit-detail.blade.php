@@ -250,7 +250,7 @@
                     <div class="text-sm text-gray-600 dark:text-gray-400 sm:text-right">
                         <span class="font-semibold text-gray-900 dark:text-gray-100">
                             Realizado por:
-                            {{ $change->user?->name ?? 'Usuario eliminado del sistema' }}{{ $change->user?->username ? ' (' . $change->user->username . ')' : '' }}
+                            {{ $change->actorLabel() }}
                         </span>
                         <span class="mx-1">•</span>
                         {{ $change->created_at?->format('d/m/Y H:i') ?? '—' }}

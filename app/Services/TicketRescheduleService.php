@@ -96,11 +96,14 @@ class TicketRescheduleService
      * @param  array{scope: string, date: string, schedule_id: int, seat_id: int, return_date?: ?string, return_schedule_id?: ?int, return_seat_id?: ?int}  $data
      * @param  bool  $allowServiceDayBypass  false en el panel de clientes: el permiso
      *                                       `tickets.vender_dia_sin_servicio` nunca aplica.
+     * @param  int|null  $clientId  Cliente que reprograma desde su panel: el cambio queda
+     *                              como hecho por un cliente (sin usuario). Sin él, queda
+     *                              como hecho por el usuario `$actorId`.
      * @return array{ticket: Ticket, changes: array<int, array<string, mixed>>, moved_return: bool}
      *
      * @throws ValidationException
      */
-    public function rescheduleForActor(Ticket $ticket, array $data, ?int $actorId, bool $allowServiceDayBypass = true): array
+    public function rescheduleForActor(Ticket $ticket, array $data, ?int $actorId, bool $allowServiceDayBypass = true, ?int $clientId = null): array
     {
         $this->assertTicketIsReschedulable($ticket);
 
@@ -258,7 +261,7 @@ class TicketRescheduleService
         $changes = [];
 
         try {
-            $result = DB::transaction(function () use ($ticket, $actorId, $newOutboundTrip, $newOutboundSeat, $newReturnTrip, $newReturnSeat, $hasReturnMove, $isReturnLegTicket, &$changes) {
+            $result = DB::transaction(function () use ($ticket, $actorId, $clientId, $newOutboundTrip, $newOutboundSeat, $newReturnTrip, $newReturnSeat, $hasReturnMove, $isReturnLegTicket, &$changes) {
                 $mainTicket = $ticket->fresh();
                 if (! $mainTicket || $mainTicket->trashed()) {
                     throw ValidationException::withMessages(['ticket' => 'El boleto fue eliminado mientras se procesaba el cambio.']);
@@ -395,7 +398,7 @@ class TicketRescheduleService
 
                 // 4) Auditoría (una fila por tramo realmente movido)
                 foreach ($changes as $change) {
-                    TicketDateChange::create($change + ['user_id' => $actorId]);
+                    TicketDateChange::create($change + $this->actorAttributes($actorId, $clientId));
                 }
 
                 // 5) Liberar reservas temporales de esta sesión (asientos elegidos en el selector)
@@ -707,5 +710,20 @@ class TicketRescheduleService
     private function isUniqueSeatViolation(QueryException $e): bool
     {
         return SeatConflict::isActiveSeatViolation($e);
+    }
+
+    /**
+     * Autor de la reprogramación para la auditoría: un cliente (sin usuario) o
+     * un usuario del panel.
+     *
+     * @return array{user_id: ?int, actor_type: string, client_id: ?int}
+     */
+    private function actorAttributes(?int $actorId, ?int $clientId): array
+    {
+        if ($clientId !== null) {
+            return ['user_id' => null, 'actor_type' => TicketDateChange::ACTOR_CLIENT, 'client_id' => $clientId];
+        }
+
+        return ['user_id' => $actorId, 'actor_type' => TicketDateChange::ACTOR_USER, 'client_id' => null];
     }
 }

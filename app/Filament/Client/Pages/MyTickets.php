@@ -3,6 +3,7 @@
 namespace App\Filament\Client\Pages;
 
 use App\Filament\Client\Schemas\ClientTicketAssignForm;
+use App\Models\Setting;
 use App\Models\Ticket;
 use App\Models\Trip;
 use App\Services\ClientTicketAssignmentService;
@@ -10,7 +11,11 @@ use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
 use Filament\Notifications\Notification;
 use Filament\Pages\Dashboard as BaseDashboard;
-use Filament\Tables\Columns\BadgeColumn;
+use Filament\Schemas\Components\EmbeddedTable;
+use Filament\Schemas\Components\Tabs;
+use Filament\Schemas\Components\Tabs\Tab;
+use Filament\Schemas\Components\View;
+use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Concerns\InteractsWithTable;
 use Filament\Tables\Contracts\HasTable;
@@ -31,34 +36,133 @@ class MyTickets extends BaseDashboard implements HasTable
 {
     use InteractsWithTable;
 
-    protected string $view = 'filament.client.my-tickets';
+    public const TAB_PENDING = 'pendientes';
+
+    public const TAB_UPCOMING = 'proximos';
+
+    public const TAB_HISTORY = 'historial';
 
     /**
-     * Por defecto sólo se ven los boletos SIN fecha (lo único que puede
-     * operar el cliente). El switch del panel permite mostrar además los
-     * que ya tienen fecha confirmada.
+     * Pestaña activa. Arranca en "Pendientes" sólo si hay boletos sin fecha:
+     * es lo único que el cliente puede operar.
      */
-    public bool $mostrarFechados = false;
+    public ?string $activeTab = null;
+
+    public function mount(): void
+    {
+        $this->activeTab ??= ClientTicketAssignmentService::pendingTicketsForCurrentClient()->exists()
+            ? self::TAB_PENDING
+            : self::TAB_UPCOMING;
+    }
+
+    public function updatedActiveTab(): void
+    {
+        $this->resetPage();
+    }
 
     public function getTitle(): string
     {
         return 'Mis boletos';
     }
 
+    public function content(Schema $schema): Schema
+    {
+        return $schema->components([
+            View::make('filament.client.pending-notice')
+                ->viewData(fn (): array => [
+                    'pendingCount' => ClientTicketAssignmentService::pendingTicketsForCurrentClient()->count(),
+                ]),
+
+            View::make('filament.client.next-trip')
+                ->viewData(fn (): array => [
+                    'ticket' => ClientTicketAssignmentService::nextTripTicketForCurrentClient(),
+                ]),
+
+            Tabs::make('Boletos')
+                ->livewireProperty('activeTab')
+                ->tabs([
+                    self::TAB_PENDING => Tab::make('Pendientes')
+                        ->badge(fn (): int => ClientTicketAssignmentService::pendingTicketsForCurrentClient()->count())
+                        ->badgeColor('warning'),
+                    self::TAB_UPCOMING => Tab::make('Próximos')
+                        ->badge(fn (): int => ClientTicketAssignmentService::upcomingTicketsForCurrentClient()->count())
+                        ->badgeColor('primary'),
+                    self::TAB_HISTORY => Tab::make('Historial')
+                        ->badge(fn (): int => ClientTicketAssignmentService::pastTicketsForCurrentClient()->count())
+                        ->badgeColor('gray'),
+                ]),
+
+            EmbeddedTable::make(),
+
+            View::make('filament.client.help-contact-lines')
+                ->viewData(fn (): array => [
+                    'contactLines' => Setting::contactLines(),
+                ]),
+        ]);
+    }
+
+    /**
+     * Botón del aviso de pendientes: pasa a "Pendientes" (el boleto tiene que
+     * estar en la tabla para poder operarlo) y abre "Elegir fecha" del más
+     * antiguo.
+     */
+    public function chooseDateOfOldestPending(): void
+    {
+        $ticket = ClientTicketAssignmentService::oldestPendingTicketForCurrentClient();
+
+        if ($ticket === null) {
+            return;
+        }
+
+        $this->activeTab = self::TAB_PENDING;
+        $this->resetPage();
+
+        $this->mountTableAction('asignar_fecha', (string) $ticket->id);
+    }
+
+    /**
+     * Boletos de la pestaña activa, con lo que necesitan las columnas.
+     */
+    private function ticketsForActiveTab(): Builder
+    {
+        return match ($this->activeTab) {
+            self::TAB_HISTORY => ClientTicketAssignmentService::pastTicketsForCurrentClient(),
+            self::TAB_UPCOMING => ClientTicketAssignmentService::upcomingTicketsForCurrentClient(),
+            default => ClientTicketAssignmentService::pendingTicketsForCurrentClient(),
+        };
+    }
+
     public function table(Table $table): Table
     {
         return $table
-            // Más nuevo primero: el cliente ve arriba su boleto más reciente.
-            ->defaultSort('id', 'desc')
-            ->query(fn () => ClientTicketAssignmentService::ticketsForCurrentClient()
-                ->when(! $this->mostrarFechados, fn (Builder $q) => $q->whereNull('trip_id'))
+            ->query(fn () => $this->ticketsForActiveTab()
                 ->with(['passenger', 'origin', 'destination', 'trip.schedule', 'trip.bus', 'seat']))
+            // Pendientes: el más nuevo arriba. Próximos: sale primero el que viaja antes.
+            // Historial: el viaje más reciente primero.
+            ->defaultSort(fn (Builder $query): Builder => match ($this->activeTab) {
+                self::TAB_UPCOMING => $query->orderBy($this->tripDateSubquery(), 'asc')->orderBy('tickets.id'),
+                self::TAB_HISTORY => $query->orderBy($this->tripDateSubquery(), 'desc')->orderBy('tickets.id', 'desc'),
+                default => $query->orderBy('tickets.id', 'desc'),
+            })
             ->defaultPaginationPageOption(25)
             ->recordUrl(null)
             ->recordAction(null)
+            ->emptyStateIcon('heroicon-o-ticket')
+            ->emptyStateHeading(fn (): string => match ($this->activeTab) {
+                self::TAB_HISTORY => 'Todavía no tenés viajes realizados',
+                self::TAB_UPCOMING => 'No tenés viajes próximos',
+                default => 'No tenés boletos pendientes de fecha',
+            })
+            ->emptyStateDescription(fn (): string => match ($this->activeTab) {
+                self::TAB_HISTORY => 'Cuando hagas un viaje, lo vas a ver acá.',
+                self::TAB_UPCOMING => 'Los boletos con fecha asignada aparecen acá hasta el día del viaje.',
+                default => 'Cuando compres un boleto sin fecha, lo vas a ver acá para que elijas cuándo viajar.',
+            })
             ->columns([
                 TextColumn::make('id')
                     ->label('N°')
+                    ->badge()
+                    ->color('gray')
                     ->sortable()
                     ->alignCenter(),
 
@@ -72,13 +176,16 @@ class MyTickets extends BaseDashboard implements HasTable
                     ->label('Tramo')
                     ->state(fn (Ticket $record) => trim(
                         ($record->origin?->name ?? '?').' → '.($record->destination?->name ?? '?')
-                    )),
+                    ))
+                    ->badge()
+                    ->color('warning'),
 
                 // Identidad clara del tramo: "Ida" para la ida del diferido y
                 // "Vuelta de N°X" para la vuelta, con el N° del boleto de ida
                 // que lleva el precio. Un boleto sólo de ida (sin diferido)
                 // muestra la etiqueta neutra "Solo ida".
-                BadgeColumn::make('tipo')
+                TextColumn::make('tipo')
+                    ->badge()
                     ->state(fn (Ticket $record) => match (true) {
                         $record->isReturnLeg() => ($outbound = $record->roundTripOutboundTicket())
                             ? 'Vuelta de N°'.$outbound->id
@@ -90,7 +197,8 @@ class MyTickets extends BaseDashboard implements HasTable
                     // La identidad del tramo no entra en mobile.
                     ->visibleFrom('sm'),
 
-                BadgeColumn::make('estado')
+                TextColumn::make('estado')
+                    ->badge()
                     ->state(fn (Ticket $record) => $record->isPendingDate() ? 'Pendiente' : 'Confirmado')
                     ->color(fn (string $state) => $state === 'Pendiente' ? 'warning' : 'success')
                     // Mobile: la fecha "Sin fecha" ya lo dice.
@@ -99,19 +207,21 @@ class MyTickets extends BaseDashboard implements HasTable
                 TextColumn::make('viaje')
                     ->label('Fecha y horario')
                     ->state(fn (Ticket $record) => $record->isPendingDate()
-                        ? null
+                        ? 'Sin fecha'
                         : trim(($record->trip?->trip_date?->format('d/m/Y') ?? '')
                             .($record->trip?->schedule?->departure_time?->format(' H:i') ?? '')))
-                    ->placeholder('Sin fecha')
+                    ->badge()
+                    ->color(fn (Ticket $record): string => $record->isPendingDate() ? 'warning' : 'info')
                     // Ordena por la fecha real del viaje (subquery): la columna
                     // computada "viaje" no existe en la base de datos.
                     ->sortable(query: fn (Builder $query, string $direction) => $query
-                        ->orderBy(Trip::query()
-                            ->select('trip_date')
-                            ->whereColumn('trips.id', 'tickets.trip_id'), $direction)),
+                        ->orderBy($this->tripDateSubquery(), $direction)),
 
                 TextColumn::make('seat.seat_number')
                     ->label('Asiento')
+                    ->badge()
+                    ->color('primary')
+                    ->alignCenter()
                     ->placeholder('—')
                     // Mobile: el número de asiento también entra en el PDF.
                     ->visibleFrom('sm'),
@@ -124,22 +234,66 @@ class MyTickets extends BaseDashboard implements HasTable
                     // Mobile: no hay espacio para las tintas del importe.
                     ->visibleFrom('sm'),
             ])
-            // Mobile: las acciones viven adentro de los tres puntitos, que
-            // es como el resto del panel administrativo agrupa las suyas.
             ->recordActions([
+                // Menú de tres puntitos (sólo celular): los ítems conservan su label.
                 ActionGroup::make([
                     $this->assignAction(),
+                    $this->viewTicketAction(),
+                    $this->downloadTicketAction(),
+                ])->icon('heroicon-m-ellipsis-vertical')
+                    ->hiddenLabel()
+                    ->size('sm')
+                    ->extraAttributes(['class' => 'md:hidden']),
 
-                    Action::make('boleto_pdf')
-                        ->label('Ver boleto')
-                        ->icon('heroicon-m-document-arrow-down')
-                        ->color('gray')
-                        ->button()
-                        ->size('sm')
-                        ->url(fn (Ticket $record) => route('clientes.boletos.show', ['ticket' => $record->id]))
-                        ->openUrlInNewTab(),
-                ]),
+                // Escritorio: "Elegir fecha" siempre a la vista, con su texto.
+                $this->assignAction()->extraAttributes(['class' => 'hidden md:inline-flex']),
+
+                $this->viewTicketAction()
+                    ->hiddenLabel()
+                    ->extraAttributes(['title' => 'Ver boleto', 'class' => 'hidden md:inline-flex']),
+
+                $this->downloadTicketAction()
+                    ->hiddenLabel()
+                    ->extraAttributes(['title' => 'Descargar boleto', 'class' => 'hidden md:inline-flex'], merge: true),
             ]);
+    }
+
+    /** Fecha del viaje del boleto, para ordenar sin traer el viaje por fila. */
+    private function tripDateSubquery(): Builder
+    {
+        return Trip::query()
+            ->select('trip_date')
+            ->whereColumn('trips.id', 'tickets.trip_id');
+    }
+
+    /** Action "Ver boleto": abre el boleto del cliente en una pestaña nueva. */
+    private function viewTicketAction(): Action
+    {
+        return Action::make('boleto_pdf')
+            ->label('Ver boleto')
+            ->icon('heroicon-m-eye')
+            ->color('gray')
+            ->button()
+            ->size('sm')
+            ->url(fn (Ticket $record) => route('clientes.boletos.show', ['ticket' => $record->id]))
+            ->openUrlInNewTab();
+    }
+
+    /**
+     * Action "Descargar": baja el PDF del boleto (la ruta valida que sea del
+     * cliente). Se abre fuera del modo SPA para que el navegador lo descargue.
+     */
+    private function downloadTicketAction(): Action
+    {
+        return Action::make('descargar_pdf')
+            ->label('Descargar')
+            ->icon('heroicon-m-arrow-down-tray')
+            ->color('primary')
+            ->button()
+            ->size('sm')
+            ->url(fn (Ticket $record) => route('clientes.boletos.pdf', ['ticket' => $record->id]))
+            ->openUrlInNewTab()
+            ->extraAttributes(['download' => '']);
     }
 
     /** Action "Elegir fecha": form de fecha/horario/asiento + asignación inmediata. */
@@ -148,13 +302,14 @@ class MyTickets extends BaseDashboard implements HasTable
         return Action::make('asignar_fecha')
             ->label('Elegir fecha')
             ->icon('heroicon-m-calendar-days')
-            ->color('primary')
+            ->color('warning')
             ->button()
             ->size('sm')
             ->visible(fn (Ticket $record) => ClientTicketAssignmentService::clientOwnsTicket($record)
                 && $record->isPendingDate()
                 && ! $record->trashed())
-            ->form(fn (Ticket $record) => ClientTicketAssignForm::make($record))
+            ->steps(fn (Ticket $record) => ClientTicketAssignForm::steps($record))
+            ->modalSubmitActionLabel('Sí, confirmar fecha')
             ->action(function (Ticket $record, array $data) {
                 if (! ClientTicketAssignmentService::clientOwnsTicket($record)
                     || $record->trashed()
@@ -186,12 +341,12 @@ class MyTickets extends BaseDashboard implements HasTable
 
                     return; // Conservar el modal abierto con el estado del form
                 } catch (Throwable $e) {
-                    // Ningún error debe quedar en silencio: el cliente ve el motivo.
+                    // Queda registrado para el personal; el cliente no ve el detalle técnico.
                     report($e);
 
                     Notification::make()
                         ->title('No se pudo asignar la fecha')
-                        ->body('Ocurrió un problema: '.$e->getMessage().'. Volvé a intentar en unos minutos o comunicate con nosotros.')
+                        ->body('Ocurrió un problema inesperado. Volvé a intentar en unos minutos o comunicate con boletería.')
                         ->danger()
                         ->persistent()
                         ->send();
@@ -211,7 +366,7 @@ class MyTickets extends BaseDashboard implements HasTable
                     ->actions([
                         Action::make('descargar')
                             ->label('Ver boleto')
-                            ->icon('heroicon-m-document-arrow-down')
+                            ->icon('heroicon-m-eye')
                             ->url(route('clientes.boletos.show', ['ticket' => $fresh->id]), shouldOpenInNewTab: true)
                             ->button(),
                     ])

@@ -12,12 +12,21 @@
 
         <ul class="flex flex-col gap-1">
             @foreach ($contactLines as $line)
-                <li class="flex flex-wrap items-center gap-1">
-                    @if ($line['name'] !== null)
-                        <span>{{ $line['name'] }}:</span>
-                    @endif
-                    <a href="tel:{{ $line['dial'] }}"
-                        class="font-semibold text-primary-600 hover:underline dark:text-primary-400">{{ $line['phone'] }}</a>
+                <li class="flex flex-wrap items-center justify-between gap-2">
+                    <span class="flex flex-wrap items-center gap-1">
+                        @if ($line['name'] !== null)
+                            <span>{{ $line['name'] }}:</span>
+                        @endif
+                        <a href="tel:{{ $line['dial'] }}"
+                            class="font-semibold text-primary-600 hover:underline dark:text-primary-400">{{ $line['phone'] }}</a>
+                    </span>
+
+                    <x-filament::button tag="a"
+                        :href="'https://wa.me/'.\App\Models\Setting::whatsappNumber($line['phone'])"
+                        target="_blank" rel="noopener" color="success" size="sm">
+                        <x-icons.whatsapp class="size-4" />
+                        WhatsApp
+                    </x-filament::button>
                 </li>
             @endforeach
         </ul>

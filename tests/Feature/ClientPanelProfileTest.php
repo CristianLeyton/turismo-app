@@ -99,9 +99,9 @@ class ClientPanelProfileTest extends TestCase
         $this->actingAs($client, 'client');
 
         Livewire::test(SetPassword::class)
-            ->set('nuevaClave', 'mi-clave-secreta')
-            ->set('nuevaClaveConfirmacion', 'mi-clave-secreta')
+            ->fillForm(['password' => 'mi-clave-secreta', 'passwordConfirmation' => 'mi-clave-secreta'])
             ->call('guardar')
+            ->assertHasNoFormErrors()
             ->assertRedirect(MyTickets::getUrl(panel: 'clientes'));
 
         $fresh = $client->fresh();
@@ -120,7 +120,9 @@ class ClientPanelProfileTest extends TestCase
         $this->actingAs($this->createInitialClient(), 'client');
 
         Livewire::test(SetPassword::class)
-            ->assertSeeText('¡Bienvenido a Expresso Sofia, Beto!');
+            ->assertSeeText('¡Bienvenido a Expresso Sofia, Beto!')
+            ->assertDontSeeText('boletería')
+            ->assertDontSeeText('la conocemos');
     }
 
     public function test_elegir_la_clave_valida_largo_y_coincidencia(): void
@@ -131,20 +133,68 @@ class ClientPanelProfileTest extends TestCase
 
         // Demasiado corta: no guarda nada (la inicial, el DNI, queda igual).
         Livewire::test(SetPassword::class)
-            ->set('nuevaClave', 'corta')
-            ->set('nuevaClaveConfirmacion', 'corta')
-            ->call('guardar');
+            ->fillForm(['password' => 'corta', 'passwordConfirmation' => 'corta'])
+            ->call('guardar')
+            ->assertHasFormErrors(['password' => 'min'])
+            ->assertSeeText('Tiene que tener al menos 6 caracteres.');
 
         $this->assertTrue(Hash::check($client->dni, $client->fresh()->password));
 
         // No coincide: no guarda nada.
         Livewire::test(SetPassword::class)
-            ->set('nuevaClave', 'mi-clave-secreta')
-            ->set('nuevaClaveConfirmacion', 'distinta')
-            ->call('guardar');
+            ->fillForm(['password' => 'mi-clave-secreta', 'passwordConfirmation' => 'distinta'])
+            ->call('guardar')
+            ->assertHasFormErrors(['password' => 'same'])
+            ->assertSeeText('Las contraseñas no coinciden');
 
         $this->assertTrue(Hash::check($client->dni, $client->fresh()->password));
         $this->assertTrue($client->fresh()->must_change_password);
+
+        // Sin completar los campos: pide elegir y repetir.
+        Livewire::test(SetPassword::class)
+            ->fillForm(['password' => '', 'passwordConfirmation' => ''])
+            ->call('guardar')
+            ->assertHasFormErrors(['password' => 'required', 'passwordConfirmation' => 'required']);
+    }
+
+    public function test_una_falla_inesperada_al_guardar_no_muestra_la_excepcion_y_se_registra(): void
+    {
+        $client = $this->createInitialClient();
+        $this->actingAs($client, 'client');
+
+        \Illuminate\Support\Facades\Exceptions::fake();
+
+        // Falla al escribir en la base: la actualización del cliente lanza.
+        Clients::updating(function (): void {
+            throw new \RuntimeException('detalle-tecnico-secreto');
+        });
+
+        Livewire::test(SetPassword::class)
+            ->fillForm(['password' => 'mi-clave-secreta', 'passwordConfirmation' => 'mi-clave-secreta'])
+            ->call('guardar')
+            ->assertNotified(
+                \Filament\Notifications\Notification::make()
+                    ->title('No se pudo guardar la contraseña')
+                    ->body('Ocurrió un problema inesperado. Probá de nuevo en unos minutos o comunicate con boletería.')
+                    ->danger()
+                    ->persistent(),
+            )
+            ->assertDontSeeText('detalle-tecnico-secreto')
+            ->assertNoRedirect();
+
+        \Illuminate\Support\Facades\Exceptions::assertReported(
+            fn (\RuntimeException $e): bool => $e->getMessage() === 'detalle-tecnico-secreto',
+        );
+        $this->assertTrue($client->fresh()->must_change_password);
+    }
+
+    public function test_la_clave_se_puede_ver_mientras_se_escribe(): void
+    {
+        $this->actingAs($this->createInitialClient(), 'client');
+
+        Livewire::test(SetPassword::class)
+            ->assertFormFieldExists('password', fn (\Filament\Forms\Components\TextInput $field): bool => $field->isPasswordRevealable())
+            ->assertFormFieldExists('passwordConfirmation', fn (\Filament\Forms\Components\TextInput $field): bool => $field->isPasswordRevealable());
     }
 
     public function test_desde_que_elije_contraseña_el_ingreso_exige_dni_mas_contraseña(): void
@@ -155,8 +205,7 @@ class ClientPanelProfileTest extends TestCase
         $this->clientLogin($client->dni, $client->dni);
 
         Livewire::test(SetPassword::class)
-            ->set('nuevaClave', 'mi-clave-secreta')
-            ->set('nuevaClaveConfirmacion', 'mi-clave-secreta')
+            ->fillForm(['password' => 'mi-clave-secreta', 'passwordConfirmation' => 'mi-clave-secreta'])
             ->call('guardar');
 
         // Salió (simulado): DNI solo ya NO alcanza.

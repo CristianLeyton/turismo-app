@@ -4,9 +4,11 @@ namespace App\Services;
 
 use App\Models\Clients;
 use App\Models\Ticket;
+use App\Models\Trip;
 use App\Support\ClientSession;
 use App\Support\ServiceDays;
 use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -113,7 +115,7 @@ class ClientTicketAssignmentService
      * Query base del panel: TODOS los boletos del cliente en sesión
      * (pendientes y ya fechados). Sin cliente en sesión: nada.
      */
-    public static function ticketsForCurrentClient(): \Illuminate\Database\Eloquent\Builder
+    public static function ticketsForCurrentClient(): Builder
     {
         $dni = ClientSession::dni();
 
@@ -123,6 +125,60 @@ class ClientTicketAssignmentService
                 fn ($q) => $q->whereRaw('1 = 0'),
                 fn ($q) => $q->whereHas('passenger', fn ($p) => $p->where('dni', $dni)),
             );
+    }
+
+    /**
+     * Boletos del cliente que esperan fecha (sin viaje asignado).
+     */
+    public static function pendingTicketsForCurrentClient(): Builder
+    {
+        return self::ticketsForCurrentClient()->whereNull('tickets.trip_id');
+    }
+
+    /**
+     * Boletos con viaje de hoy en adelante. Un viaje de hoy cuenta como
+     * próximo aunque su horario ya haya pasado: se decide por fecha.
+     */
+    public static function upcomingTicketsForCurrentClient(): Builder
+    {
+        return self::ticketsForCurrentClient()
+            ->whereHas('trip', fn (Builder $trip) => $trip->whereDate('trip_date', '>=', Carbon::today()));
+    }
+
+    /**
+     * Boletos con viaje anterior a hoy (viajes ya realizados).
+     */
+    public static function pastTicketsForCurrentClient(): Builder
+    {
+        return self::ticketsForCurrentClient()
+            ->whereHas('trip', fn (Builder $trip) => $trip->whereDate('trip_date', '<', Carbon::today()));
+    }
+
+    /**
+     * Boleto del próximo viaje: el de fecha y horario más cercanos desde hoy,
+     * y con el menor número si coinciden.
+     */
+    public static function nextTripTicketForCurrentClient(): ?Ticket
+    {
+        return self::upcomingTicketsForCurrentClient()
+            ->with(['origin', 'destination', 'trip.schedule', 'seat'])
+            ->orderBy(Trip::query()
+                ->select('trip_date')
+                ->whereColumn('trips.id', 'tickets.trip_id'))
+            ->orderBy(Trip::query()
+                ->join('schedules', 'schedules.id', '=', 'trips.schedule_id')
+                ->select('schedules.departure_time')
+                ->whereColumn('trips.id', 'tickets.trip_id'))
+            ->orderBy('tickets.id')
+            ->first();
+    }
+
+    /**
+     * Boleto sin fecha más antiguo (menor número), el que ofrece el aviso.
+     */
+    public static function oldestPendingTicketForCurrentClient(): ?Ticket
+    {
+        return self::pendingTicketsForCurrentClient()->orderBy('tickets.id')->first();
     }
 
     private static function formatDate(Carbon $date): string

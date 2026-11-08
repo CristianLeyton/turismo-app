@@ -2,6 +2,7 @@
 
 namespace App\Filament\Client\Schemas;
 
+use App\Models\Schedule;
 use App\Models\Seat;
 use App\Models\SeatReservation;
 use App\Models\Ticket;
@@ -12,8 +13,12 @@ use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\ViewField;
+use Filament\Notifications\Notification;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
+use Filament\Schemas\Components\View;
+use Filament\Schemas\Components\Wizard\Step;
+use Filament\Support\Exceptions\Halt;
 
 /**
  * Formulario del action "Elegir fecha" del panel de clientes: mismo
@@ -26,6 +31,63 @@ use Filament\Schemas\Components\Utilities\Set;
  */
 class ClientTicketAssignForm
 {
+    /**
+     * Pasos del action "Elegir fecha": primero se elige el viaje y después se
+     * reconfirma, avisando que no se podrá cambiar de nuevo. Confirmar es
+     * definitivo: sólo el personal reprograma un boleto que ya tiene fecha.
+     *
+     * @return array<int, Step>
+     */
+    public static function steps(Ticket $ticket): array
+    {
+        return [
+            Step::make('Elegí tu viaje')
+                ->schema(self::make($ticket))
+                // Sin asiento no se pasa a confirmar: se avisa en el momento.
+                ->afterValidation(function (Get $get): void {
+                    if (filled($get('seat_ids'))) {
+                        return;
+                    }
+
+                    Notification::make()
+                        ->title('Falta elegir el asiento')
+                        ->body('Elegí tu asiento en el mapa antes de continuar.')
+                        ->danger()
+                        ->persistent()
+                        ->send();
+
+                    throw new Halt;
+                }),
+
+            Step::make('Confirmá tu elección')
+                ->schema([
+                    View::make('filament.client.assign-confirmation')
+                        ->viewData(fn (Get $get): array => self::summary($ticket, $get)),
+                ]),
+        ];
+    }
+
+    /**
+     * Resumen de lo elegido para la reconfirmación.
+     *
+     * @return array{leg: string, route: string, date: ?string, schedule: ?string, seat: ?string}
+     */
+    private static function summary(Ticket $ticket, Get $get): array
+    {
+        $date = $get('date');
+        $schedule = filled($get('schedule_id')) ? Schedule::query()->find((int) $get('schedule_id')) : null;
+        $seatIds = array_values(array_filter((array) $get('seat_ids')));
+        $seat = $seatIds !== [] ? Seat::query()->find((int) $seatIds[0]) : null;
+
+        return [
+            'leg' => $ticket->isReturnLeg() ? 'vuelta' : 'ida',
+            'route' => trim(($ticket->origin?->name ?? '?').' → '.($ticket->destination?->name ?? '?')),
+            'date' => filled($date) ? Carbon::parse($date)->format('d/m/Y') : null,
+            'schedule' => $schedule?->display_name,
+            'seat' => $seat?->seat_number !== null ? (string) $seat->seat_number : null,
+        ];
+    }
+
     public static function make(Ticket $ticket): array
     {
         $isReturnLeg = $ticket->isReturnLeg();

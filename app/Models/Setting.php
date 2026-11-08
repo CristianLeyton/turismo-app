@@ -332,6 +332,37 @@ class Setting extends Model
     }
 
     /**
+     * Número para un enlace wa.me: sólo dígitos y con código de país.
+     * Con "+" se usan sus dígitos tal cual. Sin "+" se lo trata como celular
+     * argentino: se quita el "0" inicial y el "15" que sigue al código de área
+     * (el número queda en 10 dígitos) y se antepone "549".
+     * "3878-804506" y "+54 9 (3878) 804-506" → "5493878804506".
+     */
+    public static function whatsappNumber(string $phone): string
+    {
+        $phone = trim($phone);
+        $digits = preg_replace('/\D+/', '', $phone) ?? '';
+
+        if (str_starts_with($phone, '+')) {
+            return $digits;
+        }
+
+        $digits = ltrim($digits, '0');
+
+        if (strlen($digits) === 12) {
+            foreach ([2, 3, 4] as $areaLength) {
+                if (substr($digits, $areaLength, 2) === '15') {
+                    $digits = substr($digits, 0, $areaLength).substr($digits, $areaLength + 2);
+
+                    break;
+                }
+            }
+        }
+
+        return '549'.$digits;
+    }
+
+    /**
      * Días de la semana con servicio (ISO 1-7). Sin configuración guardada,
      * lunes a sábado.
      *

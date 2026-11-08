@@ -145,12 +145,16 @@ class ClientPanelToggleTest extends TestCase
             ['name' => null, 'phone' => '387 555-1234'],
         ]));
 
-        $this->get('/clientes/login')
+        $response = $this->get('/clientes/login')
             ->assertOk()
             ->assertSee('href="https://wa.me/5493878804506"', false)
             ->assertSee('href="https://wa.me/5493875551234"', false)
             ->assertSee('data-icon="whatsapp"', false)
-            ->assertSee('WhatsApp');
+            // Solo el ícono de WhatsApp: el nombre va en el título, no como texto visible.
+            ->assertSee('title="WhatsApp"', false)
+            ->assertSee('title="Llamar"', false);
+
+        $this->assertDoesNotMatchRegularExpression('/>\s*WhatsApp\s*</', $response->getContent());
     }
 
     public function test_sin_lineas_de_contacto_el_ingreso_de_clientes_no_muestra_el_bloque(): void

@@ -124,7 +124,7 @@
                 @include('filament.tickets.delivery-modal-phone', [
                     'key' => $key,
                     'label' => 'Enviar a',
-                    'buttonLabel' => 'Enviar por WhatsApp',
+                    'buttonLabel' => 'Enviar',
                     'replacement' => \Illuminate\Support\Js::from($row['link']),
                 ])
 
@@ -160,7 +160,7 @@
                 @include('filament.tickets.delivery-modal-phone', [
                     'key' => 'all',
                     'label' => 'Número',
-                    'buttonLabel' => 'Enviar todos por WhatsApp',
+                    'buttonLabel' => 'Enviar todos',
                     'replacement' => "'\\n' + allLines",
                 ])
             </div>

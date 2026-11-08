@@ -22,14 +22,12 @@
 
                     <span class="flex gap-2">
                         <x-filament::button tag="a" :href="'tel:'.$line['dial']" color="gray" size="sm"
-                            icon="heroicon-m-phone">
-                            Llamar
+                            icon="heroicon-m-phone" title="Llamar">
                         </x-filament::button>
                         <x-filament::button tag="a"
                             :href="'https://wa.me/'.\App\Models\Setting::whatsappNumber($line['phone'])"
-                            target="_blank" rel="noopener" color="success" size="sm">
-                            <x-icons.whatsapp class="size-4" />
-                            WhatsApp
+                            target="_blank" rel="noopener" color="success" size="sm" title="WhatsApp">
+                            <x-icons.whatsapp class="size-4 text-white" />
                         </x-filament::button>
                     </span>
                 </li>

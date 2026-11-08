@@ -17,15 +17,14 @@
                         @if ($line['name'] !== null)
                             <span>{{ $line['name'] }}:</span>
                         @endif
-                        <a href="tel:{{ $line['dial'] }}"
+                        <a href="tel:{{ $line['dial'] }}" title="Llamar"
                             class="font-semibold text-primary-600 hover:underline dark:text-primary-400">{{ $line['phone'] }}</a>
                     </span>
 
                     <x-filament::button tag="a"
                         :href="'https://wa.me/'.\App\Models\Setting::whatsappNumber($line['phone'])"
-                        target="_blank" rel="noopener" color="success" size="sm">
-                        <x-icons.whatsapp class="size-4" />
-                        WhatsApp
+                        target="_blank" rel="noopener" color="success" size="sm" title="WhatsApp">
+                        <x-icons.whatsapp class="size-4 text-white" />
                     </x-filament::button>
                 </li>
             @endforeach

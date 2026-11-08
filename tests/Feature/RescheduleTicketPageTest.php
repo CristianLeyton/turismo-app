@@ -304,7 +304,8 @@ class RescheduleTicketPageTest extends TestCase
             ->assertSet('defaultAction', TicketDeliveryAction::NAME)
             ->mountAction(TicketDeliveryAction::NAME, $pending)
             ->assertMountedActionModalSee("Boleto N°{$ticket->id} reprogramado correctamente")
-            ->assertMountedActionModalSee('Enviar por WhatsApp')
+            ->assertMountedActionModalSee('Enviar')
+            ->assertMountedActionModalSeeHtml('data-icon="whatsapp"')
             ->assertMountedActionModalSee('Cerrar')
             ->assertMountedActionModalDontSee('Enviar todos a un número')
             ->assertMountedActionModalDontSee('Nueva venta');

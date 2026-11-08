@@ -20,7 +20,9 @@ use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ViewRecord;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\HtmlString;
 
 class ViewTicket extends ViewRecord
 {
@@ -133,8 +135,10 @@ class ViewTicket extends ViewRecord
             // Emisión por link: el link del boleto por WhatsApp al teléfono
             // de su pasajero (o del padrón). Sin teléfono no hay a quién.
             Action::make('enviar_whatsapp')
-                ->label('Enviar por WhatsApp')
-                ->icon('heroicon-m-paper-airplane')
+                ->label('Enviar')
+                // Sin "por WhatsApp" a la vista, el nombre accesible sigue completo.
+                ->extraAttributes(['title' => 'Enviar por WhatsApp', 'aria-label' => 'Enviar por WhatsApp', 'class' => 'text-white!'])
+                ->icon(new HtmlString(Blade::render('<x-icons.whatsapp class="size-full text-white!" />')))
                 ->color('success')
                 ->visible(fn (Ticket $record): bool => self::hasShareLink($record) && $this->whatsappPhone($record) !== null)
                 ->url(fn (Ticket $record): ?string => $this->whatsappPhone($record) !== null

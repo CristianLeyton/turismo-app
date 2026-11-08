@@ -1522,14 +1522,20 @@ class ClientPanelTicketsTest extends TestCase
         $this->createPendingTicket('11223344');
         $this->identify('11223344');
 
-        Livewire::test(MyTickets::class)
+        $component = Livewire::test(MyTickets::class)
             ->assertSeeText('¿Necesitás ayuda?')
             ->assertSeeText('Orán')
             ->assertSeeText('3878-804506')
             ->assertSeeHtml('href="tel:3878804506"')
             ->assertSeeHtml('href="https://wa.me/5493878804506"')
             ->assertSeeHtml('href="tel:+5493873309893"')
-            ->assertSeeHtml('href="https://wa.me/5493873309893"');
+            ->assertSeeHtml('href="https://wa.me/5493873309893"')
+            // Botones solo con ícono: el nombre va en el título.
+            ->assertSeeHtml('title="Llamar"')
+            ->assertSeeHtml('title="WhatsApp"')
+            ->assertSeeHtml('data-icon="whatsapp"');
+
+        $this->assertDoesNotMatchRegularExpression('/>\s*(Llamar|WhatsApp)\s*</', $component->html());
     }
 
     public function test_sin_lineas_de_contacto_no_hay_bloque_de_ayuda(): void

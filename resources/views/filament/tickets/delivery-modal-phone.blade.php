@@ -3,7 +3,8 @@
     (o de "Enviar todos"). Con teléfonos en la venta: selector con
     "Otro número…", que muestra el campo. Sin teléfonos: el campo directo.
 
-    Recibe $key (clave del estado Alpine), $label, $buttonLabel, $phones y
+    Recibe $key (clave del estado Alpine), $label, $buttonLabel ("Enviar" o
+    "Enviar todos": el nombre accesible le suma " por WhatsApp"), $phones y
     $replacement (expresión JS con lo que reemplaza a {link} en el mensaje).
 
     El botón no recibe href como propiedad (lo arma Alpine), así que el
@@ -41,13 +42,15 @@
             </div>
         </div>
 
-        <x-filament::button tag="a" color="success" icon="heroicon-m-paper-airplane"
-            class="shrink-0"
+        <x-filament::button tag="a" color="success"
+            class="shrink-0 text-white!"
+            title="{{ $buttonLabel }} por WhatsApp" aria-label="{{ $buttonLabel }} por WhatsApp"
             x-bind:href="whatsappUrl('{{ $key }}', {{ $replacement }})"
             x-bind:target="'_blank'"
             rel="noopener noreferrer"
             x-bind:class="{ 'pointer-events-none opacity-50': ! isValid('{{ $key }}') }"
             x-bind:aria-disabled="! isValid('{{ $key }}')">
+            <x-icons.whatsapp class="size-4 text-white" />
             {{ $buttonLabel }}
         </x-filament::button>
     </div>

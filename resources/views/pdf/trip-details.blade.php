@@ -394,11 +394,15 @@
                             </td>
 
                             <td style="text-align: center;">
-                                <span class="badge badge-location">{{ $passenger['origin'] }}</span>
+                                @if ($passenger['type'] === 'adult')
+                                    <span class="badge badge-location">{{ $passenger['origin'] }}</span>
+                                @endif
                             </td>
 
                             <td style="text-align: center;">
-                                <span class="badge badge-location">{{ $passenger['destination'] }}</span>
+                                @if ($passenger['type'] === 'adult')
+                                    <span class="badge badge-location">{{ $passenger['destination'] }}</span>
+                                @endif
                             </td>
 
                             {{-- Solo en la fila del adulto; el menor y la mascota quedan vacíos.

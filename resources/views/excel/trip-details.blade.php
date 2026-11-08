@@ -26,8 +26,8 @@
                     <td>{{ $passenger['dni'] == 'N/A' ? '-' : $passenger['dni'] }}</td>
                     <td>{{ $passenger['phone'] == 'N/A' ? '-' : $passenger['phone'] }}</td>
                     <td>{{ is_numeric($passenger['seat_number']) ? $passenger['seat_number'] : 'No ocupa' }}</td>
-                    <td>{{ $passenger['origin'] }}</td>
-                    <td>{{ $passenger['destination'] }}</td>
+                    <td>{{ $passenger['type'] === 'adult' ? $passenger['origin'] : '' }}</td>
+                    <td>{{ $passenger['type'] === 'adult' ? $passenger['destination'] : '' }}</td>
                     <td>
                         @if ($passenger['type'] === 'child' && isset($passenger['parent_name']))
                             {{ $passenger['parent_name'] }} (Menor)

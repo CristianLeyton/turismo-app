@@ -262,11 +262,13 @@
 
                                     {{-- En el celular el recorrido completo va en su propia línea, siempre al final de la tarjeta. --}}
                                     <td @class(['order-last w-full text-sm md:order-none md:table-cell md:w-auto md:px-4 md:py-2', 'hidden' => ! $isAdult])>
-                                        <span class="{{ $routeBadge }}">{{ $passenger['origin'] }}</span>
-                                        <span class="md:hidden">
-                                            <span class="text-gray-400 dark:text-gray-500">→</span>
-                                            <span class="{{ $routeBadge }}">{{ $passenger['destination'] }}</span>
-                                        </span>
+                                        @if ($isAdult)
+                                            <span class="{{ $routeBadge }}">{{ $passenger['origin'] }}</span>
+                                            <span class="md:hidden">
+                                                <span class="text-gray-400 dark:text-gray-500">→</span>
+                                                <span class="{{ $routeBadge }}">{{ $passenger['destination'] }}</span>
+                                            </span>
+                                        @endif
                                     </td>
 
                                     <td class="hidden px-4 py-2 text-sm md:table-cell">

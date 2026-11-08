@@ -69,9 +69,19 @@ class MyTickets extends BaseDashboard implements HasTable
     {
         return $schema->components([
             View::make('filament.client.pending-notice')
-                ->viewData(fn (): array => [
-                    'pendingCount' => ClientTicketAssignmentService::pendingTicketsForCurrentClient()->count(),
-                ]),
+                ->viewData(function (): array {
+                    $count = ClientTicketAssignmentService::pendingTicketsForCurrentClient()->count();
+
+                    return [
+                        'pendingCount' => $count,
+                        // Ya en "Pendientes", "Ver pendientes" no llevaría a ningún lado.
+                        'onPendingTab' => $this->activeTab === self::TAB_PENDING,
+                        // Con uno solo, el aviso lo nombra y su botón lo abre; con varios, no elige por el cliente.
+                        'singlePending' => $count === 1
+                            ? ClientTicketAssignmentService::pendingTicketsForCurrentClient()->with(['origin', 'destination'])->first()
+                            : null,
+                    ];
+                }),
 
             View::make('filament.client.next-trip')
                 ->viewData(fn (): array => [
@@ -102,9 +112,20 @@ class MyTickets extends BaseDashboard implements HasTable
     }
 
     /**
-     * Botón del aviso de pendientes: pasa a "Pendientes" (el boleto tiene que
-     * estar en la tabla para poder operarlo) y abre "Elegir fecha" del más
-     * antiguo.
+     * Botón "Ver pendientes" del aviso (con dos o más boletos sin fecha): pasa
+     * a la pestaña "Pendientes", donde cada boleto tiene su "Elegir fecha".
+     * No abre ningún formulario: el cliente elige cuál.
+     */
+    public function showPendingTickets(): void
+    {
+        $this->activeTab = self::TAB_PENDING;
+        $this->resetPage();
+    }
+
+    /**
+     * Botón "Elegir fecha" del aviso (con un solo boleto sin fecha): pasa a
+     * "Pendientes" (el boleto tiene que estar en la tabla para poder
+     * operarlo) y abre "Elegir fecha" de ese boleto.
      */
     public function chooseDateOfOldestPending(): void
     {

@@ -1351,16 +1351,78 @@ class ClientPanelTicketsTest extends TestCase
     // Aviso de pendientes y próximo viaje
     // ------------------------------------------------------------------
 
-    public function test_el_aviso_de_pendientes_cuenta_en_singular_y_plural(): void
+    public function test_con_un_solo_pendiente_el_aviso_lo_nombra_y_ofrece_elegir_fecha(): void
     {
-        $this->createPendingTicket('11223344', 1);
+        $f = $this->createPendingTicket('11223344', 1);
         $this->identify('11223344');
 
-        Livewire::test(MyTickets::class)->assertSeeText('Tenés 1 boleto sin fecha.');
+        Livewire::test(MyTickets::class)
+            ->assertSeeText('Tenés 1 boleto sin fecha:')
+            ->assertSeeText($f['origin']->name.' → '.$f['destination']->name)
+            ->assertSeeText('N°'.$f['ticket']->id)
+            ->assertSeeHtml('wire:click="chooseDateOfOldestPending"')
+            ->assertDontSeeHtml('wire:click="showPendingTickets"');
+    }
 
+    public function test_con_varios_pendientes_el_aviso_dice_cuantos_y_ofrece_ver_pendientes(): void
+    {
+        $this->createPendingTicket('11223344', 1);
         $this->createPendingTicket('11223344', 2);
+        $this->identify('11223344');
 
-        Livewire::test(MyTickets::class)->assertSeeText('Tenés 2 boletos sin fecha.');
+        // Con "Próximos" abierta: el botón lleva a "Pendientes".
+        Livewire::test(MyTickets::class)
+            ->set('activeTab', MyTickets::TAB_UPCOMING)
+            ->assertSeeText('Tenés 2 boletos sin fecha.')
+            ->assertSeeText('Ver pendientes')
+            ->assertSeeHtml('wire:click="showPendingTickets"')
+            // No elige por el cliente: el aviso no abre ningún boleto.
+            ->assertDontSeeHtml('wire:click="chooseDateOfOldestPending"');
+    }
+
+    public function test_ya_en_pendientes_el_aviso_no_ofrece_ver_pendientes(): void
+    {
+        $this->createPendingTicket('11223344', 1);
+        $this->createPendingTicket('11223344', 2);
+        $this->identify('11223344');
+
+        // Con pendientes, la pestaña inicial ya es "Pendientes".
+        Livewire::test(MyTickets::class)
+            ->assertSet('activeTab', MyTickets::TAB_PENDING)
+            ->assertSeeText('Tenés 2 boletos sin fecha.')
+            ->assertDontSeeText('Ver pendientes')
+            ->assertDontSeeHtml('wire:click="showPendingTickets"')
+            ->assertSeeText('con su botón «Elegir fecha»')
+            // Y vuelve a aparecer al salir de "Pendientes".
+            ->set('activeTab', MyTickets::TAB_HISTORY)
+            ->assertSeeText('Ver pendientes');
+    }
+
+    public function test_ver_pendientes_lleva_a_la_pestana_sin_abrir_ningun_formulario(): void
+    {
+        $this->createPendingTicket('11223344', 1);
+        $this->createPendingTicket('11223344', 2);
+        $this->createDatedTicket('11223344', '2026-10-10', n: 3);
+        $this->identify('11223344');
+
+        Livewire::test(MyTickets::class)
+            ->set('activeTab', MyTickets::TAB_UPCOMING)
+            ->call('showPendingTickets')
+            ->assertSet('activeTab', MyTickets::TAB_PENDING)
+            ->assertSet('mountedActions', []);
+    }
+
+    public function test_el_aviso_de_pendientes_se_ve_en_cualquier_pestana(): void
+    {
+        $this->createPendingTicket('11223344', 1);
+        $this->createPendingTicket('11223344', 2);
+        $this->identify('11223344');
+
+        $component = Livewire::test(MyTickets::class);
+
+        foreach ([MyTickets::TAB_PENDING, MyTickets::TAB_UPCOMING, MyTickets::TAB_HISTORY] as $tab) {
+            $component->set('activeTab', $tab)->assertSeeText('Tenés 2 boletos sin fecha.');
+        }
     }
 
     public function test_elegir_fecha_es_un_boton_relleno_de_color_warning(): void
@@ -1394,10 +1456,9 @@ class ClientPanelTicketsTest extends TestCase
         Livewire::test(MyTickets::class)->assertDontSeeText('sin fecha.');
     }
 
-    public function test_el_boton_del_aviso_abre_elegir_fecha_del_pendiente_mas_antiguo(): void
+    public function test_el_boton_del_aviso_con_un_solo_pendiente_abre_su_formulario(): void
     {
         $primero = $this->createPendingTicket('11223344', 1);
-        $this->createPendingTicket('11223344', 2);
         $this->createDatedTicket('11223344', '2026-10-10', n: 3);
 
         $this->identify('11223344');

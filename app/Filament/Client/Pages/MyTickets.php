@@ -185,6 +185,7 @@ class MyTickets extends BaseDashboard implements HasTable
                     ->badge()
                     ->color('gray')
                     ->sortable()
+                    ->visibleFrom('md')
                     ->alignCenter(),
 
                 TextColumn::make('passenger.full_name')

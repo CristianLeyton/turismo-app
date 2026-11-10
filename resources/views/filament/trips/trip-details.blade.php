@@ -66,7 +66,8 @@
     <div class="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-700 dark:bg-gray-900">
         <div class="flex flex-col gap-4 md:flex-row md:justify-between">
             <div>
-                <h2 class="text-2xl font-bold text-gray-900 dark:text-gray-100">
+                {{-- autofocus + tabindex -1: el modal enfoca esto en vez del buscador. --}}
+                <h2 tabindex="-1" autofocus class="text-2xl font-bold text-gray-900 outline-none dark:text-gray-100">
                     <span class="text-primary-600 dark:text-primary-400">{{ $stops->first()['name'] ?? 'Origen' }}</span>
                     →
                     <span class="text-primary-600 dark:text-primary-400">{{ $stops->last()['name'] ?? 'Destino' }}</span>
@@ -104,7 +105,7 @@
             {{-- Filtros: corren en el navegador, sin esperar al servidor. --}}
             <div class="grid grid-cols-1 gap-2 border-b border-gray-200 p-4 sm:grid-cols-3 dark:border-gray-700">
                 <x-filament::input.wrapper prefix-icon="heroicon-m-magnifying-glass">
-                    <x-filament::input type="search" x-model.debounce.150ms="search"
+                    <x-filament::input type="search" x-model.debounce.150ms="search" autocomplete="off"
                         placeholder="Nombre, DNI, asiento o N° boleto" aria-label="Buscar por nombre, DNI, asiento o N° de boleto" />
                 </x-filament::input.wrapper>
 
@@ -195,7 +196,7 @@
                                         @endif
                                     </td>
 
-                                    <td class="order-first w-full text-sm text-gray-900 md:order-none md:table-cell md:w-auto md:px-4 md:py-2 dark:text-gray-100">
+                                    <td class="order-first w-full text-sm text-gray-900 md:order-0 md:table-cell md:w-auto md:px-4 md:py-2 dark:text-gray-100">
                                         @if ($isAdult)
                                             {{-- En el celular el DNI va al lado del nombre; en escritorio tiene su columna. --}}
                                             <span class="font-medium">{{ $passenger['name'] }}</span>
@@ -281,7 +282,7 @@
                                         @if ($isAdult && filled($passenger['observation'] ?? null))
                                             <td class="w-full md:table-cell md:w-auto md:min-w-56 md:max-w-sm md:px-4 md:py-2">
                                                 <div
-                                                    class="rounded-lg border-l-4 border-amber-400 bg-amber-50 px-3 py-2 text-sm break-words whitespace-pre-line text-gray-900 dark:border-amber-500 dark:bg-amber-900/20 dark:text-gray-100">{{ $passenger['observation'] }}</div>
+                                                    class="rounded-lg border-l-4 border-amber-400 bg-amber-50 px-3 py-2 text-sm wrap-break-word whitespace-pre-line text-gray-900 dark:border-amber-500 dark:bg-amber-900/20 dark:text-gray-100">{{ $passenger['observation'] }}</div>
                                             </td>
                                         @elseif ($isAdult)
                                             <td class="hidden px-4 py-2 text-sm md:table-cell text-gray-400 dark:text-gray-500">-</td>

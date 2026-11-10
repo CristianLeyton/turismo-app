@@ -4,6 +4,7 @@ namespace App\Filament\Client\Pages\Auth;
 
 use App\Support\ClientSession;
 use Filament\Auth\Pages\Login;
+use Filament\Facades\Filament;
 use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Components\Component;
 use Illuminate\Contracts\Support\Htmlable;
@@ -20,6 +21,20 @@ use SensitiveParameter;
  */
 class ClientLogin extends Login
 {
+    /**
+     * Mismo filtro que la respuesta del ingreso: un cliente ya autenticado
+     * que reaparece en el login tampoco debe ser devuelto al panel de
+     * administración por una URL prevista ajena.
+     */
+    public function mount(): void
+    {
+        if (Filament::auth()->check()) {
+            redirect()->to(ClientSession::intendedLoginUrl(Filament::getUrl()));
+        }
+
+        $this->form->fill();
+    }
+
     public function getHeading(): string|Htmlable|null
     {
         return 'Panel de clientes';

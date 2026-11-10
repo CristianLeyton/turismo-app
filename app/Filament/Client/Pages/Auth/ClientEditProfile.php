@@ -128,4 +128,14 @@ class ClientEditProfile extends BaseEditProfile
 
         return $data;
     }
+
+    /**
+     * Tras guardar, vuelve a llenar el formulario con lo persistido en la
+     * base: el modo SPA de Livewire puede servir después la página con el
+     * estado del HTML horneado antes del guardado.
+     */
+    protected function afterSave(): void
+    {
+        $this->fillForm();
+    }
 }

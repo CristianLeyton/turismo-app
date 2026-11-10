@@ -2,6 +2,7 @@
 
 namespace App\Providers\Filament;
 
+use App\Filament\Client\Auth\ClientLoginResponse;
 use App\Filament\Client\Pages\Auth\ClientEditProfile;
 use App\Filament\Client\Pages\Auth\ClientLogin;
 use App\Filament\Client\Pages\MyTickets;
@@ -11,6 +12,7 @@ use App\Http\Middleware\EnsureClientPasswordIsSet;
 use App\Models\Setting;
 use App\Support\BrandPalette;
 use Filament\Actions\Action;
+use Filament\Auth\Http\Responses\LoginResponse;
 use Filament\Enums\ThemeMode;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\DisableBladeIconComponents;
@@ -35,6 +37,16 @@ use Illuminate\View\Middleware\ShareErrorsFromSession;
  */
 class ClientPanelProvider extends PanelProvider
 {
+    public function register(): void
+    {
+        parent::register();
+
+        // El binding es global (el login de Filament resuelve la respuesta
+        // del contenedor); la clase delega al padre en cualquier panel que
+        // no sea el de clientes, así admin no cambia.
+        $this->app->bind(LoginResponse::class, ClientLoginResponse::class);
+    }
+
     public function panel(Panel $panel): Panel
     {
         return $panel

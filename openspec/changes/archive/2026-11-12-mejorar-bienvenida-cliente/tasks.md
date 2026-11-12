@@ -9,4 +9,4 @@
 ## 2. Verificación visual y estilo
 
 - [x] 2.1 Correr `vendor/bin/pint --dirty --format agent` y `php artisan test --compact --filter=BrandColorUsageTest` para confirmar que no hay colores de marca fijos ni `text-primary-*` sin `dark:`.
-- [ ] 2.2 Compilar con `npm run build` y revisar `/clientes/clave` en 360 px, 768 px y escritorio, en claro y oscuro, sin scroll horizontal.
+- [x] 2.2 Compilar con `npm run build` y revisar `/clientes/clave` en 360 px, 768 px y escritorio, en claro y oscuro, sin scroll horizontal.

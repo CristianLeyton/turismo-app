@@ -9,6 +9,7 @@ use App\Filament\Client\Pages\SetPassword;
 use App\Models\Clients;
 use App\Models\Setting;
 use Filament\Facades\Filament;
+use Filament\Support\Enums\Width;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Hash;
@@ -123,6 +124,47 @@ class ClientPanelProfileTest extends TestCase
             ->assertSeeText('¡Bienvenido a Expresso Sofia, Beto!')
             ->assertDontSeeText('boletería')
             ->assertDontSeeText('la conocemos');
+    }
+
+    public function test_la_bienvenida_explica_que_se_puede_hacer_en_el_panel(): void
+    {
+        $this->actingAs($this->createInitialClient(), 'client');
+
+        Livewire::test(SetPassword::class)
+            ->assertSeeText('Qué vas a poder hacer')
+            ->assertSeeText('Ver tus boletos')
+            ->assertSeeText('Elegir fecha y asiento')
+            ->assertSeeText('Ver o descargar el boleto')
+            ->assertSeeText('Primer paso: elegí tu contraseña')
+            ->assertDontSeeText('boletería');
+    }
+
+    public function test_la_bienvenida_muestra_el_resumen_antes_del_formulario(): void
+    {
+        $this->actingAs($this->createInitialClient(), 'client');
+
+        Livewire::test(SetPassword::class)
+            ->assertSeeHtmlInOrder(['Qué vas a poder hacer', 'Contraseña nueva']);
+    }
+
+    public function test_la_bienvenida_usa_una_columna_en_celular_y_color_de_marca(): void
+    {
+        $this->actingAs($this->createInitialClient(), 'client');
+
+        Livewire::test(SetPassword::class)
+            ->assertSeeHtml('grid-cols-1')
+            ->assertSeeHtml('sm:grid-cols-3')
+            ->assertSeeHtml('dark:text-primary-400');
+    }
+
+    public function test_la_bienvenida_acota_el_ancho_en_escritorio(): void
+    {
+        $this->actingAs($this->createInitialClient(), 'client');
+
+        $this->assertSame(
+            Width::ThreeExtraLarge,
+            Livewire::test(SetPassword::class)->instance()->getMaxContentWidth(),
+        );
     }
 
     public function test_elegir_la_clave_valida_largo_y_coincidencia(): void

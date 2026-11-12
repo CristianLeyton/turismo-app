@@ -13,6 +13,7 @@ use Filament\Schemas\Components\EmbeddedSchema;
 use Filament\Schemas\Components\Form;
 use Filament\Schemas\Components\View;
 use Filament\Schemas\Schema;
+use Filament\Support\Enums\Width;
 use Throwable;
 
 /**
@@ -34,6 +35,15 @@ class SetPassword extends Page
         $this->nombreApp = (string) config('app.name');
 
         $this->form->fill();
+    }
+
+    /**
+     * Ancho de lectura acotado: en escritorio la bienvenida no se estira
+     * a toda la pantalla.
+     */
+    public function getMaxContentWidth(): Width|string|null
+    {
+        return Width::ThreeExtraLarge;
     }
 
     public static function getNavigationLabel(): string

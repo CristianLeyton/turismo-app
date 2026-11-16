@@ -1030,6 +1030,130 @@ class TicketSettingsTest extends TestCase
         $this->assertDatabaseMissing('settings', ['key' => Setting::PRECIO_FIJO_BOLETO]);
     }
 
+    // ====================== Pasajeros por venta ======================
+
+    private function passengerLimitAdmin(string ...$extraPermissions): User
+    {
+        return $this->adminWithPermissions(TicketSettings::PASSENGER_LIMIT_PERMISSION, ...$extraPermissions);
+    }
+
+    public function test_el_limite_de_pasajeros_sin_configurar_es_4_y_se_acota_entre_1_y_8(): void
+    {
+        $this->assertSame(4, Setting::limitePasajerosVenta());
+
+        Setting::set(Setting::LIMITE_PASAJEROS_VENTA, '6');
+        $this->assertSame(6, Setting::limitePasajerosVenta());
+
+        Setting::set(Setting::LIMITE_PASAJEROS_VENTA, '0');
+        $this->assertSame(1, Setting::limitePasajerosVenta());
+
+        Setting::set(Setting::LIMITE_PASAJEROS_VENTA, '50');
+        $this->assertSame(8, Setting::limitePasajerosVenta());
+
+        Setting::set(Setting::LIMITE_PASAJEROS_VENTA, 'muchos');
+        $this->assertSame(4, Setting::limitePasajerosVenta());
+    }
+
+    public function test_con_el_permiso_se_ve_la_seccion_de_pasajeros_por_venta_con_4(): void
+    {
+        $this->actingAs($this->passengerLimitAdmin());
+
+        Livewire::test(TicketSettings::class)
+            ->assertSet('data.limite_pasajeros_venta', 4)
+            ->assertSee('Pasajeros por venta')
+            ->assertSee('Máximo de pasajeros por venta');
+
+        $this->assertContains('limite_pasajeros_venta', TicketSettings::TAB_FIELDS['Venta']);
+    }
+
+    public function test_pasajeros_por_venta_va_despues_de_venta_fuera_de_termino_y_antes_del_precio_fijo(): void
+    {
+        $this->actingAs($this->passengerLimitAdmin(TicketSettings::FIXED_PRICE_PERMISSION));
+
+        Livewire::test(TicketSettings::class)
+            ->assertSeeInOrder(['Venta fuera de término', 'Pasajeros por venta', 'Precio de los boletos']);
+    }
+
+    public function test_sin_el_permiso_no_se_ve_la_seccion_de_pasajeros_por_venta(): void
+    {
+        $this->actingAs($this->admin);
+
+        $this->assertFalse($this->admin->can(TicketSettings::PASSENGER_LIMIT_PERMISSION));
+
+        Livewire::test(TicketSettings::class)
+            ->assertDontSee('Pasajeros por venta')
+            ->assertDontSee('Máximo de pasajeros por venta');
+    }
+
+    public function test_con_el_permiso_se_cambia_el_limite_de_pasajeros(): void
+    {
+        $this->actingAs($this->passengerLimitAdmin());
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.limite_pasajeros_venta', '6')
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertSame(6, Setting::limitePasajerosVenta());
+    }
+
+    /**
+     * @return array<string, array{string, string}>
+     */
+    public static function invalidPassengerLimits(): array
+    {
+        return [
+            'cero' => ['0', 'La cantidad de pasajeros tiene que ser de al menos 1.'],
+            'mayor al tope' => ['9', 'La cantidad de pasajeros no puede ser mayor a 8.'],
+            'con decimales' => ['2.5', 'La cantidad de pasajeros tiene que ser un número entero.'],
+            'vacío' => ['', 'Ingresá la cantidad de pasajeros.'],
+        ];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('invalidPassengerLimits')]
+    public function test_un_limite_de_pasajeros_invalido_no_guarda_nada(string $value, string $message): void
+    {
+        $this->actingAs($this->passengerLimitAdmin());
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.venta_limite_horas', 8)
+            ->set('data.limite_pasajeros_venta', $value)
+            ->call('save')
+            ->assertHasErrors(['data.limite_pasajeros_venta' => $message]);
+
+        $this->assertDatabaseMissing('settings', ['key' => Setting::LIMITE_PASAJEROS_VENTA]);
+        $this->assertSame(Setting::VENTA_LIMITE_HORAS_DEFAULT, Setting::ventaLimiteHoras());
+    }
+
+    public function test_sin_el_permiso_guardar_conserva_el_limite_de_pasajeros(): void
+    {
+        Setting::set(Setting::LIMITE_PASAJEROS_VENTA, '6');
+        $this->actingAs($this->admin);
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.venta_limite_horas', 8)
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertSame(8, Setting::ventaLimiteHoras());
+        $this->assertSame(6, Setting::limitePasajerosVenta());
+    }
+
+    public function test_sin_el_permiso_un_pedido_manipulado_no_cambia_el_limite_de_pasajeros(): void
+    {
+        $this->actingAs($this->admin);
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.limite_pasajeros_venta', '8')
+            ->set('data.require_password_ticket_delete', true)
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertTrue(Setting::getBool(Setting::REQUIRE_PASSWORD_TICKET_DELETE));
+        $this->assertSame(4, Setting::limitePasajerosVenta());
+        $this->assertDatabaseMissing('settings', ['key' => Setting::LIMITE_PASAJEROS_VENTA]);
+    }
+
     // ====================== Emisión al finalizar la venta ======================
 
     public function test_con_el_permiso_de_emision_la_pestana_boleto_muestra_emision_y_contacto(): void

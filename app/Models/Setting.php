@@ -142,6 +142,16 @@ class Setting extends Model
     public const PRECIO_FIJO_SEGURO_MENOR = 'sales.precio_fijo_seguro_menor';
 
     /**
+     * Máximo de pasajeros por venta. Sin configurar, 4 (el límite histórico
+     * que estaba fijo en el selector "Cantidad de pasajeros").
+     */
+    public const LIMITE_PASAJEROS_VENTA = 'sales.limite_pasajeros';
+
+    public const LIMITE_PASAJEROS_VENTA_DEFAULT = 4;
+
+    public const LIMITE_PASAJEROS_VENTA_MAX = 8;
+
+    /**
      * Color principal de la empresa (hex `#RRGGBB`). De él sale la paleta
      * `primary` de los paneles, la página pública del boleto y los PDFs
      * (ver App\Support\BrandPalette).
@@ -199,6 +209,19 @@ class Setting extends Model
     public static function ventaLimiteHoras(): int
     {
         return max(0, self::getInt(self::VENTA_LIMITE_HORAS, self::VENTA_LIMITE_HORAS_DEFAULT));
+    }
+
+    /**
+     * Máximo de pasajeros por venta, acotado a [1, 8]: un valor cargado a
+     * mano en la base no puede dejar la venta sin opciones ni habilitar
+     * ventas más grandes que el tope.
+     */
+    public static function limitePasajerosVenta(): int
+    {
+        return min(
+            self::LIMITE_PASAJEROS_VENTA_MAX,
+            max(1, self::getInt(self::LIMITE_PASAJEROS_VENTA, self::LIMITE_PASAJEROS_VENTA_DEFAULT)),
+        );
     }
 
     /**

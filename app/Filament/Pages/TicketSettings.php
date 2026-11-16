@@ -52,7 +52,7 @@ class TicketSettings extends Page
      * @var array<string, list<string>>
      */
     public const TAB_FIELDS = [
-        'Venta' => ['permitir_acompanantes', 'venta_limite_horas', 'selectores_detallados', 'observaciones_activas', 'precio_fijo_activo', 'precio_fijo_boleto', 'precio_fijo_seguro_menor'],
+        'Venta' => ['permitir_acompanantes', 'venta_limite_horas', 'limite_pasajeros_venta', 'selectores_detallados', 'observaciones_activas', 'precio_fijo_activo', 'precio_fijo_boleto', 'precio_fijo_seguro_menor'],
         'Boleto' => ['descarga_automatica_pdf', 'whatsapp_mensaje', 'contact_lines'],
         'Calendario' => ['service_weekdays', 'service_exceptions'],
         'Seguridad' => ['require_password_ticket_delete', 'require_password_ticket_reschedule', 'require_password_ticket_edit'],
@@ -77,6 +77,9 @@ class TicketSettings extends Page
 
     /** Permiso para ver y cambiar el precio fijo de los boletos. */
     public const FIXED_PRICE_PERMISSION = 'settings.fixed_price';
+
+    /** Permiso para ver y cambiar el máximo de pasajeros por venta. */
+    public const PASSENGER_LIMIT_PERMISSION = 'settings.passenger_limit';
 
     /** Permiso para ver la pestaña Calendario y cambiar los días de servicio y sus excepciones. */
     public const CALENDAR_PERMISSION = 'settings.calendar';
@@ -139,6 +142,7 @@ class TicketSettings extends Page
             'require_password_ticket_reschedule' => Setting::getBool(Setting::REQUIRE_PASSWORD_TICKET_RESCHEDULE),
             'require_password_ticket_edit' => Setting::getBool(Setting::REQUIRE_PASSWORD_TICKET_EDIT),
             'venta_limite_horas' => Setting::ventaLimiteHoras(),
+            'limite_pasajeros_venta' => Setting::limitePasajerosVenta(),
             'permitir_acompanantes' => Setting::permiteAcompanantes(),
             'descarga_automatica_pdf' => Setting::descargaAutomaticaPdf(),
             'whatsapp_mensaje' => Setting::whatsappMensaje(),
@@ -215,6 +219,14 @@ class TicketSettings extends Page
     protected function canManageFixedPrice(): bool
     {
         return (bool) Auth::user()?->can(self::FIXED_PRICE_PERMISSION);
+    }
+
+    /**
+     * ¿Quien usa la página puede cambiar el máximo de pasajeros por venta?
+     */
+    protected function canManagePassengerLimit(): bool
+    {
+        return (bool) Auth::user()?->can(self::PASSENGER_LIMIT_PERMISSION);
     }
 
     /**
@@ -312,6 +324,28 @@ class TicketSettings extends Page
                             'integer' => 'La cantidad de horas tiene que ser un número entero.',
                             'min' => 'La cantidad de horas no puede ser negativa.',
                             'max' => 'La cantidad de horas no puede ser mayor a :max.',
+                        ]),
+                ]),
+
+            Section::make('Pasajeros por venta')
+                ->columnSpanFull()
+                ->visible(fn (): bool => $this->canManagePassengerLimit())
+                ->schema([
+                    TextInput::make('limite_pasajeros_venta')
+                        ->label('Máximo de pasajeros por venta')
+                        ->hintIcon(Heroicon::OutlinedInformationCircle, tooltip: 'Es la cantidad máxima que ofrece "Cantidad de pasajeros" al vender. Las ventas ya hechas no cambian.')
+                        ->integer()
+                        ->minValue(1)
+                        ->maxValue(Setting::LIMITE_PASAJEROS_VENTA_MAX)
+                        ->required()
+                        ->default(Setting::LIMITE_PASAJEROS_VENTA_DEFAULT)
+                        ->suffix('pasajeros')
+                        ->validationMessages([
+                            'required' => 'Ingresá la cantidad de pasajeros.',
+                            'numeric' => 'La cantidad de pasajeros tiene que ser un número.',
+                            'integer' => 'La cantidad de pasajeros tiene que ser un número entero.',
+                            'min' => 'La cantidad de pasajeros tiene que ser de al menos :min.',
+                            'max' => 'La cantidad de pasajeros no puede ser mayor a :max.',
                         ]),
                 ]),
 
@@ -760,6 +794,15 @@ class TicketSettings extends Page
             Setting::VENTA_LIMITE_HORAS,
             (string) max(0, (int) ($data['venta_limite_horas'] ?? Setting::VENTA_LIMITE_HORAS_DEFAULT)),
         );
+
+        // Sin el permiso, la sección está oculta: el límite queda como estaba
+        // aunque el pedido lo traiga.
+        if ($this->canManagePassengerLimit() && array_key_exists('limite_pasajeros_venta', $data)) {
+            Setting::set(
+                Setting::LIMITE_PASAJEROS_VENTA,
+                (string) (int) $data['limite_pasajeros_venta'],
+            );
+        }
 
         Setting::set(
             Setting::PERMITIR_ACOMPANANTES,

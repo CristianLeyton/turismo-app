@@ -112,6 +112,13 @@ class ClientPanelProvider extends PanelProvider
                 ])->render(),
                 scopes: ClientLogin::class,
             )
+            // Al volver al ingreso con Atrás, lo que el navegador repone en
+            // los campos pasa al formulario (ver la vista).
+            ->renderHook(
+                PanelsRenderHook::BODY_END,
+                fn (): string => view('filament.login-back-navigation-sync')->render(),
+                scopes: ClientLogin::class,
+            )
             /* Igual que en el panel admin: la ruedita no cambia el valor de
                los inputs numéricos enfocados. */
             ->renderHook(

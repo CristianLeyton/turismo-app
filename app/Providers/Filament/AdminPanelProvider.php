@@ -40,14 +40,14 @@ class AdminPanelProvider extends PanelProvider
             ->spa(hasPrefetching: true)
             /*             ->sidebarCollapsibleOnDesktop() */
             ->default()
-            ->brandLogo(fn() => view('filament.admin.logo'))
+            ->brandLogo(fn () => view('filament.admin.logo'))
             ->topNavigation()
             ->navigationItems([
                 NavigationItem::make('Vender')
-                    ->url(fn() => TicketResource::getUrl('create'))
+                    ->url(fn () => TicketResource::getUrl('create'))
                     ->label('Vender')
                     ->icon('heroicon-m-banknotes')
-                    ->isActiveWhen(fn() => request()->routeIs('filament.admin.tickets.resources.tickets.create'))
+                    ->isActiveWhen(fn () => request()->routeIs('filament.admin.tickets.resources.tickets.create'))
                     ->sort(0),
             ])
             ->unsavedChangesAlerts()
@@ -58,12 +58,12 @@ class AdminPanelProvider extends PanelProvider
             ->viteTheme('resources/css/filament/admin/theme.css')
             // Color de la empresa (Parámetros > Apariencia): la paleta se
             // genera en cada request, sin recompilar el tema.
-            ->colors(fn(): array => ['primary' => BrandPalette::current()])
+            ->colors(fn (): array => ['primary' => BrandPalette::current()])
             // Texto sobre el color principal (logo y vistas propias): blanco
             // u oscuro según el contraste con el color elegido.
             ->renderHook(
                 PanelsRenderHook::STYLES_AFTER,
-                fn(): string => BrandPalette::textColorStyleTag(),
+                fn (): string => BrandPalette::textColorStyleTag(),
             )
             ->defaultThemeMode(ThemeMode::Light)
             ->discoverClusters(in: app_path('Filament/Clusters'), for: 'App\Filament\Clusters')
@@ -99,13 +99,13 @@ class AdminPanelProvider extends PanelProvider
                nombre completo y los roles asignados, arriba de "Perfil". */
             ->renderHook(
                 PanelsRenderHook::USER_MENU_PROFILE_BEFORE,
-                fn() => Auth::user()
+                fn () => Auth::user()
                     ? view('filament.admin.user-menu-info', ['user' => Auth::user()])->render()
                     : '',
             )
             ->renderHook(
                 PanelsRenderHook::BODY_END,
-                fn() => <<<'HTML'
+                fn () => <<<'HTML'
                     <script>
                         document.addEventListener('wheel', (event) => {
                             const el = event.target instanceof Element
@@ -125,9 +125,16 @@ class AdminPanelProvider extends PanelProvider
                se aplica en la página Login de este panel. */
             ->renderHook(
                 PanelsRenderHook::AUTH_LOGIN_FORM_AFTER,
-                fn(): string => Setting::panelClientesActivo()
+                fn (): string => Setting::panelClientesActivo()
                     ? view('filament.admin.client-login-shortcut')->render()
                     : '',
+            )
+            /* Al volver al ingreso con Atrás, lo que el navegador repone en
+               los campos pasa al formulario (ver la vista). */
+            ->renderHook(
+                PanelsRenderHook::BODY_END,
+                fn (): string => view('filament.login-back-navigation-sync')->render(),
+                scopes: CustomLogin::class,
             );
     }
 }

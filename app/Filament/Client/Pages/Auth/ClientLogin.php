@@ -18,6 +18,10 @@ use SensitiveParameter;
  * del login de Filament. El mensaje de error es el mismo para un DNI
  * desconocido y una contraseña incorrecta, para no revelar quién está en el
  * padrón.
+ *
+ * El DNI solo admite dígitos, puntos, espacios y guiones: el login de
+ * administración comparte dominio y Chrome puede autocompletar acá un
+ * nombre de usuario del admin, que recibe un mensaje de formato propio.
  */
 class ClientLogin extends Login
 {
@@ -53,8 +57,10 @@ class ClientLogin extends Login
             ->inputMode('numeric')
             ->autocomplete('username')
             ->autofocus()
+            ->regex('/^(?=.*\d)[\d.\s-]+$/')
             ->validationMessages([
                 'required' => 'El DNI es obligatorio.',
+                'regex' => 'Ingresá solo los números de tu DNI.',
             ]);
     }
 

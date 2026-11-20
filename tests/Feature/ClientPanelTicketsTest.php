@@ -26,6 +26,7 @@ use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 /**
@@ -225,6 +226,71 @@ class ClientPanelTicketsTest extends TestCase
             ->fillForm(['dni' => '11223344', 'password' => 'clave-prueba'])
             ->call('authenticate')
             ->assertHasFormErrors(['dni']);
+
+        $this->assertGuest('client');
+    }
+
+    /**
+     * Chrome guarda las contraseñas por dominio: en el login de clientes puede
+     * autocompletar el usuario del panel de administración en el campo DNI.
+     */
+    public function test_un_usuario_del_admin_en_el_dni_muestra_el_error_de_formato(): void
+    {
+        $this->createClient('11223344');
+
+        $this->clientLogin()
+            ->fillForm(['dni' => 'cristian', 'password' => 'clave-prueba'])
+            ->call('authenticate')
+            ->assertHasFormErrors(['dni' => 'Ingresá solo los números de tu DNI.']);
+
+        $this->assertGuest('client');
+    }
+
+    public function test_un_dni_sin_digitos_muestra_el_error_de_formato(): void
+    {
+        $this->createClient('11223344');
+
+        $this->clientLogin()
+            ->fillForm(['dni' => '...', 'password' => 'clave-prueba'])
+            ->call('authenticate')
+            ->assertHasFormErrors(['dni' => 'Ingresá solo los números de tu DNI.']);
+
+        $this->assertGuest('client');
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function dniConSeparadores(): array
+    {
+        return [
+            'puntos' => ['11.223.344'],
+            'espacios' => ['11 223 344'],
+            'guiones' => ['11-223-344'],
+        ];
+    }
+
+    #[DataProvider('dniConSeparadores')]
+    public function test_el_dni_con_separadores_inicia_sesion(string $dni): void
+    {
+        $client = $this->createClient('11223344');
+
+        $this->clientLogin()
+            ->fillForm(['dni' => $dni, 'password' => 'clave-prueba'])
+            ->call('authenticate')
+            ->assertHasNoFormErrors();
+
+        $this->assertAuthenticatedAs($client, 'client');
+    }
+
+    public function test_un_dni_bien_escrito_fuera_del_padron_recibe_el_error_generico(): void
+    {
+        $this->createClient('11223344');
+
+        $this->clientLogin()
+            ->fillForm(['dni' => '55.666.777', 'password' => 'clave-prueba'])
+            ->call('authenticate')
+            ->assertHasFormErrors(['dni' => 'El DNI o la contraseña son incorrectos.']);
 
         $this->assertGuest('client');
     }

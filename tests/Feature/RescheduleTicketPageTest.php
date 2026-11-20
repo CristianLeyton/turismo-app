@@ -7,6 +7,7 @@ use App\Filament\Resources\Tickets\Pages\RescheduleTicket;
 use App\Filament\Resources\Tickets\Pages\ViewTicket;
 use App\Filament\Resources\Tickets\TicketResource;
 use App\Models\Bus;
+use App\Models\Clients;
 use App\Models\Location;
 use App\Models\Passenger;
 use App\Models\Route;
@@ -744,5 +745,216 @@ class RescheduleTicketPageTest extends TestCase
             'idaSeat3' => $seat('3'),
             'vueltaSeat4' => $seat('4'),
         ];
+    }
+
+    // ============ Dejar con fecha abierta ============
+
+    /**
+     * Rol Administrador con "Vender sin fecha/horario", que no trae por
+     * defecto, y el pasajero del boleto registrado en el padrón.
+     */
+    private function prepareOpenDate(Ticket $ticket): void
+    {
+        $this->grantSellWithoutDateToAdminRole();
+        Clients::create([
+            'dni' => $ticket->passenger->dni,
+            'nombre' => 'Juana',
+            'apellido' => 'Rendida',
+            'can_buy' => true,
+        ]);
+    }
+
+    private function grantSellWithoutDateToAdminRole(): void
+    {
+        \Spatie\Permission\Models\Role::findByName(\App\Support\Permissions::ROLE_ADMIN)
+            ->givePermissionTo('tickets.vender_sin_fecha');
+        $this->admin->refresh();
+    }
+
+    public function test_con_los_dos_permisos_ofrece_dejar_con_fecha_abierta(): void
+    {
+        $this->actingAs($this->admin);
+        $ticket = $this->createOneWayTicket();
+        $this->prepareOpenDate($ticket);
+
+        Livewire::test(RescheduleTicket::class, ['record' => $ticket->id])
+            ->assertFormFieldIsVisible('mode')
+            ->assertFormFieldIsHidden('reason');
+    }
+
+    public function test_sin_vender_sin_fecha_no_ofrece_la_fecha_abierta(): void
+    {
+        $this->actingAs($this->admin);
+        $ticket = $this->createOneWayTicket();
+
+        $this->assertTrue($this->admin->can('tickets.reschedule'));
+        $this->assertFalse($this->admin->can('tickets.vender_sin_fecha'));
+
+        Livewire::test(RescheduleTicket::class, ['record' => $ticket->id])
+            ->assertFormFieldIsHidden('mode')
+            ->assertFormFieldIsVisible('date');
+    }
+
+    public function test_sin_ningun_rol_con_vender_sin_fecha_no_ofrece_la_fecha_abierta(): void
+    {
+        // Permiso directo al usuario, pero ningún rol lo tiene asignado (como en la venta sin fecha).
+        $this->actingAs($this->admin);
+        $ticket = $this->createOneWayTicket();
+        $this->admin->givePermissionTo('tickets.vender_sin_fecha');
+
+        $this->assertFalse(\App\Support\Permissions::permissionGrantedToAnyRole('tickets.vender_sin_fecha'));
+
+        Livewire::test(RescheduleTicket::class, ['record' => $ticket->id])
+            ->assertFormFieldIsHidden('mode');
+    }
+
+    public function test_un_boleto_sin_fecha_no_ofrece_la_fecha_abierta(): void
+    {
+        $this->actingAs($this->admin);
+        $ticket = $this->createOneWayTicket();
+        $this->prepareOpenDate($ticket);
+        $ticket->forceFill(['trip_id' => null, 'seat_id' => null])->save();
+
+        Livewire::test(RescheduleTicket::class, ['record' => $ticket->id])
+            ->assertFormFieldIsHidden('mode');
+    }
+
+    public function test_en_fecha_abierta_oculta_fecha_horario_y_asiento_y_muestra_el_motivo(): void
+    {
+        $this->actingAs($this->admin);
+        $ticket = $this->createOneWayTicket();
+        $this->prepareOpenDate($ticket);
+
+        Livewire::test(RescheduleTicket::class, ['record' => $ticket->id])
+            ->set('data.mode', 'open_date')
+            ->assertFormFieldIsHidden('date')
+            ->assertFormFieldIsHidden('schedule_id')
+            ->assertFormFieldIsVisible('reason')
+            ->assertSet('data.mode', 'open_date')
+            ->tap(fn ($component) => $this->assertTrue($component->instance()->isOpenDateMode()));
+    }
+
+    public function test_con_descarga_automatica_deja_la_fecha_abierta_y_entrega_el_pdf(): void
+    {
+        Setting::set(Setting::DESCARGA_AUTOMATICA_PDF, '1');
+        $this->actingAs($this->admin);
+        $ticket = $this->createOneWayTicket();
+        $this->prepareOpenDate($ticket);
+
+        Livewire::test(RescheduleTicket::class, ['record' => $ticket->id])
+            ->set('data.mode', 'open_date')
+            ->set('data.reason', 'Perdió el colectivo')
+            ->call('confirmReschedule')
+            ->assertRedirect(TicketResource::getUrl('view', ['record' => $ticket->id]));
+
+        $ticket->refresh();
+        $this->assertTrue($ticket->isPendingDate());
+        $this->assertSame('Perdió el colectivo', $ticket->dateChanges()->sole()->reason);
+        $this->assertNotNull(session('ticket_pdf_content'));
+        $this->assertNull(session(TicketDelivery::SESSION_KEY));
+
+        Setting::flushCache();
+    }
+
+    public function test_sin_descarga_automatica_abre_el_modal_de_fecha_abierta_en_el_detalle(): void
+    {
+        Setting::set(Setting::DESCARGA_AUTOMATICA_PDF, '0');
+        $this->actingAs($this->admin);
+        $ticket = $this->createOneWayTicket();
+        $this->prepareOpenDate($ticket);
+
+        Livewire::test(RescheduleTicket::class, ['record' => $ticket->id])
+            ->set('data.mode', 'open_date')
+            ->call('confirmReschedule')
+            ->assertRedirect(TicketResource::getUrl('view', ['record' => $ticket->id]));
+
+        $pending = session(TicketDelivery::SESSION_KEY);
+        $this->assertSame(TicketDelivery::KIND_OPEN_DATE, $pending['kind']);
+        $this->assertNull(session('ticket_pdf_content'));
+        $this->assertTrue($ticket->fresh()->isPendingDate());
+
+        Livewire::test(ViewTicket::class, ['record' => $ticket->id])
+            ->assertSet('defaultAction', TicketDeliveryAction::NAME)
+            ->mountAction(TicketDeliveryAction::NAME, $pending)
+            ->assertMountedActionModalSee("Boleto N°{$ticket->id} quedó con fecha abierta")
+            ->assertMountedActionModalSee('Cerrar')
+            ->assertMountedActionModalDontSee('Nueva venta');
+
+        Setting::flushCache();
+    }
+
+    public function test_pasajero_fuera_del_padron_muestra_el_aviso_y_no_cambia_el_boleto(): void
+    {
+        $this->actingAs($this->admin);
+        $ticket = $this->createOneWayTicket();
+        $this->grantSellWithoutDateToAdminRole();
+        $tripId = $ticket->trip_id;
+
+        Livewire::test(RescheduleTicket::class, ['record' => $ticket->id])
+            ->set('data.mode', 'open_date')
+            ->call('confirmReschedule')
+            ->assertNotified('No se pudo dejar con fecha abierta')
+            ->assertNoRedirect();
+
+        $this->assertSame($tripId, $ticket->fresh()->trip_id);
+    }
+
+    public function test_un_modo_manipulado_sin_permiso_no_deja_la_fecha_abierta(): void
+    {
+        $this->actingAs($this->admin);
+        $ticket = $this->createOneWayTicket();
+        $tripId = $ticket->trip_id;
+
+        // Sin "Vender sin fecha/horario": el modo no se ofrece y, forzado,
+        // se trata como reprogramación (que pide fecha y horario).
+        Livewire::test(RescheduleTicket::class, ['record' => $ticket->id])
+            ->set('data.mode', 'open_date')
+            ->call('confirmReschedule');
+
+        $this->assertSame($tripId, $ticket->fresh()->trip_id);
+        $this->assertSame(0, $ticket->dateChanges()->count());
+    }
+
+    public function test_las_opciones_de_que_queres_hacer_van_en_linea(): void
+    {
+        $this->actingAs($this->admin);
+        $ticket = $this->createOneWayTicket();
+        $this->prepareOpenDate($ticket);
+
+        $component = Livewire::test(RescheduleTicket::class, ['record' => $ticket->id]);
+
+        $mode = $component->instance()->form->getComponent('mode');
+
+        $this->assertInstanceOf(\Filament\Forms\Components\Radio::class, $mode);
+        $this->assertTrue($mode->isInline());
+    }
+
+    public function test_el_resumen_del_boleto_reparte_los_datos_en_todo_el_ancho(): void
+    {
+        $this->actingAs($this->admin);
+        $ticket = $this->createOneWayTicket();
+
+        Livewire::test(RescheduleTicket::class, ['record' => $ticket->id])
+            ->assertSeeHtml('grid-cols-[repeat(auto-fit,minmax(10rem,1fr))]');
+    }
+
+    public function test_la_ayuda_de_fecha_abierta_menciona_el_panel_solo_si_esta_activo(): void
+    {
+        $this->actingAs($this->admin);
+        $ticket = $this->createOneWayTicket();
+        $this->prepareOpenDate($ticket);
+
+        Setting::set(Setting::PANEL_CLIENTES_ACTIVO, '1');
+        Livewire::test(RescheduleTicket::class, ['record' => $ticket->id])
+            ->set('data.mode', 'open_date')
+            ->assertSeeText('o la elige el pasajero desde su panel');
+
+        Setting::set(Setting::PANEL_CLIENTES_ACTIVO, '0');
+        Livewire::test(RescheduleTicket::class, ['record' => $ticket->id])
+            ->set('data.mode', 'open_date')
+            ->assertSeeText('La fecha nueva se asigna después reprogramando.')
+            ->assertDontSeeText('desde su panel');
+
+        Setting::flushCache();
     }
 }

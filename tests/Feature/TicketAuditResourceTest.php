@@ -1022,4 +1022,107 @@ class TicketAuditResourceTest extends TestCase
             'trip_date' => $date,
         ]);
     }
+
+    // ============ Fecha abierta ============
+
+    /**
+     * Lo que deja TicketRescheduleService::openDate(): el boleto sin viaje ni
+     * asiento y un cambio de tipo "fecha abierta" hecho por un usuario.
+     */
+    private function openDateAs(Ticket $ticket, User $user, ?string $reason = null): void
+    {
+        TicketDateChange::create([
+            'ticket_id' => $ticket->id,
+            'leg' => TicketDateChange::LEG_OUTBOUND,
+            'kind' => TicketDateChange::KIND_OPEN_DATE,
+            'reason' => $reason,
+            'from_trip_id' => $ticket->trip_id,
+            'from_schedule_id' => $ticket->trip->schedule_id,
+            'from_seat_id' => $ticket->seat_id,
+            'user_id' => $user->id,
+            'actor_type' => TicketDateChange::ACTOR_USER,
+        ]);
+
+        $ticket->update(['trip_id' => null, 'seat_id' => null]);
+    }
+
+    public function test_el_detalle_muestra_la_fecha_abierta_con_su_motivo(): void
+    {
+        $this->actingAs($this->admin);
+
+        $ticket = $this->createOneWayTicket('2026-10-03');
+        $this->openDateAs($ticket, $this->admin, 'No sabe cuándo vuelve');
+
+        $response = $this->get(TicketAuditResource::getUrl('view', ['record' => $ticket->id]));
+
+        $response->assertOk();
+        $response->assertSee('Dejó el boleto con fecha abierta');
+        $response->assertSee('03/10/2026');   // viaje de origen
+        $response->assertSee('Asiento 1');
+        $response->assertSee('Fecha abierta');
+        $response->assertSee('Admin');
+        $response->assertSee('Motivo');
+        $response->assertSee('No sabe cuándo vuelve');
+    }
+
+    public function test_el_detalle_sin_motivo_no_muestra_el_renglon_de_motivo(): void
+    {
+        $this->actingAs($this->admin);
+
+        $ticket = $this->createOneWayTicket('2026-10-03');
+        $this->openDateAs($ticket, $this->admin);
+
+        $response = $this->get(TicketAuditResource::getUrl('view', ['record' => $ticket->id]));
+
+        $response->assertOk();
+        $response->assertSee('Dejó el boleto con fecha abierta');
+        $response->assertDontSee('Motivo');
+    }
+
+    public function test_una_reprogramacion_con_el_viaje_destino_borrado_no_se_muestra_como_fecha_abierta(): void
+    {
+        $this->actingAs($this->admin);
+
+        $ticket = $this->createOneWayTicket('2026-10-03');
+        $this->rescheduleTicket($ticket, $this->admin->id, '2026-10-05');
+
+        // Lo que deja el nullOnDelete al borrar el viaje destino.
+        TicketDateChange::query()->where('ticket_id', $ticket->id)->update(['to_trip_id' => null]);
+
+        $response = $this->get(TicketAuditResource::getUrl('view', ['record' => $ticket->id]));
+
+        $response->assertOk();
+        $response->assertSee('Historial de reprogramaciones');
+        $response->assertDontSee('Dejó el boleto con fecha abierta');
+        $response->assertDontSee('Fecha abierta');
+    }
+
+    public function test_la_fecha_abierta_cuenta_como_reprogramado_y_como_vendedor(): void
+    {
+        $this->actingAs($this->admin);
+        Setting::set(Setting::PANEL_CLIENTES_ACTIVO, '1');
+
+        $abierto = $this->createOneWayTicket('2026-10-03');
+        $this->openDateAs($abierto, $this->admin);
+
+        $editado = $this->createOneWayTicket('2026-10-04');
+        $this->editTicket($editado);
+
+        $component = Livewire::test(TicketAuditResource::getPages()['index']->getPage());
+
+        $visibleIds = fn (): array => $component->instance()
+            ->getFilteredTableQuery()
+            ->pluck('tickets.id')
+            ->all();
+
+        $component->set('tableFilters.audit_state.value', 'rescheduled');
+        $this->assertSame([$abierto->id], $visibleIds());
+
+        $component->set('tableFilters.audit_state.value', null);
+        $component->set('tableFilters.actor.value', 'sellers');
+        $this->assertContains($abierto->id, $visibleIds());
+
+        $component->set('tableFilters.actor.value', 'clients');
+        $this->assertNotContains($abierto->id, $visibleIds());
+    }
 }

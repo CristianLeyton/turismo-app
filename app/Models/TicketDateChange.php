@@ -17,9 +17,17 @@ class TicketDateChange extends Model
     /** Reprogramación hecha por un cliente desde su panel. */
     public const ACTOR_CLIENT = 'client';
 
+    /** El boleto pasó a otro viaje (o recibió su primera fecha). */
+    public const KIND_RESCHEDULE = 'reschedule';
+
+    /** El personal dejó el boleto con fecha abierta: quedó sin viaje ni asiento. */
+    public const KIND_OPEN_DATE = 'open_date';
+
     protected $fillable = [
         'ticket_id',
         'leg',
+        'kind',
+        'reason',
         'from_trip_id',
         'to_trip_id',
         'from_schedule_id',
@@ -30,6 +38,16 @@ class TicketDateChange extends Model
         'actor_type',
         'client_id',
     ];
+
+    /**
+     * ¿Este cambio dejó el boleto con fecha abierta? Se decide por el tipo
+     * guardado, nunca por la falta del viaje destino (que también queda NULL
+     * si ese viaje se borra).
+     */
+    public function isOpenDate(): bool
+    {
+        return $this->kind === self::KIND_OPEN_DATE;
+    }
 
     public function ticket(): BelongsTo
     {

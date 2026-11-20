@@ -26,6 +26,12 @@ final class TicketDelivery
 
     public const KIND_RESCHEDULE = 'reschedule';
 
+    /** El boleto quedó con fecha abierta desde "Reprogramar boleto". */
+    public const KIND_OPEN_DATE = 'open_date';
+
+    /** Pedidos que salen de "Reprogramar boleto": se entregan desde el detalle del boleto. */
+    public const RESCHEDULE_KINDS = [self::KIND_RESCHEDULE, self::KIND_OPEN_DATE];
+
     /**
      * Boletos que se entregan al cerrar una venta: uno por pasajero, el de
      * ida (su PDF incluye la vuelta si es diferido).
@@ -61,14 +67,15 @@ final class TicketDelivery
     }
 
     /**
-     * Pide abrir el modal de entrega de un boleto reprogramado.
+     * Pide abrir el modal de entrega de un boleto reprogramado, o que quedó
+     * con fecha abierta ($openDate) y se entrega sin fecha.
      */
-    public static function flashForReschedule(Ticket $ticket): void
+    public static function flashForReschedule(Ticket $ticket, bool $openDate = false): void
     {
         $ticket->shareToken();
 
         session()->flash(self::SESSION_KEY, [
-            'kind' => self::KIND_RESCHEDULE,
+            'kind' => $openDate ? self::KIND_OPEN_DATE : self::KIND_RESCHEDULE,
             'sale_id' => $ticket->sale_id,
             'ticket_ids' => [$ticket->id],
         ]);
@@ -88,7 +95,7 @@ final class TicketDelivery
         }
 
         return [
-            'kind' => $pending['kind'] === self::KIND_RESCHEDULE ? self::KIND_RESCHEDULE : self::KIND_SALE,
+            'kind' => in_array($pending['kind'] ?? null, self::RESCHEDULE_KINDS, true) ? $pending['kind'] : self::KIND_SALE,
             'sale_id' => isset($pending['sale_id']) ? (int) $pending['sale_id'] : null,
             'ticket_ids' => array_values(array_map('intval', (array) $pending['ticket_ids'])),
         ];

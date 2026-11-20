@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Exceptions\DuplicatePassengerOnTripException;
 use App\Models\Bus;
+use App\Models\Clients;
 use App\Models\Schedule;
 use App\Models\Seat;
 use App\Models\SeatReservation;
@@ -81,6 +82,147 @@ class TicketRescheduleService
         $this->assertPasswordConfirmed($data['confirm_password'] ?? null);
 
         return $this->rescheduleForActor($ticket, $data, Auth::id());
+    }
+
+    /**
+     * Dejar un boleto con fecha abierta: el tramo (o los dos, con scope "both"
+     * desde la ida de un ida y vuelta) queda sin viaje ni asiento, como un
+     * boleto vendido sin fecha. Conserva número, venta, precio y colectivo, y
+     * el asiento queda libre en el viaje original. Solo lo usa el personal.
+     *
+     * @param  array{scope?: string, reason?: ?string, confirm_password?: ?string}  $data
+     * @return array{ticket: Ticket, changes: array<int, array<string, mixed>>}
+     *
+     * @throws ValidationException
+     */
+    public function openDate(Ticket $ticket, array $data): array
+    {
+        $ticket = Ticket::withTrashed()->findOrFail($ticket->id);
+
+        $this->assertTicketIsReschedulable($ticket);
+
+        if (! Auth::check() || ! Auth::user()->can('tickets.reschedule') || ! Auth::user()->can('tickets.vender_sin_fecha')) {
+            throw ValidationException::withMessages([
+                'user' => 'No tenés permiso para dejar boletos con fecha abierta.',
+            ]);
+        }
+
+        $this->assertPasswordConfirmed($data['confirm_password'] ?? null);
+
+        if (! Clients::query()->where('dni', $ticket->passenger?->dni)->exists()) {
+            throw ValidationException::withMessages([
+                'ticket' => 'El pasajero no está registrado en el padrón de clientes. Agregalo desde Clientes y volvé a intentar.',
+            ]);
+        }
+
+        $scope = $data['scope'] ?? 'outbound';
+        if (! in_array($scope, self::SCOPES, true)) {
+            throw ValidationException::withMessages(['scope' => 'Alcance de reprogramación inválido.']);
+        }
+
+        $isReturnLegTicket = $ticket->isReturnLeg();
+        if ($isReturnLegTicket) {
+            $scope = 'outbound';
+        }
+
+        if ($scope === 'both' && ! $ticket->is_round_trip) {
+            throw ValidationException::withMessages(['scope' => 'Este boleto no es de ida y vuelta.']);
+        }
+
+        $reason = filled($data['reason'] ?? null) ? trim((string) $data['reason']) : null;
+        $actorId = Auth::id();
+        $changes = [];
+
+        DB::transaction(function () use ($ticket, $scope, $isReturnLegTicket, $reason, $actorId, &$changes) {
+            $mainTicket = Ticket::query()->lockForUpdate()->find($ticket->id);
+
+            if (! $mainTicket) {
+                throw ValidationException::withMessages(['ticket' => 'El boleto fue eliminado mientras se procesaba el cambio.']);
+            }
+
+            // [boleto, tramo auditado]; los tramos ya sin fecha se omiten.
+            $legs = [[$mainTicket, $isReturnLegTicket ? TicketDateChange::LEG_RETURN : TicketDateChange::LEG_OUTBOUND]];
+
+            if ($scope === 'both') {
+                $returnTicket = $this->findReturnLegTicket($mainTicket, lockForUpdate: true);
+
+                if ($returnTicket) {
+                    $legs[] = [$returnTicket, TicketDateChange::LEG_RETURN];
+                }
+            }
+
+            $legs = array_values(array_filter($legs, fn (array $leg): bool => ! $leg[0]->isPendingDate()));
+
+            if ($legs === []) {
+                throw ValidationException::withMessages(['ticket' => 'El boleto ya está sin fecha.']);
+            }
+
+            foreach ($legs as [$legTicket, $leg]) {
+                $changes[] = $this->clearLeg($legTicket, $leg);
+
+                // Vuelta abierta: la ida deja de estar ligada a un viaje de vuelta
+                // (misma convención que una venta con la vuelta pendiente).
+                if ($leg === TicketDateChange::LEG_RETURN) {
+                    $outbound = $legTicket->is($mainTicket) ? $this->findOutboundTicket($legTicket) : $mainTicket;
+                    $outbound?->forceFill(['return_trip_id' => null])->save();
+                }
+            }
+
+            foreach ($changes as $change) {
+                TicketDateChange::create($change + [
+                    'kind' => TicketDateChange::KIND_OPEN_DATE,
+                    'reason' => $reason,
+                ] + $this->actorAttributes($actorId, null));
+            }
+
+            // Asientos que la página de reprogramación haya reservado en esta sesión.
+            SeatReservation::releaseBySession(session()->getId());
+        });
+
+        return [
+            'ticket' => $ticket->fresh(),
+            'changes' => $changes,
+        ];
+    }
+
+    /**
+     * Quitar viaje y asiento a un tramo dentro de la transacción activa. El
+     * UPDATE se condiciona al viaje original por si otro proceso lo movió.
+     *
+     * @return array<string, mixed> Fila de auditoría (sin tipo, motivo ni autor).
+     */
+    private function clearLeg(Ticket $ticket, string $leg): array
+    {
+        $change = [
+            'ticket_id' => $ticket->id,
+            'leg' => $leg,
+            'from_trip_id' => (int) $ticket->trip_id,
+            'to_trip_id' => null,
+            'from_schedule_id' => $ticket->trip?->schedule_id,
+            'to_schedule_id' => null,
+            'from_seat_id' => $ticket->seat_id,
+            'to_seat_id' => null,
+        ];
+
+        $updated = Ticket::query()
+            ->where('id', $ticket->id)
+            ->whereNull('deleted_at')
+            ->where('trip_id', $ticket->trip_id)
+            ->update([
+                'trip_id' => null,
+                'seat_id' => null,
+                // Un boleto con fecha toma el colectivo de su viaje; sin viaje,
+                // lo acarrea él (como la venta sin fecha) para que la nueva
+                // fecha se elija entre los horarios de la misma línea.
+                'bus_id' => $ticket->bus_id ?? $ticket->trip?->bus_id,
+                'updated_at' => now(),
+            ]);
+
+        if ($updated === 0) {
+            throw ValidationException::withMessages(['ticket' => 'El boleto cambió mientras se procesaba. Reintentá.']);
+        }
+
+        return $change;
     }
 
     /**
@@ -398,7 +540,7 @@ class TicketRescheduleService
 
                 // 4) Auditoría (una fila por tramo realmente movido)
                 foreach ($changes as $change) {
-                    TicketDateChange::create($change + $this->actorAttributes($actorId, $clientId));
+                    TicketDateChange::create($change + ['kind' => TicketDateChange::KIND_RESCHEDULE] + $this->actorAttributes($actorId, $clientId));
                 }
 
                 // 5) Liberar reservas temporales de esta sesión (asientos elegidos en el selector)

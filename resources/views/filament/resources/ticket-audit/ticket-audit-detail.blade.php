@@ -257,6 +257,13 @@
                     </div>
                 </div>
 
+                {{-- Fecha abierta: se decide por el tipo guardado, no por la falta del viaje destino. --}}
+                @if ($change->isOpenDate())
+                    <p class="mt-3 text-sm font-semibold text-amber-800 dark:text-amber-300">
+                        Dejó el boleto con fecha abierta
+                    </p>
+                @endif
+
                 <div class="mt-3 grid gap-2 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
                     <div class="rounded-lg border border-red-200 bg-red-50 dark:bg-red-900/20 dark:border-red-800 p-3">
                         <div class="text-xs uppercase text-red-700 dark:text-red-400">Antes</div>
@@ -272,19 +279,35 @@
 
                     <div class="hidden sm:block text-gray-400 dark:text-gray-500 text-lg">→</div>
 
-                    <div
-                        class="rounded-lg border border-green-200 bg-green-50 dark:bg-green-900/20 dark:border-green-800 p-3">
-                        <div class="text-xs uppercase text-green-700 dark:text-green-400">Después</div>
-                        <div class="font-semibold text-gray-900 dark:text-gray-100">
-                            {{ $changeLabel($change, 'to') }}
+                    @if ($change->isOpenDate())
+                        <div
+                            class="rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800 p-3">
+                            <div class="text-xs uppercase text-amber-700 dark:text-amber-400">Después</div>
+                            <div class="font-semibold text-gray-900 dark:text-gray-100">Fecha abierta</div>
+                            <div class="text-xs text-gray-500 dark:text-gray-400">Sin fecha ni asiento</div>
                         </div>
-                        @if ($change->toTrip?->bus)
-                            <div class="text-xs text-gray-500 dark:text-gray-400">
-                                Colectivo {{ $change->toTrip->bus->name }}
+                    @else
+                        <div
+                            class="rounded-lg border border-green-200 bg-green-50 dark:bg-green-900/20 dark:border-green-800 p-3">
+                            <div class="text-xs uppercase text-green-700 dark:text-green-400">Después</div>
+                            <div class="font-semibold text-gray-900 dark:text-gray-100">
+                                {{ $changeLabel($change, 'to') }}
                             </div>
-                        @endif
-                    </div>
+                            @if ($change->toTrip?->bus)
+                                <div class="text-xs text-gray-500 dark:text-gray-400">
+                                    Colectivo {{ $change->toTrip->bus->name }}
+                                </div>
+                            @endif
+                        </div>
+                    @endif
                 </div>
+
+                @if (filled($change->reason))
+                    <div class="mt-2 rounded-lg bg-gray-50 p-2.5 dark:bg-white/5">
+                        <div class="text-[11px] text-gray-500 dark:text-gray-400">Motivo</div>
+                        <div class="text-sm break-words whitespace-pre-line text-gray-900 dark:text-gray-100">{{ $change->reason }}</div>
+                    </div>
+                @endif
             </div>
         @empty
             <div class="px-6 py-8">

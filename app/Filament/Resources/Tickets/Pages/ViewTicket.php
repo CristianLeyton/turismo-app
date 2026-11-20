@@ -51,7 +51,7 @@ class ViewTicket extends ViewRecord
         $pending = TicketDelivery::pending();
 
         if ($pending !== null
-            && $pending['kind'] === TicketDelivery::KIND_RESCHEDULE
+            && in_array($pending['kind'], TicketDelivery::RESCHEDULE_KINDS, true)
             && $pending['ticket_ids'] === [(int) $this->getRecord()->getKey()]) {
             $this->defaultAction = TicketDeliveryAction::NAME;
             $this->defaultActionArguments = $pending;

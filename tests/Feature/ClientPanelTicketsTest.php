@@ -1658,4 +1658,95 @@ class ClientPanelTicketsTest extends TestCase
             ->assertDontSee(route('filament.clientes.auth.logout'), false)
             ->assertSee('/clientes/perfil', false);
     }
+
+    // ------------------------------------------------------------------
+    // Boleto que el personal dejó con fecha abierta
+    // ------------------------------------------------------------------
+
+    /**
+     * El personal deja el boleto con fecha abierta desde "Reprogramar boleto".
+     */
+    private function openDateAsStaff(Ticket $ticket, string $scope = 'outbound'): void
+    {
+        $this->actingAs(User::factory()->superAdmin()->create());
+
+        app(\App\Services\TicketRescheduleService::class)->openDate($ticket, ['scope' => $scope]);
+    }
+
+    public function test_un_boleto_con_fecha_abierta_vuelve_a_pendientes_con_elegir_fecha(): void
+    {
+        $f = $this->createDatedTicket('11223344', '2026-10-10');
+        $this->openDateAsStaff($f['ticket']);
+
+        $this->identify('11223344');
+        $ticket = $f['ticket']->fresh();
+
+        $component = Livewire::test(MyTickets::class)
+            ->assertSet('activeTab', MyTickets::TAB_PENDING)
+            ->assertCanSeeTableRecords([$ticket])
+            ->assertTableActionVisible('asignar_fecha', $ticket)
+            ->assertSeeText('Tenés 1 boleto sin fecha:')
+            ->set('activeTab', MyTickets::TAB_UPCOMING)
+            ->assertCanNotSeeTableRecords([$ticket]);
+
+        $tabs = collect($component->instance()->getSchema('content')->getComponents())
+            ->first(fn ($c) => $c instanceof \Filament\Schemas\Components\Tabs)
+            ->getDefaultChildComponents();
+
+        $this->assertSame(
+            ['Pendientes' => 1, 'Próximos' => 0, 'Historial' => 0],
+            collect($tabs)->mapWithKeys(fn ($tab) => [$tab->getLabel() => $tab->getBadge()])->all(),
+        );
+    }
+
+    public function test_un_boleto_con_fecha_abierta_deja_de_ser_el_proximo_viaje(): void
+    {
+        $abierto = $this->createDatedTicket('11223344', '2026-10-10', n: 1);
+        $siguiente = $this->createDatedTicket('11223344', '2026-10-20', n: 2);
+        $this->openDateAsStaff($abierto['ticket']);
+
+        $this->identify('11223344');
+
+        $this->assertSame(
+            $siguiente['ticket']->id,
+            ClientTicketAssignmentService::nextTripTicketForCurrentClient()->id,
+        );
+    }
+
+    public function test_sin_otro_viaje_con_fecha_no_hay_proximo_viaje_tras_abrir_la_fecha(): void
+    {
+        $abierto = $this->createDatedTicket('11223344', '2026-10-10');
+        $this->openDateAsStaff($abierto['ticket']);
+
+        $this->identify('11223344');
+
+        $this->assertNull(ClientTicketAssignmentService::nextTripTicketForCurrentClient());
+    }
+
+    public function test_la_vuelta_abierta_no_puede_quedar_antes_de_la_ida(): void
+    {
+        $f = $this->createRoundTripFailing();
+        $this->identify($f['client']->dni);
+        $seat1 = Seat::where('bus_id', $f['bus']->id)->where('seat_number', 1)->first();
+        $service = app(ClientTicketAssignmentService::class);
+
+        $service->assign($f['outbound'], ['date' => '2026-10-06', 'schedule_id' => $f['scheduleOutbound']->id, 'seat_id' => $seat1->id]);
+        $service->assign($f['return'], ['date' => '2026-10-08', 'schedule_id' => $f['scheduleReturn']->id, 'seat_id' => $seat1->id]);
+
+        $this->openDateAsStaff($f['return']->fresh());
+        $this->identify($f['client']->dni);
+
+        try {
+            $service->assign($f['return']->fresh(), ['date' => '2026-10-05', 'schedule_id' => $f['scheduleReturn']->id, 'seat_id' => $seat1->id]);
+            $this->fail('La vuelta no debió quedar antes de la ida.');
+        } catch (ValidationException $e) {
+            $this->assertStringContainsString('debe ser posterior al viaje de ida', Arr::flatten($e->errors())[0]);
+        }
+
+        $this->assertTrue($f['return']->fresh()->isPendingDate());
+
+        // Una fecha posterior a la ida sí se acepta.
+        $service->assign($f['return']->fresh(), ['date' => '2026-10-07', 'schedule_id' => $f['scheduleReturn']->id, 'seat_id' => $seat1->id]);
+        $this->assertSame('2026-10-07', $f['return']->fresh()->trip->trip_date->format('Y-m-d'));
+    }
 }

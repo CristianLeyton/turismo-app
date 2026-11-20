@@ -25,6 +25,7 @@ class BrandColorUsageTest extends TestCase
     private const BRAND_HEXES = [
         '#c026d3', '#d946ef', '#d87fee', '#f5ecf7', '#a21caf', '#86198f',
         '#f5d0fe', '#fdf4ff', '#faf5ff', '#f3e8ff',
+        '#fcecff', '#6b21a8', '#cedaf1',
     ];
 
     /**

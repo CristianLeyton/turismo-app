@@ -397,8 +397,8 @@ está baneado).
 
 - **Banear / Habilitar** (permiso `clients.ban`): alterna la prohibición de
 compra sin entrar al formulario; muestra el motivo si lo hay.
-- **Resetear contraseña** (permiso `clients.reset_password`, lo trae
-Administrador): si el cliente olvidó su contraseña del panel de clientes, se
+- **Resetear contraseña** (permiso `clients.reset_password`, se habilita
+desde la matriz): si el cliente olvidó su contraseña del panel de clientes, se
 resetea y vuelve a ser su DNI (hasheado en la base); al próximo ingreso debe
 elegir otra.
 - Editar, Eliminar, Eliminar definitivamente y Restaurar + acciones masivas.
@@ -607,11 +607,16 @@ cantidad de Usuarios.
 | Rol | Qué puede (por defecto) |
 | --- | --- |
 | **Super Administrador** | Todo, siempre (incluye borrar pagos definitivamente y administrar la configuración) |
-| **Administrador** | Boletos (ver, vender, reprogramar, eliminar/restaurar), clientes completo (incl. banear), ventas, viajes, pagos (sin borrado definitivo), métodos de pago, usuarios y roles, historial y configuración |
-| **Vendedor** | Ver y vender boletos; ver, crear y editar clientes; ver ventas y viajes |
+| **Administrador** | Boletos (ver, vender, reprogramar, eliminar/restaurar), ventas, viajes, pagos, métodos de pago, usuarios y roles, historial y configuración. **No** trae Clientes ni el borrado definitivo de nada |
+| **Vendedor** | Ver y vender boletos, y viajes (sin borrado definitivo). **No** trae Clientes ni Ventas |
 
 Los roles del sistema **no se borran desde la UI**, y ningún rol puede otorgar
 el de Super Administrador.
+
+Clientes, Ventas (para el Vendedor) y el borrado definitivo se habilitan a mano
+desde la matriz. Cada uno solo puede asignar permisos que tiene, así que
+Clientes lo habilita el Super Administrador. En una instalación que ya existía,
+los roles conservan los permisos anteriores hasta que se desmarquen.
 
 ### 12.2 Permisos que se habilitan a mano ("por bandera")
 
@@ -621,7 +626,7 @@ matriz cuando se necesitan:
 - `tickets.edit` — editar datos de un boleto (sección 4.3).
 - `tickets.vender_sin_fecha` — vender sin fecha/horario (sección 3.5).
 - `tickets.vender_pasado_limite` — vender después del plazo de salida (sección 3.5).
-- `clients.ban` — banear/habilitar clientes (sólo Administrador lo trae).
+- `clients.ban` — banear/habilitar clientes (como todo el módulo Clientes).
 
 Mientras un permiso de este tipo no esté asignado a ningún rol (el Super
 Administrador lo tiene por bypass), la función asociada **no aparece en la

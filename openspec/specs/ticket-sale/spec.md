@@ -22,15 +22,36 @@ El sistema SHALL emitir boletos mediante un asistente con los pasos, en orden: "
 - **THEN** el asistente no lo permite
 
 ### Requirement: Cantidad de pasajeros por venta
-El sistema SHALL permitir entre 1 y 4 pasajeros por venta (por defecto 1). Al cambiar la cantidad, la lista de pasajeros MUST ajustarse a exactamente esa cantidad, y se descartan el viaje buscado y la configuración de ida y vuelta.
+El sistema SHALL permitir entre 1 y el límite configurado en "Pasajeros por venta" de pasajeros por venta (por defecto 1). Sin configurar, el límite MUST ser 4. Al cambiar la cantidad, la lista de pasajeros MUST ajustarse a exactamente esa cantidad, y se descartan el viaje buscado y la configuración de ida y vuelta.
 
 #### Scenario: Cantidad fuera de rango
+- **GIVEN** el límite de pasajeros por venta en 4
 - **WHEN** se envía una cantidad distinta de 1, 2, 3 o 4
 - **THEN** el sistema rechaza el valor con el mensaje "La cantidad de pasajeros debe ser entre 1 y 4"
 
 #### Scenario: Reducir pasajeros
 - **WHEN** el vendedor tenía 3 pasajeros cargados y cambia la cantidad a 2
 - **THEN** se conservan los 2 primeros pasajeros y se descarta el tercero
+
+#### Scenario: Límite sin configurar
+- **GIVEN** que nadie configuró el límite de pasajeros por venta
+- **WHEN** el vendedor abre el selector "Cantidad de pasajeros"
+- **THEN** ve las opciones de 1 a 4, como hasta ahora
+
+#### Scenario: Límite configurado en 6
+- **GIVEN** el límite de pasajeros por venta en 6
+- **WHEN** el vendedor abre el selector "Cantidad de pasajeros"
+- **THEN** ve las opciones de 1 a 6 y puede emitir una venta de 6 pasajeros
+
+#### Scenario: Límite configurado en 2
+- **GIVEN** el límite de pasajeros por venta en 2
+- **WHEN** se envía una venta con 3 pasajeros, saltando el selector
+- **THEN** la venta se rechaza con "La cantidad de pasajeros debe ser entre 1 y 2" y no se crea ningún boleto
+
+#### Scenario: El límite baja durante una venta
+- **GIVEN** un vendedor con una venta a medio hacer de 4 pasajeros
+- **WHEN** alguien baja el límite a 3 y el vendedor emite
+- **THEN** la emisión se rechaza con "La cantidad de pasajeros debe ser entre 1 y 3" y no se crea ningún boleto
 
 ### Requirement: Colectivo obligatorio
 Toda venta MUST tener un colectivo seleccionado, también cuando algún tramo se vende sin fecha. El selector de colectivo MUST listar los colectivos regulares, es decir, sin incluir los de refuerzo de una línea, y los colectivos sin línea. Por defecto se preselecciona el primer colectivo por nombre. Cambiar el colectivo reinicia origen, destino, horario, viaje e ida y vuelta. El colectivo del boleto MUST ser el del horario elegido, que puede ser un colectivo de refuerzo de la línea del colectivo seleccionado.
@@ -229,11 +250,21 @@ Un menor acompañante SHALL registrarse como pasajero vinculado al adulto, pero 
 - **THEN** se crean dos pasajeros (adulto y menor), pero un solo boleto de ida con un solo asiento
 
 ### Requirement: Precio y método de pago por pasajero
-Cada pasajero MUST tener precio (entre 0 y 999999) y un método de pago activo. Al emitir, el sistema rechaza métodos inexistentes o inactivos. Quien tiene el permiso `payment_methods.create` puede crear un método de pago nuevo desde el mismo selector, que queda activo y seleccionado.
+Cada pasajero MUST tener precio (entre 0 y 999999) y un método de pago activo. Con el precio fijo apagado, el vendedor carga el precio a mano; con el precio fijo prendido, el precio lo calcula el sistema según la capacidad `ticket-fixed-price` y no se puede editar. Al emitir, el sistema rechaza métodos inexistentes o inactivos. Quien tiene el permiso `payment_methods.create` puede crear un método de pago nuevo desde el mismo selector, que queda activo y seleccionado.
 
 #### Scenario: Método inactivo
 - **WHEN** se emite una venta con un método de pago inactivo
 - **THEN** se rechaza con "Hay un método de pago inválido o inactivo en la venta. Recargá el formulario e intentá de nuevo."
+
+#### Scenario: Precio a mano con el precio fijo apagado
+- **GIVEN** el precio fijo apagado
+- **WHEN** el vendedor carga 1500 como precio de un pasajero y emite
+- **THEN** el boleto se guarda con precio 1500
+
+#### Scenario: Método de pago con el precio fijo prendido
+- **GIVEN** el precio fijo prendido
+- **WHEN** el vendedor emite sin elegir el método de pago de un pasajero
+- **THEN** la venta no se emite y el campo pide el método de pago
 
 ### Requirement: Venta sin fecha
 Con el permiso `tickets.vender_sin_fecha`, el vendedor SHALL poder vender la ida, la vuelta o ambas sin fecha ni horario. Esos tramos quedan como boletos pendientes, sin viaje ni asiento, que conservan el colectivo. Las opciones solo se muestran si el usuario tiene el permiso y al menos un rol lo tiene asignado.
@@ -327,7 +358,7 @@ Tras emitir correctamente, el sistema SHALL liberar las reservas temporales de a
 
 #### Scenario: Venta completada sin descarga automática
 - **WHEN** la emisión termina sin errores y el parámetro de descarga automática está desactivado
-- **THEN** las reservas de la sesión en los viajes de la venta se eliminan y no se descarga ningún PDF: se presenta la previsualización con link compartible
+- **THEN** las reservas de la sesión en los viajes de la venta se eliminan, no se descarga ningún PDF y se abre el modal de entrega
 
 #### Scenario: Falla la generación del PDF
 - **WHEN** la emisión se confirmó pero falla la generación del PDF
@@ -338,7 +369,7 @@ Tras emitir correctamente, el sistema SHALL liberar las reservas temporales de a
 - **THEN** las reservas de la otra venta se conservan
 
 ### Requirement: Entrega de los boletos al cerrar la venta
-Tras emitir correctamente, el sistema SHALL entregar los boletos según el parámetro "Descargar PDF automáticamente al vender" (activado por defecto). Activado, abre la descarga en una pestaña nueva y vuelve al inicio del panel. Desactivado, presenta la previsualización con link compartible en lugar de descargar.
+Tras emitir correctamente, el sistema SHALL entregar los boletos según el parámetro "Descargar PDF automáticamente al vender" (activado por defecto). Activado, abre la descarga en una pestaña nueva y vuelve al inicio del panel. Desactivado, se queda en la pantalla de venta y abre el modal de entrega con el link de cada boleto, sin abrir pestañas.
 
 #### Scenario: Descarga automática activada
 - **WHEN** la emisión termina sin errores y el parámetro de descarga automática está activado
@@ -346,22 +377,11 @@ Tras emitir correctamente, el sistema SHALL entregar los boletos según el pará
 
 #### Scenario: Descarga automática desactivada
 - **WHEN** la emisión termina sin errores y el parámetro de descarga automática está desactivado
-- **THEN** no se descarga ningún PDF y se presenta la previsualización con link compartible
+- **THEN** no se descarga ningún PDF, no se abre ninguna pestaña y el vendedor ve el modal de entrega en la pantalla de venta
 
 #### Scenario: Parámetro sin configurar
 - **WHEN** la emisión termina sin errores y nadie cambió el parámetro de descarga automática
 - **THEN** se abre la descarga de los boletos en una pestaña nueva, como con el parámetro activado
-
-### Requirement: Notificación de la entrega por link
-Con el parámetro "Descargar PDF automáticamente al vender" desactivado, el vendedor MUST ver al cerrar la venta una notificación con estas acciones sobre el link entregado: abrir el link, copiar el link, descargar el PDF y, si la venta tiene teléfonos, compartir por WhatsApp.
-
-#### Scenario: Notificación de la entrega por link
-- **WHEN** la emisión termina sin errores con el parámetro desactivado
-- **THEN** el vendedor ve una notificación de venta completada con "Abrir link", "Copiar link" y "Descargar PDF" del link entregado, y "Compartir por WhatsApp" solo si la venta tiene algún teléfono válido
-
-#### Scenario: Copiar el link desde la notificación
-- **WHEN** el vendedor toca "Copiar link" en la notificación
-- **THEN** la URL del link de la venta o del boleto queda en el portapapeles, sin abrir ni descargar nada
 
 ### Requirement: Falla de la entrega sin revertir la venta
 La entrega de los boletos MUST ocurrir después de confirmada la emisión. Si la entrega falla, la venta y sus boletos siguen emitidos y el vendedor ve el error de la entrega.
@@ -369,6 +389,11 @@ La entrega de los boletos MUST ocurrir después de confirmada la emisión. Si la
 #### Scenario: Falla la generación del PDF al entregar
 - **WHEN** la emisión se confirmó pero falla la generación del PDF de los boletos
 - **THEN** la venta y sus boletos quedan emitidos y el vendedor ve que no se pudo generar el PDF
+
+#### Scenario: Falla al preparar los links
+- **GIVEN** el parámetro de descarga automática desactivado
+- **WHEN** la emisión se confirmó pero falla al preparar los links de los boletos
+- **THEN** la venta y sus boletos quedan emitidos, no se abre el modal de entrega y el vendedor ve un aviso de que puede descargar el PDF desde el detalle del boleto
 
 ### Requirement: Cancelación de la venta
 La acción "Cancelar" SHALL pedir confirmación ("Los cambios se perderán"). Al confirmar, MUST liberar las reservas de asientos de la sesión en los viajes de esa venta y volver al inicio del panel.
@@ -428,3 +453,83 @@ El rechazo de una venta sin fecha por DNIs fuera del padrón SHALL mencionar que
 #### Scenario: Rechazo con el panel activado
 - **WHEN** el panel de clientes está activado y se emite una venta sin fecha con un DNI fuera del padrón
 - **THEN** la venta se rechaza indicando los DNIs sin registrar y que, sin registro, el pasajero no podría ver su boleto desde el panel de clientes
+
+### Requirement: Selectores de origen y destino simples
+Con el parámetro "Selectores de origen y destino detallados" apagado, que es su valor por defecto, Origen y Destino del paso "Buscar viaje" SHALL ser selects nativos del navegador, sin buscador, con una lista plana de localidades, solo con su nombre. Los destinos MUST ordenarse por la posición de la parada en su ruta y MUST NOT repetir localidades ni agruparse por sentido.
+
+#### Scenario: Origen con el parámetro apagado
+- **GIVEN** el parámetro apagado y una línea con la ruta Orán → Pichanal → Salta
+- **WHEN** el vendedor elige el colectivo de esa línea y abre Origen
+- **THEN** ve un select nativo con "Orán", "Pichanal" y "Salta", sin números ni buscador
+
+#### Scenario: Destino con ida y vuelta en la línea
+- **GIVEN** el parámetro apagado y una línea con las rutas Orán → Pichanal → Salta y Salta → Pichanal → Orán
+- **WHEN** el vendedor elige "Pichanal" como origen y abre Destino
+- **THEN** ve "Salta" y "Orán" en una sola lista, sin encabezados de grupo y sin repetir localidades
+
+#### Scenario: Valor inicial
+- **WHEN** nadie configuró el parámetro y el vendedor abre la venta
+- **THEN** Origen y Destino se muestran en el estilo simple
+
+### Requirement: Selectores de origen y destino detallados
+Con el parámetro "Selectores de origen y destino detallados" prendido, Origen y Destino SHALL ser selects con buscador cuando tienen más de 10 opciones, y mostrar cada parada con su posición en la ruta ("3 · Tolosa"). Los destinos MUST agruparse por sentido, con el encabezado "Hacia" y la última parada de la ruta. En Destino el umbral MUST contar las paradas de todos los grupos, no la cantidad de grupos.
+
+#### Scenario: Destino agrupado por sentido
+- **GIVEN** el parámetro prendido y una línea con las rutas Orán → Pichanal → Salta y Salta → Pichanal → Orán
+- **WHEN** el vendedor elige "Pichanal" como origen y abre Destino
+- **THEN** ve el grupo "Hacia Salta" con "3 · Salta" y el grupo "Hacia Orán" con "3 · Orán"
+
+#### Scenario: Buscador con muchas paradas
+- **GIVEN** el parámetro prendido y un colectivo cuyas rutas tienen 12 paradas distintas
+- **WHEN** el vendedor abre Origen
+- **THEN** el select ofrece un buscador
+
+#### Scenario: Sin buscador con pocas paradas
+- **GIVEN** el parámetro prendido y un colectivo cuyas rutas tienen 5 paradas distintas
+- **WHEN** el vendedor abre Origen
+- **THEN** el select no ofrece buscador
+
+#### Scenario: Buscador en Destino con muchas paradas
+- **GIVEN** el parámetro prendido y una ruta de 12 paradas
+- **WHEN** el vendedor elige la primera parada como origen y abre Destino
+- **THEN** el select ofrece un buscador, aunque las 11 paradas estén en un solo grupo
+
+#### Scenario: Destino suma las paradas de los dos sentidos
+- **GIVEN** el parámetro prendido y un origen con 6 destinos en un sentido y 5 en el otro
+- **WHEN** el vendedor abre Destino
+- **THEN** el select ofrece un buscador
+
+#### Scenario: Destino sin buscador con pocas paradas
+- **GIVEN** el parámetro prendido y un origen con 5 destinos en cada sentido
+- **WHEN** el vendedor abre Destino
+- **THEN** el select no ofrece buscador
+
+### Requirement: Mismas opciones válidas en los dos estilos
+El parámetro de los selectores SHALL cambiar solo la presentación. En los dos estilos, Origen y Destino MUST ofrecer las mismas localidades: las paradas de las rutas activas de todos los colectivos de la línea del colectivo elegido, sin localidades inactivas y, en Destino, solo paradas posteriores al origen. La preselección del horario único MUST funcionar igual.
+
+#### Scenario: Refuerzo con el parámetro apagado
+- **GIVEN** el parámetro apagado y una línea cuyo colectivo de refuerzo tiene una ruta con una parada que la ruta del regular no tiene
+- **WHEN** el vendedor elige el colectivo regular y abre Origen
+- **THEN** esa parada aparece entre las opciones
+
+#### Scenario: Mismas localidades al cambiar el parámetro
+- **WHEN** se comparan las opciones de Destino para el mismo colectivo y el mismo origen, con el parámetro prendido y apagado
+- **THEN** las dos listas contienen las mismas localidades
+
+#### Scenario: Horario único con el parámetro apagado
+- **GIVEN** el parámetro apagado
+- **WHEN** el vendedor elige un origen y un destino que tienen un solo horario ofrecible
+- **THEN** ese horario queda preseleccionado
+
+### Requirement: Total de la venta al editar un precio
+Cuando la edición de un boleto cambia su precio, ya sea a mano o por el ajuste del seguro del precio fijo, el total de la venta SHALL recalcularse como la suma de los precios de sus boletos.
+
+#### Scenario: Precio editado a mano
+- **GIVEN** el precio fijo apagado y una venta de dos boletos de 1000 y 1500, con total 2500
+- **WHEN** se edita el primer boleto a 1200
+- **THEN** el total de la venta pasa a 2700
+
+#### Scenario: Ajuste del seguro
+- **GIVEN** el precio fijo prendido con seguro 800 y una venta de un boleto de 5000, con total 5000
+- **WHEN** se edita el boleto y se agrega el menor
+- **THEN** el total de la venta pasa a 5800

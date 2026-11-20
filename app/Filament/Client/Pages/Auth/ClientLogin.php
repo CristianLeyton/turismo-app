@@ -4,6 +4,7 @@ namespace App\Filament\Client\Pages\Auth;
 
 use App\Support\ClientSession;
 use Filament\Auth\Pages\Login;
+use Filament\Facades\Filament;
 use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Components\Component;
 use Illuminate\Contracts\Support\Htmlable;
@@ -17,9 +18,27 @@ use SensitiveParameter;
  * del login de Filament. El mensaje de error es el mismo para un DNI
  * desconocido y una contraseña incorrecta, para no revelar quién está en el
  * padrón.
+ *
+ * El DNI solo admite dígitos, puntos, espacios y guiones: el login de
+ * administración comparte dominio y Chrome puede autocompletar acá un
+ * nombre de usuario del admin, que recibe un mensaje de formato propio.
  */
 class ClientLogin extends Login
 {
+    /**
+     * Mismo filtro que la respuesta del ingreso: un cliente ya autenticado
+     * que reaparece en el login tampoco debe ser devuelto al panel de
+     * administración por una URL prevista ajena.
+     */
+    public function mount(): void
+    {
+        if (Filament::auth()->check()) {
+            redirect()->to(ClientSession::intendedLoginUrl(Filament::getUrl()));
+        }
+
+        $this->form->fill();
+    }
+
     public function getHeading(): string|Htmlable|null
     {
         return 'Panel de clientes';
@@ -38,8 +57,10 @@ class ClientLogin extends Login
             ->inputMode('numeric')
             ->autocomplete('username')
             ->autofocus()
+            ->regex('/^(?=.*\d)[\d.\s-]+$/')
             ->validationMessages([
                 'required' => 'El DNI es obligatorio.',
+                'regex' => 'Ingresá solo los números de tu DNI.',
             ]);
     }
 

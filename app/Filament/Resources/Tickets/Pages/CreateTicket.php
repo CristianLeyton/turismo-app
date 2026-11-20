@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\Tickets\Pages;
 
 use App\Exceptions\DuplicatePassengerOnTripException;
+use App\Filament\Actions\TicketDeliveryAction;
 use App\Filament\Resources\Tickets\TicketResource;
 use App\Models\Passenger;
 use App\Models\PaymentMethod;
@@ -12,9 +13,10 @@ use App\Models\Setting;
 use App\Models\Ticket;
 use App\Models\Trip;
 use App\Support\DuplicateTicketNotification;
+use App\Support\FixedTicketPrice;
 use App\Support\SaleCutoff;
 use App\Support\ServiceDays;
-use App\Support\ShareLinkNotification;
+use App\Support\TicketDelivery;
 use App\Support\TripPassengerConflicts;
 use Filament\Actions\Action;
 use Filament\Notifications\Notification;
@@ -161,14 +163,38 @@ class CreateTicket extends CreateRecord
             ->hidden();
     }
 
+    /**
+     * Emisión por link: se vuelve a la venta (vacía) y ahí se abre el modal
+     * de entrega. Con descarga automática, al inicio del panel como siempre.
+     */
     protected function getRedirectUrl(): string
     {
-        // Si hay una descarga de ticket pendiente, será manejada por afterCreate
-        if (session()->has('auto_download_url')) {
-            return url('/admin');
+        if (session()->has(TicketDelivery::SESSION_KEY)) {
+            return TicketResource::getUrl('create');
         }
 
         return url('/admin');
+    }
+
+    /**
+     * Abre el modal de entrega si la venta anterior terminó en modo link
+     * (pedido en la sesión flash: al recargar ya no está).
+     */
+    public function mount(): void
+    {
+        parent::mount();
+
+        $pending = TicketDelivery::pending();
+
+        if ($pending !== null && $pending['kind'] === TicketDelivery::KIND_SALE) {
+            $this->defaultAction = TicketDeliveryAction::NAME;
+            $this->defaultActionArguments = $pending;
+        }
+    }
+
+    public function entregaBoletosAction(): Action
+    {
+        return TicketDeliveryAction::make();
     }
 
     protected function afterCreate(): void
@@ -482,6 +508,33 @@ class CreateTicket extends CreateRecord
             $this->assertServiceDay(Trip::find($data['return_trip_id']), 'vuelta');
         }
 
+        // 0.g Observación interna: máximo 280 caracteres, también si llega
+        // salteando el formulario (el Textarea ya lo limita en pantalla). Con
+        // el parámetro apagado no se guarda aunque el pedido la traiga.
+        $data['observation'] = Setting::observacionesActivas()
+            ? Ticket::normalizeObservation($data['observation'] ?? null)
+            : null;
+
+        if (mb_strlen((string) $data['observation']) > Ticket::MAX_OBSERVATION_LENGTH) {
+            Notification::make()
+                ->title('No se puede completar la venta')
+                ->icon('heroicon-m-chat-bubble-bottom-center-text')
+                ->body('La observación no puede superar los '.Ticket::MAX_OBSERVATION_LENGTH.' caracteres. Acortala y volvé a intentar.')
+                ->danger()
+                ->persistent()
+                ->send();
+
+            $this->halt();
+
+            return $data;
+        }
+
+        // 0.h Precio fijo: el precio lo decide el servidor con la configuración
+        // vigente, nunca el formulario. Si cambió desde que se armó la venta
+        // (montos, o se prendió/apagó), se rechaza para no cobrar un precio
+        // distinto del que se le informó al pasajero.
+        $data = $this->applyFixedPrice($data);
+
         // 0.f Una persona por venta y por viaje: sin DNI repetidos dentro de
         // la venta (adultos y menores) y sin DNI que ya tengan boleto en el
         // viaje de ida o de vuelta. Sin excepciones por permiso. Se repite
@@ -610,6 +663,7 @@ class CreateTicket extends CreateRecord
                         'travels_with_pets' => $travelsWithPets,
                         'pet_names' => $petNames,
                         'pet_count' => $petCount,
+                        'observation' => $data['observation'] ?? null,
                         'origin_location_id' => $data['origin_location_id'],
                         'destination_location_id' => $data['destination_location_id'],
                         'price' => $passengerData['price'] ?? 0,
@@ -676,6 +730,7 @@ class CreateTicket extends CreateRecord
                             'travels_with_pets' => $travelsWithPets,
                             'pet_names' => $petNames,
                             'pet_count' => $petCount,
+                            'observation' => $data['observation'] ?? null,
                             'origin_location_id' => $data['destination_location_id'],
                             'destination_location_id' => $data['origin_location_id'],
                             'price' => 0, // Return trip price is already captured on the outbound ticket
@@ -726,6 +781,50 @@ class CreateTicket extends CreateRecord
      * Bloquea los viajes de la venta (ida y vuelta) en orden de id, para que
      * dos ventas de ida y vuelta cruzadas no se bloqueen mutuamente.
      */
+    /**
+     * Con el precio fijo prendido, reemplaza el precio de cada pasajero por el
+     * calculado. Si la configuración no coincide con la que vio el vendedor,
+     * actualiza la fotografía del formulario (así ve los precios nuevos, o el
+     * campo editable si se apagó) y corta la emisión sin crear nada.
+     *
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    private function applyFixedPrice(array $data): array
+    {
+        $current = FixedTicketPrice::snapshot();
+
+        if (($data['fixed_price_snapshot'] ?? null) !== $current
+            && (FixedTicketPrice::isActive() || FixedTicketPrice::snapshotIsActive($data['fixed_price_snapshot'] ?? null))) {
+            $this->data['fixed_price_snapshot'] = $current;
+
+            Notification::make()
+                ->title('No se puede completar la venta')
+                ->icon('heroicon-m-currency-dollar')
+                ->body('Cambió la configuración de precios. Revisá los precios de la venta y volvé a emitir.')
+                ->warning()
+                ->persistent()
+                ->send();
+
+            $this->halt();
+        }
+
+        if (! FixedTicketPrice::isActive()) {
+            return $data;
+        }
+
+        $isRoundTrip = (bool) ($data['is_round_trip'] ?? false);
+
+        foreach (array_keys($data['passengers'] ?? []) as $key) {
+            $data['passengers'][$key]['price'] = FixedTicketPrice::forPassenger(
+                (bool) ($data['passengers'][$key]['travels_with_child'] ?? false),
+                $isRoundTrip,
+            );
+        }
+
+        return $data;
+    }
+
     private function lockSaleTrips(array $data): void
     {
         $tripIds = collect([$data['trip_id'] ?? null, ($data['is_round_trip'] ?? false) ? ($data['return_trip_id'] ?? null) : null])
@@ -890,6 +989,7 @@ class CreateTicket extends CreateRecord
                     'travels_with_pets' => $passengerData['travels_with_pets'] ?? false,
                     'pet_names' => $passengerData['pet_data']['pet_names'] ?? null,
                     'pet_count' => $passengerData['pet_data']['pet_count'] ?? null,
+                    'observation' => $data['observation'] ?? null,
                     'origin_location_id' => $data['origin_location_id'],
                     'destination_location_id' => $data['destination_location_id'],
                     'price' => $passengerData['price'] ?? 0,
@@ -943,6 +1043,7 @@ class CreateTicket extends CreateRecord
                     'travels_with_pets' => $passengerData['travels_with_pets'] ?? false,
                     'pet_names' => $passengerData['pet_data']['pet_names'] ?? null,
                     'pet_count' => $passengerData['pet_data']['pet_count'] ?? null,
+                    'observation' => $data['observation'] ?? null,
                     'origin_location_id' => $data['origin_location_id'],
                     'destination_location_id' => $data['destination_location_id'],
                     'price' => $passengerData['price'] ?? 0,
@@ -972,6 +1073,7 @@ class CreateTicket extends CreateRecord
                         'travels_with_pets' => $passengerData['travels_with_pets'] ?? false,
                         'pet_names' => $passengerData['pet_data']['pet_names'] ?? null,
                         'pet_count' => $passengerData['pet_data']['pet_count'] ?? null,
+                        'observation' => $data['observation'] ?? null,
                         'origin_location_id' => $data['destination_location_id'],
                         'destination_location_id' => $data['origin_location_id'],
                         'price' => 0, // El precio vive en el boleto de ida.
@@ -1019,6 +1121,7 @@ class CreateTicket extends CreateRecord
                         'travels_with_pets' => $passengerData['travels_with_pets'] ?? false,
                         'pet_names' => $passengerData['pet_data']['pet_names'] ?? null,
                         'pet_count' => $passengerData['pet_data']['pet_count'] ?? null,
+                        'observation' => $data['observation'] ?? null,
                         'origin_location_id' => $data['destination_location_id'],
                         'destination_location_id' => $data['origin_location_id'],
                         'price' => 0, // El precio vive en el boleto de ida.
@@ -1212,47 +1315,14 @@ class CreateTicket extends CreateRecord
      * Cierre de venta con el modo "emisión por link"
      * (Setting::DESCARGA_AUTOMATICA_PDF desactivado).
      *
-     * Link permanente para el boleto del pasajero único, o el PDF combinado
-     * de la venta cuando hay varios pasajeros. Sustituye la auto-descarga:
-     * se abre la página de previsualización (misma mecánica window.open de
-     * siempre tras el create) y la notification suma los accesos de
-     * compartir por WhatsApp y descargar el PDF.
+     * No genera ningún PDF: deja en la sesión flash el pedido de abrir el
+     * modal de entrega (un boleto de ida por pasajero) y getRedirectUrl()
+     * vuelve a la venta, donde mount() lo abre.
      */
     private function finishSaleWithShareLink(Sale $sale): void
     {
         try {
-            $ticketsByPassenger = $sale->tickets()->with('passenger')->get()->groupBy('passenger_id');
-
-            // Un pasajero → link del boleto de ida (su PDF incluye la vuelta
-            // si es diferido); varios pasajeros → link de la venta.
-            $shareable = $ticketsByPassenger->count() === 1
-                ? $sale->tickets()->where('is_return_leg', false)->oldest('id')->first() ?? $sale->tickets()->oldest('id')->first()
-                : $sale;
-
-            $sharePageUrl = $shareable->shareUrl();
-
-            // Se abre la página de previsualización tras el create:
-            // despuésCreate la abre en una pestaña nueva (window.open),
-            // reutilizando la mecánica existente.
-            session()->put('auto_download_url', $sharePageUrl);
-
-            $subject = $shareable instanceof \App\Models\Ticket
-                ? "Boleto N°{$shareable->id} para {$shareable->passenger?->full_name}."
-                : "Venta N°{$sale->id} de {$ticketsByPassenger->count()} pasajeros.";
-
-            Notification::make()
-                ->icon('heroicon-m-check-circle')
-                ->title('Boleto(s) vendido(s) correctamente')
-                ->body("{$subject} El link se abrió en otra pestaña.")
-                ->success()
-                ->actions(
-                    ShareLinkNotification::actionsFor(
-                        $sale,
-                        $sharePageUrl,
-                        $shareable->sharePdfUrl('attachment'),
-                    ),
-                )
-                ->send();
+            TicketDelivery::flashForSale($sale);
         } catch (\Throwable $e) {
             logger()->error('Error al armar el link compartible de la venta', [
                 'sale_id' => $sale->id,
@@ -1262,7 +1332,7 @@ class CreateTicket extends CreateRecord
             Notification::make()
                 ->title('Boleto(s) vendido(s) correctamente')
                 ->icon('heroicon-m-exclamation-triangle')
-                ->body('La venta se completó, pero falló al preparar el link del boleto. Podes descargar el PDF desde la vista del boleto.')
+                ->body('La venta se completó, pero falló al preparar el link del boleto. Podés descargar el PDF desde la vista del boleto.')
                 ->warning()
                 ->send();
         }

@@ -25,7 +25,8 @@
             </div>
             <div class="rounded-lg bg-amber-500/10 p-2.5">
                 <p class="text-[11px] text-amber-700 dark:text-amber-400">Total cobrado</p>
-                <p class="text-base font-bold text-amber-700 dark:text-amber-400">{{ PaymentResource::formatMoneyPublic($totals['total']) }}</p>
+                <p class="text-base font-bold text-amber-700 dark:text-amber-400">
+                    {{ PaymentResource::formatMoneyPublic($totals['total']) }}</p>
             </div>
             <div class="mt-2 text-center text-[11px] text-gray-400 dark:text-gray-500 sm:text-right col-span-2">
                 <p class="text-[11px] text-gray-400 dark:text-gray-500 sm:text-right">

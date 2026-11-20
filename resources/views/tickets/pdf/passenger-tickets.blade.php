@@ -8,7 +8,8 @@
 
 <head>
     <meta charset='utf-8'>
-    <title>Boleto N° {{ $tickets->first()?->id }} {{ $tickets->count() > 1 ? 'y ' . $tickets->last()->id : '' }} </title>
+    <title>Boleto N° {{ $tickets->first()?->id }} {{ $tickets->count() > 1 ? 'y ' . $tickets->last()->id : '' }}
+    </title>
 
     <style>
         @page {
@@ -113,7 +114,7 @@
         }
 
         .reschedule-mark {
-            background: #fcecff;
+            background: {{ $brand[50] }};
             border: 2px solid {{ $brand[100] }};
             color: {{ $brand[500] }};
             font-size: 11px;
@@ -160,7 +161,7 @@
             border-radius: 4px;
             border: 1px solid {{ $brand[100] }};
             text-align: center;
-            background-color: #f3f4f6;
+            background-color: {{ $brand[50] }};
         }
 
         .price {
@@ -200,7 +201,7 @@
             border-left: 3px solid {{ $brand[500] }};
             font-size: 9px;
             font-weight: bold;
-            color: #6b21a8;
+            color: {{ $brand[800] }};
         }
 
         .pet-warning {
@@ -255,6 +256,8 @@
     @php
         /* Se leen una vez por PDF: son las mismas para todos los boletos. */
         $contactLines = \App\Models\Setting::contactLines();
+        /* Horas de anticipación para elegir fecha (Parámetros > Clientes): 0 = sin mínimo. */
+        $advanceHours = \App\Models\Setting::clientAdvanceNoticeHours();
     @endphp
 
     @foreach (\App\Services\TicketPdfService::sheets($tickets) as $pair)
@@ -263,12 +266,12 @@
             @foreach ($pair as $index => $ticket)
                 @php
                     /* Tramo del boleto según su marca: "IDA" para la ida de un
-                       diferido, "VUELTA de N°X" para la vuelta (X = su ida),
-                       sin etiqueta para un boleto sólo de ida. */
+                       diferido, "VUELTA" para la vuelta (sin el N° de la ida,
+                       que confundía al pasajero) y sin etiqueta para un
+                       boleto sólo de ida. */
                     $legLabel = null;
                     if ($ticket->isReturnLeg()) {
-                        $outboundTicket = $ticket->roundTripOutboundTicket();
-                        $legLabel = $outboundTicket ? "VUELTA de N°{$outboundTicket->id}" : 'VUELTA';
+                        $legLabel = 'VUELTA';
                     } elseif ($ticket->is_round_trip) {
                         $legLabel = 'IDA';
                     }
@@ -316,7 +319,8 @@
                                         $lastChange = $ticket->dateChanges()->latest('created_at')->first();
                                     @endphp
                                     <div class='reschedule-mark'>
-                                        FECHA MODIFICADA EL {{ optional($lastChange?->created_at)->format('d/m/Y H:i') ?? now()->format('d/m/Y H:i') }}
+                                        FECHA MODIFICADA EL
+                                        {{ optional($lastChange?->created_at)->format('d/m/Y H:i') ?? now()->format('d/m/Y H:i') }}
                                     </div>
                                 @endif
 
@@ -345,9 +349,11 @@
                                         <strong>Fecha del viaje:</strong>
                                         {{ $ticket->trip->trip_date?->format('d/m/Y') ?? '—' }}<br>
                                         <strong>Hora de salida:</strong>
-                                        {{ ($ticket->getBoardingDepartureTime() ?? $ticket->trip->schedule?->departure_time)?->format('H:i') ?? '--:--' }} hs<br>
+                                        {{ ($ticket->getBoardingDepartureTime() ?? $ticket->trip->schedule?->departure_time)?->format('H:i') ?? '--:--' }}
+                                        hs<br>
                                         <strong>Hora de llegada:</strong>
-                                        {{ ($ticket->getBoardingArrivalTime() ?? $ticket->trip->schedule?->arrival_time)?->format('H:i') ?? '--:--' }} hs<br>
+                                        {{ ($ticket->getBoardingArrivalTime() ?? $ticket->trip->schedule?->arrival_time)?->format('H:i') ?? '--:--' }}
+                                        hs<br>
                                         <strong>Ruta:</strong> {{ $ticket->trip->route->name ?? 'Regular' }}
                                     @else
                                         <div class='pending-date'>
@@ -355,15 +361,17 @@
                                         </div>
                                         <div class='pending-note'>
                                             Al adquirir el pasaje queda en responsabilidad del pasajero
-                                            elegir fecha y horario con al menos 24hs de anticipación, dentro de las cuales no se aplicaran recargos.
-                                            La asignación del mismo se realizará solo si la unidad cuenta con asientos disponibles.
+                                            elegir fecha y horario{{ $advanceHours > 0 ? " con al menos {$advanceHours}hs de anticipación, dentro de las cuales no se aplicaran recargos" : '' }}.
+                                            La asignación del mismo se realizará solo si la unidad
+                                            cuenta con asientos disponibles.
                                         </div>
                                     @endif
                                 </div>
 
                                 <div class='section-title'>PAGO</div>
                                 <div class='box'>
-                                    <strong>Precio:</strong> ${{ number_format($ticket->display_price, 2, ',', '.') }}<br>
+                                    <strong>Precio:</strong>
+                                    ${{ number_format($ticket->display_price, 2, ',', '.') }}<br>
                                     <strong>Método de pago:</strong>
                                     {{ $ticket->payment_method ? \App\Models\PaymentMethod::label($ticket->payment_method) : 'No especificado' }}
                                 </div>
@@ -422,15 +430,19 @@
                                     • Más de 48hs antes de la salida del servicio: 10% de retención.<br>
                                     • Entre 24hs y 48hs antes de la salida: 20% de retención.<br>
                                     • Dentro de las 24hs previas a la salida: 30% de retención.<br>
-                                    • Una vez iniciadas las 24hs previas a la salida del servicio no se admitirán devoluciones.<br>
-                                    • Los servicios adquiridos con tarjeta de crédito no se tomarán en devolución bajo ningún concepto.<br>
-                                    • Los boletos recibidos en carácter de donación y/o sin cargo son intransferibles, sin excepción.<br><br>
+                                    • Una vez iniciadas las 24hs previas a la salida del servicio no se admitirán
+                                    devoluciones.<br>
+                                    • Los servicios adquiridos con tarjeta de crédito no se tomarán en devolución bajo
+                                    ningún concepto.<br>
+                                    • Los boletos recibidos en carácter de donación y/o sin cargo son intransferibles,
+                                    sin excepción.<br><br>
 
                                     <strong>CAMBIO DE FECHA U HORARIO:</strong><br>
-                                    • Se permitirá el cambio únicamente cuando sea solicitado con una anticipación mayor a 3hs respecto de la salida del servicio. <br>
-• Dentro de las 72hs previas a la salida: 10% de retención <br>
-• Dentro de las 48hs previas a la salida: 20% de retención <br>
-• Dentro de las 24hs previas a la salida: 30% de retención <br>
+                                    • Se permitirá el cambio únicamente cuando sea solicitado con una anticipación mayor
+                                    a 3hs respecto de la salida del servicio. <br>
+                                    • Dentro de las 72hs previas a la salida: 10% de retención <br>
+                                    • Dentro de las 48hs previas a la salida: 20% de retención <br>
+                                    • Dentro de las 24hs previas a la salida: 30% de retención <br>
                                     @if ($hasChild)
                                         <div class='child-warning'>
                                             El pasajero adulto es responsable del menor durante todo el viaje. El menor

@@ -135,7 +135,8 @@ class TicketAuditResource extends Resource
     }
 
     /**
-     * Solo boletos eliminados, reprogramados o editados alguna vez.
+     * Solo boletos eliminados, reprogramados o editados alguna vez. Cuenta
+     * como editado el boleto cuyo pasajero se editó desde su ida o su vuelta.
      */
     public static function getEloquentQuery(): Builder
     {
@@ -147,7 +148,7 @@ class TicketAuditResource extends Resource
                 $query
                     ->whereNotNull('tickets.deleted_at')
                     ->orWhereHas('dateChanges')
-                    ->orWhereHas('edits');
+                    ->orWhere(fn (Builder $edited): Builder => $edited->withVisibleEdits());
             });
     }
 

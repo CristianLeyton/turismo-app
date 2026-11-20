@@ -198,21 +198,47 @@
             margin: 2px 0 0;
         }
 
-        .rb-gray { background: #f9fafb; }
-        .rb-gray .rlabel { color: #6b7280; }
-        .rb-gray .rvalue { color: #111827; }
+        .rb-gray {
+            background: #f9fafb;
+        }
 
-        .rb-emerald { background: #ecfdf5; }
-        .rb-emerald .rlabel, .rb-emerald .rvalue { color: #047857; }
+        .rb-gray .rlabel {
+            color: #6b7280;
+        }
 
-        .rb-sky { background: #e0f2fe; }
-        .rb-sky .rlabel, .rb-sky .rvalue { color: #0369a1; }
+        .rb-gray .rvalue {
+            color: #111827;
+        }
+
+        .rb-emerald {
+            background: #ecfdf5;
+        }
+
+        .rb-emerald .rlabel,
+        .rb-emerald .rvalue {
+            color: #047857;
+        }
+
+        .rb-sky {
+            background: #e0f2fe;
+        }
+
+        .rb-sky .rlabel,
+        .rb-sky .rvalue {
+            color: #0369a1;
+        }
 
         .rb-brand { background: {{ $brand[50] }}; }
         .rb-brand .rlabel, .rb-brand .rvalue { color: {{ $brand[700] }}; }
 
-        .rb-amber { background: #fffbeb; }
-        .rb-amber .rlabel, .rb-amber .rvalue { color: #b45309; }
+        .rb-amber {
+            background: #fffbeb;
+        }
+
+        .rb-amber .rlabel,
+        .rb-amber .rvalue {
+            color: #b45309;
+        }
 
         .saldo {
             width: 100%;
@@ -238,14 +264,32 @@
             text-align: right;
         }
 
-        .saldo-pos { background: #fefce8; }
-        .saldo-pos .saldo-label, .saldo-pos .saldo-value { color: #a16207; }
+        .saldo-pos {
+            background: #fefce8;
+        }
 
-        .saldo-neg { background: #fef2f2; }
-        .saldo-neg .saldo-label, .saldo-neg .saldo-value { color: #b91c1c; }
+        .saldo-pos .saldo-label,
+        .saldo-pos .saldo-value {
+            color: #a16207;
+        }
 
-        .saldo-zero { background: #f9fafb; }
-        .saldo-zero .saldo-label, .saldo-zero .saldo-value { color: #4b5563; }
+        .saldo-neg {
+            background: #fef2f2;
+        }
+
+        .saldo-neg .saldo-label,
+        .saldo-neg .saldo-value {
+            color: #b91c1c;
+        }
+
+        .saldo-zero {
+            background: #f9fafb;
+        }
+
+        .saldo-zero .saldo-label,
+        .saldo-zero .saldo-value {
+            color: #4b5563;
+        }
 
         .empty {
             padding: 20px;
@@ -263,10 +307,8 @@
             'payments' => 'Solo pagos',
             default => 'Ventas y pagos',
         };
-        $paymentLabel = filled($filters['payment_label'] ?? null)
-            ? $filters['payment_label']
-            : 'Todos';
-        $fmt = fn ($value) => '$' . number_format((float) $value, 0, ',', '.');
+        $paymentLabel = filled($filters['payment_label'] ?? null) ? $filters['payment_label'] : 'Todos';
+        $fmt = fn($value) => '$' . number_format((float) $value, 0, ',', '.');
         $salesCount = $records->where('type', 'sale')->count();
         $groupedPaymentsCount = $records->where('type', 'payment')->count();
     @endphp
@@ -310,7 +352,8 @@
                 <td class="resumen-title">Resumen</td>
                 <td class="resumen-count">
                     @if ($filters['type'] === 'all')
-                        {{ $records->count() }} {{ $records->count() === 1 ? 'registro' : 'registros' }} · {{ $totals['tickets_count'] }} boletos
+                        {{ $records->count() }} {{ $records->count() === 1 ? 'registro' : 'registros' }} ·
+                        {{ $totals['tickets_count'] }} boletos
                     @elseif ($filters['type'] === 'tickets')
                         {{ $totals['tickets_count'] }} boletos
                     @else
@@ -332,8 +375,18 @@
         @if ($filters['type'] !== 'tickets')
             <table class="rgrid">
                 <tr>
-                    <td><div class="rbox rb-amber"><p class="rlabel">Pagos recibidos</p><p class="rvalue">{{ $totals['payments_count'] }}</p></div></td>
-                    <td><div class="rbox rb-amber"><p class="rlabel">Total pagos</p><p class="rvalue">{{ $fmt($totals['payments_total']) }}</p></div></td>
+                    <td>
+                        <div class="rbox rb-amber">
+                            <p class="rlabel">Pagos recibidos</p>
+                            <p class="rvalue">{{ $totals['payments_count'] }}</p>
+                        </div>
+                    </td>
+                    <td>
+                        <div class="rbox rb-amber">
+                            <p class="rlabel">Total pagos</p>
+                            <p class="rvalue">{{ $fmt($totals['payments_total']) }}</p>
+                        </div>
+                    </td>
                 </tr>
             </table>
         @endif
@@ -370,7 +423,8 @@
         @endif
 
         @if ($filters['type'] === 'all')
-            <table class="saldo {{ $totals['saldo'] > 0 ? 'saldo-pos' : ($totals['saldo'] < 0 ? 'saldo-neg' : 'saldo-zero') }}">
+            <table
+                class="saldo {{ $totals['saldo'] > 0 ? 'saldo-pos' : ($totals['saldo'] < 0 ? 'saldo-neg' : 'saldo-zero') }}">
                 <tr>
                     <td class="saldo-label">Saldo (total ventas − total pagos)</td>
                     <td class="saldo-value">{{ $fmt($totals['saldo']) }}</td>
@@ -413,10 +467,12 @@
                         <tr class="sale-row">
                             <td style="text-align: center;">Venta #{{ $record['id'] }}</td>
                             <td>{{ $record['date']?->format('d/m/Y H:i') ?? '—' }}</td>
-                            <td style="text-align: center;">{{ $record['tickets_count'] }} {{ $record['tickets_count'] === 1 ? 'boleto' : 'boletos' }}</td>
+                            <td style="text-align: center;">{{ $record['tickets_count'] }}
+                                {{ $record['tickets_count'] === 1 ? 'boleto' : 'boletos' }}</td>
                             <td style="text-align: center;">
                                 @foreach ($record['payment_methods'] as $method)
-                                    <span class="badge badge-method" style="margin-right: 3px;">{{ \App\Models\PaymentMethod::label($method) }}</span>
+                                    <span class="badge badge-method"
+                                        style="margin-right: 3px;">{{ \App\Models\PaymentMethod::label($method) }}</span>
                                 @endforeach
                             </td>
                             <td class="price" style="text-align: right;">{{ $fmt($record['amount']) }}</td>

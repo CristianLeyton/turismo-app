@@ -36,8 +36,10 @@ use UnitEnum;
  * Página Configuración > Parámetros (solo quien tiene `settings.manage`).
  *
  * Agrupa los parámetros del sistema en pestañas según a qué afectan: Venta,
- * Boleto, Calendario, Seguridad, Clientes (esta solo con el permiso
- * `settings.client_panel`) y Apariencia (solo con `settings.appearance`). Un parámetro nuevo lleva una constante en
+ * Boleto (la sección de emisión solo con `settings.ticket_emission`), Calendario
+ * (solo con `settings.calendar`), Seguridad (solo con `settings.security`),
+ * Clientes (esta solo con el permiso `settings.client_panel`) y
+ * Apariencia (solo con `settings.appearance`). Un parámetro nuevo lleva una constante en
  * Setting, su campo en la pestaña que corresponde y su entrada en TAB_FIELDS
  * (ver la sección "Parámetros" del skill filament-ui).
  */
@@ -50,11 +52,11 @@ class TicketSettings extends Page
      * @var array<string, list<string>>
      */
     public const TAB_FIELDS = [
-        'Venta' => ['permitir_acompanantes', 'venta_limite_horas', 'selectores_detallados'],
+        'Venta' => ['permitir_acompanantes', 'venta_limite_horas', 'limite_pasajeros_venta', 'selectores_detallados', 'observaciones_activas', 'precio_fijo_activo', 'precio_fijo_boleto', 'precio_fijo_seguro_menor'],
         'Boleto' => ['descarga_automatica_pdf', 'whatsapp_mensaje', 'contact_lines'],
         'Calendario' => ['service_weekdays', 'service_exceptions'],
         'Seguridad' => ['require_password_ticket_delete', 'require_password_ticket_reschedule', 'require_password_ticket_edit'],
-        'Clientes' => ['panel_clientes_activo'],
+        'Clientes' => ['panel_clientes_activo', 'client_advance_notice_hours'],
         'Apariencia' => ['primary_color'],
     ];
 
@@ -66,6 +68,27 @@ class TicketSettings extends Page
 
     /** Permiso para ver y cambiar el estilo de los selectores de origen y destino. */
     public const SALE_SELECTORS_PERMISSION = 'settings.sale_selectors';
+
+    /** Permiso para ver y prender o apagar las observaciones de la venta. */
+    public const SALE_OBSERVATIONS_PERMISSION = 'settings.sale_observations';
+
+    /** Permiso para ver y cambiar la emisión al finalizar la venta (PDF automático y mensaje de WhatsApp). */
+    public const TICKET_EMISSION_PERMISSION = 'settings.ticket_emission';
+
+    /** Permiso para ver y cambiar el precio fijo de los boletos. */
+    public const FIXED_PRICE_PERMISSION = 'settings.fixed_price';
+
+    /** Permiso para ver y cambiar el máximo de pasajeros por venta. */
+    public const PASSENGER_LIMIT_PERMISSION = 'settings.passenger_limit';
+
+    /** Permiso para ver la pestaña Calendario y cambiar los días de servicio y sus excepciones. */
+    public const CALENDAR_PERMISSION = 'settings.calendar';
+
+    /** Permiso para ver la pestaña Seguridad y cambiar la confirmación de contraseña. */
+    public const SECURITY_PERMISSION = 'settings.security';
+
+    /** Tope de los montos del precio fijo (mismo máximo que el precio a mano). */
+    private const FIXED_PRICE_MAX = 999999;
 
     private const PRIMARY_COLOR_INVALID_MESSAGE = 'Elegí un color válido en formato #RRGGBB (por ejemplo, #10288c).';
 
@@ -119,6 +142,7 @@ class TicketSettings extends Page
             'require_password_ticket_reschedule' => Setting::getBool(Setting::REQUIRE_PASSWORD_TICKET_RESCHEDULE),
             'require_password_ticket_edit' => Setting::getBool(Setting::REQUIRE_PASSWORD_TICKET_EDIT),
             'venta_limite_horas' => Setting::ventaLimiteHoras(),
+            'limite_pasajeros_venta' => Setting::limitePasajerosVenta(),
             'permitir_acompanantes' => Setting::permiteAcompanantes(),
             'descarga_automatica_pdf' => Setting::descargaAutomaticaPdf(),
             'whatsapp_mensaje' => Setting::whatsappMensaje(),
@@ -136,7 +160,12 @@ class TicketSettings extends Page
                 fn (array $exception): bool => $exception['date'] >= $today,
             ))),
             'panel_clientes_activo' => Setting::panelClientesActivo(),
+            'client_advance_notice_hours' => Setting::clientAdvanceNoticeHours(),
             'selectores_detallados' => Setting::selectoresDetallados(),
+            'observaciones_activas' => Setting::observacionesActivas(),
+            'precio_fijo_activo' => Setting::precioFijoActivo(),
+            'precio_fijo_boleto' => $this->storedAmount(Setting::PRECIO_FIJO_BOLETO),
+            'precio_fijo_seguro_menor' => $this->storedAmount(Setting::PRECIO_FIJO_SEGURO_MENOR),
             'primary_color' => Setting::primaryColor(),
         ];
     }
@@ -165,6 +194,65 @@ class TicketSettings extends Page
         return (bool) Auth::user()?->can(self::SALE_SELECTORS_PERMISSION);
     }
 
+    /**
+     * ¿Quien usa la página puede prender o apagar las observaciones de la venta?
+     */
+    protected function canManageSaleObservations(): bool
+    {
+        return (bool) Auth::user()?->can(self::SALE_OBSERVATIONS_PERMISSION);
+    }
+
+    /**
+     * Monto guardado del precio fijo, o null si nunca se cargó: así el campo
+     * aparece vacío (y no en $0) la primera vez que se prende.
+     */
+    protected function storedAmount(string $key): ?int
+    {
+        $value = Setting::getInt($key, -1);
+
+        return $value < 0 ? null : $value;
+    }
+
+    /**
+     * ¿Quien usa la página puede prender o apagar el precio fijo y cambiar sus montos?
+     */
+    protected function canManageFixedPrice(): bool
+    {
+        return (bool) Auth::user()?->can(self::FIXED_PRICE_PERMISSION);
+    }
+
+    /**
+     * ¿Quien usa la página puede cambiar el máximo de pasajeros por venta?
+     */
+    protected function canManagePassengerLimit(): bool
+    {
+        return (bool) Auth::user()?->can(self::PASSENGER_LIMIT_PERMISSION);
+    }
+
+    /**
+     * ¿Quien usa la página puede cambiar cómo se entregan los boletos al finalizar la venta?
+     */
+    protected function canManageTicketEmission(): bool
+    {
+        return (bool) Auth::user()?->can(self::TICKET_EMISSION_PERMISSION);
+    }
+
+    /**
+     * ¿Quien usa la página puede ver la pestaña Calendario y cambiar los días de servicio?
+     */
+    protected function canManageCalendar(): bool
+    {
+        return (bool) Auth::user()?->can(self::CALENDAR_PERMISSION);
+    }
+
+    /**
+     * ¿Quien usa la página puede ver la pestaña Seguridad y cambiar la confirmación de contraseña?
+     */
+    protected function canManageSecurity(): bool
+    {
+        return (bool) Auth::user()?->can(self::SECURITY_PERMISSION);
+    }
+
     public function form(Schema $schema): Schema
     {
         return $schema
@@ -175,8 +263,10 @@ class TicketSettings extends Page
                     ->tabs([
                         $this->tab('Venta', Heroicon::OutlinedShoppingCart, $this->saleComponents()),
                         $this->tab('Boleto', Heroicon::OutlinedTicket, $this->ticketComponents()),
-                        $this->tab('Calendario', Heroicon::OutlinedCalendarDays, $this->calendarComponents()),
-                        $this->tab('Seguridad', Heroicon::OutlinedLockClosed, $this->securityComponents()),
+                        $this->tab('Calendario', Heroicon::OutlinedCalendarDays, $this->calendarComponents())
+                            ->visible(fn (): bool => $this->canManageCalendar()),
+                        $this->tab('Seguridad', Heroicon::OutlinedLockClosed, $this->securityComponents())
+                            ->visible(fn (): bool => $this->canManageSecurity()),
                         $this->tab('Clientes', Heroicon::OutlinedUsers, $this->clientComponents())
                             ->visible(fn (): bool => $this->canManageClientPanel()),
                         $this->tab('Apariencia', Heroicon::OutlinedSwatch, $this->appearanceComponents())
@@ -237,6 +327,28 @@ class TicketSettings extends Page
                         ]),
                 ]),
 
+            Section::make('Pasajeros por venta')
+                ->columnSpanFull()
+                ->visible(fn (): bool => $this->canManagePassengerLimit())
+                ->schema([
+                    TextInput::make('limite_pasajeros_venta')
+                        ->label('Máximo de pasajeros por venta')
+                        ->hintIcon(Heroicon::OutlinedInformationCircle, tooltip: 'Es la cantidad máxima que ofrece "Cantidad de pasajeros" al vender. Las ventas ya hechas no cambian.')
+                        ->integer()
+                        ->minValue(1)
+                        ->maxValue(Setting::LIMITE_PASAJEROS_VENTA_MAX)
+                        ->required()
+                        ->default(Setting::LIMITE_PASAJEROS_VENTA_DEFAULT)
+                        ->suffix('pasajeros')
+                        ->validationMessages([
+                            'required' => 'Ingresá la cantidad de pasajeros.',
+                            'numeric' => 'La cantidad de pasajeros tiene que ser un número.',
+                            'integer' => 'La cantidad de pasajeros tiene que ser un número entero.',
+                            'min' => 'La cantidad de pasajeros tiene que ser de al menos :min.',
+                            'max' => 'La cantidad de pasajeros no puede ser mayor a :max.',
+                        ]),
+                ]),
+
             Section::make('Selectores de origen y destino')
                 ->columnSpanFull()
                 ->visible(fn (): bool => $this->canManageSaleSelectors())
@@ -247,7 +359,60 @@ class TicketSettings extends Page
                         ->hintIcon(Heroicon::OutlinedInformationCircle, tooltip: 'Prendido, cada parada se muestra numerada según el recorrido, los destinos se agrupan por sentido ("Hacia Salta") y la lista tiene buscador cuando hay más de 10 paradas. No cambia qué paradas se pueden vender.')
                         ->default(false),
                 ]),
+
+            Section::make('Observaciones')
+                ->columnSpanFull()
+                ->visible(fn (): bool => $this->canManageSaleObservations())
+                ->schema([
+                    Toggle::make('observaciones_activas')
+                        ->label('Observaciones en la venta')
+                        ->helperText('Apagado, no se cargan ni se muestran observaciones; las ya cargadas se conservan.')
+                        ->hintIcon(Heroicon::OutlinedInformationCircle, tooltip: 'Prendido, la venta y "Editar boleto" ofrecen una nota interna de hasta 280 caracteres. Se ve en la lista de pasajeros del viaje (modal, PDF y Excel), en el detalle del boleto y en la auditoría; nunca en el boleto del pasajero. En el modal y el PDF del viaje reemplaza a la columna Teléfono.')
+                        ->default(false),
+                ]),
+
+            Section::make('Precio de los boletos')
+                ->columnSpanFull()
+                ->visible(fn (): bool => $this->canManageFixedPrice())
+                ->columns(['default' => 1, 'sm' => 2])
+                ->schema([
+                    Toggle::make('precio_fijo_activo')
+                        ->label('Precio fijo activo')
+                        ->helperText('Prendido, el precio se calcula solo y nadie lo puede cambiar al vender ni al editar un boleto.')
+                        ->hintIcon(Heroicon::OutlinedInformationCircle, tooltip: 'Precio = precio del boleto + seguro si viaja con un menor, por 2 si es ida y vuelta. Los boletos ya vendidos no cambian. Apagado, el precio se carga a mano como siempre.')
+                        ->live()
+                        ->default(false)
+                        ->columnSpanFull(),
+
+                    $this->fixedPriceAmountInput('precio_fijo_boleto', 'Precio del boleto', 'el precio del boleto', 1),
+
+                    $this->fixedPriceAmountInput('precio_fijo_seguro_menor', 'Seguro para menores', 'el seguro para menores', 0)
+                        ->hintIcon(Heroicon::OutlinedInformationCircle, tooltip: 'Se suma por cada tramo en que el pasajero viaja con un menor. 0 = no se cobra seguro.'),
+                ]),
         ];
+    }
+
+    /**
+     * Monto del precio fijo: obligatorio y en pesos enteros solo mientras el
+     * precio fijo está prendido (oculto, no se valida ni se pisa al guardar).
+     */
+    protected function fixedPriceAmountInput(string $name, string $label, string $article, int $min): TextInput
+    {
+        return TextInput::make($name)
+            ->label($label)
+            ->prefix('$')
+            ->integer()
+            ->minValue($min)
+            ->maxValue(self::FIXED_PRICE_MAX)
+            ->required(fn (Get $get): bool => (bool) $get('precio_fijo_activo'))
+            ->visible(fn (Get $get): bool => (bool) $get('precio_fijo_activo'))
+            ->validationMessages([
+                'required' => "Ingresá {$article}.",
+                'numeric' => 'El monto tiene que ser un número.',
+                'integer' => 'El monto tiene que ser un número entero, sin centavos.',
+                'min' => $min === 0 ? 'El monto no puede ser negativo.' : 'El monto tiene que ser de al menos $:min.',
+                'max' => 'El monto no puede ser mayor a $999.999.',
+            ]);
     }
 
     /**
@@ -258,6 +423,7 @@ class TicketSettings extends Page
         return [
             Section::make('Emisión al finalizar la venta')
                 ->columnSpanFull()
+                ->visible(fn (): bool => $this->canManageTicketEmission())
                 ->schema([
                     Toggle::make('descarga_automatica_pdf')
                         ->label('Descargar PDF automáticamente al vender')
@@ -438,7 +604,27 @@ class TicketSettings extends Page
                         ->label('Panel de clientes activo')
                         ->helperText('Desactivado, los pasajeros no pueden entrar a ver sus boletos ni elegir la fecha de un boleto sin fecha.')
                         ->hintIcon(Heroicon::OutlinedInformationCircle, tooltip: 'Activado, el ingreso del panel de administración muestra el acceso para pasajeros y el logo del link del boleto lleva al ingreso de clientes.')
-                        ->default(false),
+                        ->default(false)
+                        ->live(),
+
+                    TextInput::make('client_advance_notice_hours')
+                        ->label('Anticipación mínima para elegir fecha')
+                        ->helperText('Los pasajeros solo pueden elegir horarios que salgan con al menos estas horas de anticipación. 0 = sin mínimo.')
+                        ->hintIcon(Heroicon::OutlinedInformationCircle, tooltip: 'Cuenta desde la salida del origen del servicio. Solo afecta al panel de clientes y es el número que dice el aviso del PDF de los boletos sin fecha.')
+                        ->visible(fn (Get $get): bool => (bool) $get('panel_clientes_activo'))
+                        ->integer()
+                        ->minValue(0)
+                        ->maxValue(Setting::CLIENT_ADVANCE_NOTICE_HOURS_MAX)
+                        ->required()
+                        ->default(Setting::CLIENT_ADVANCE_NOTICE_HOURS_DEFAULT)
+                        ->suffix('horas')
+                        ->validationMessages([
+                            'required' => 'Ingresá la cantidad de horas.',
+                            'numeric' => 'La cantidad de horas tiene que ser un número.',
+                            'integer' => 'La cantidad de horas tiene que ser un número entero.',
+                            'min' => 'La cantidad de horas no puede ser negativa.',
+                            'max' => 'La cantidad de horas no puede ser mayor a :max.',
+                        ]),
                 ]),
         ];
     }
@@ -581,45 +767,60 @@ class TicketSettings extends Page
     {
         $data = $this->form->getState();
 
+        // Sin el permiso de calendario las excepciones no se reescriben: no se
+        // limpia ninguna vencida y la notificación no debe decir que se quitaron.
+        $canManageCalendar = $this->canManageCalendar();
         $today = today()->format('Y-m-d');
-        $expiredExceptionsCount = count(array_filter(
+        $expiredExceptionsCount = $canManageCalendar ? count(array_filter(
             Setting::serviceExceptions(),
             fn (array $exception): bool => $exception['date'] < $today,
-        ));
+        )) : 0;
 
-        Setting::set(
-            Setting::REQUIRE_PASSWORD_TICKET_DELETE,
-            ($data['require_password_ticket_delete'] ?? false) ? '1' : '0',
-        );
-
-        Setting::set(
-            Setting::REQUIRE_PASSWORD_TICKET_RESCHEDULE,
-            ($data['require_password_ticket_reschedule'] ?? false) ? '1' : '0',
-        );
-
-        Setting::set(
-            Setting::REQUIRE_PASSWORD_TICKET_EDIT,
-            ($data['require_password_ticket_edit'] ?? false) ? '1' : '0',
-        );
+        // Sin el permiso, la pestaña está oculta: la confirmación de contraseña
+        // queda como estaba aunque el pedido la traiga.
+        if ($this->canManageSecurity()) {
+            foreach ([
+                Setting::REQUIRE_PASSWORD_TICKET_DELETE => 'require_password_ticket_delete',
+                Setting::REQUIRE_PASSWORD_TICKET_RESCHEDULE => 'require_password_ticket_reschedule',
+                Setting::REQUIRE_PASSWORD_TICKET_EDIT => 'require_password_ticket_edit',
+            ] as $key => $field) {
+                if (array_key_exists($field, $data)) {
+                    Setting::set($key, $data[$field] ? '1' : '0');
+                }
+            }
+        }
 
         Setting::set(
             Setting::VENTA_LIMITE_HORAS,
             (string) max(0, (int) ($data['venta_limite_horas'] ?? Setting::VENTA_LIMITE_HORAS_DEFAULT)),
         );
 
+        // Sin el permiso, la sección está oculta: el límite queda como estaba
+        // aunque el pedido lo traiga.
+        if ($this->canManagePassengerLimit() && array_key_exists('limite_pasajeros_venta', $data)) {
+            Setting::set(
+                Setting::LIMITE_PASAJEROS_VENTA,
+                (string) (int) $data['limite_pasajeros_venta'],
+            );
+        }
+
         Setting::set(
             Setting::PERMITIR_ACOMPANANTES,
             ($data['permitir_acompanantes'] ?? true) ? '1' : '0',
         );
 
-        Setting::set(
-            Setting::DESCARGA_AUTOMATICA_PDF,
-            ($data['descarga_automatica_pdf'] ?? true) ? '1' : '0',
-        );
+        // Sin el permiso, la sección está oculta: la emisión queda como estaba
+        // aunque el pedido la traiga (o no la traiga, que antes la reactivaba).
+        if ($this->canManageTicketEmission() && array_key_exists('descarga_automatica_pdf', $data)) {
+            Setting::set(
+                Setting::DESCARGA_AUTOMATICA_PDF,
+                $data['descarga_automatica_pdf'] ? '1' : '0',
+            );
+        }
 
-        // Oculto (descarga automática activada), el campo no llega en el
-        // estado: se conserva el mensaje guardado. Vacío = texto por defecto.
-        if (array_key_exists('whatsapp_mensaje', $data)) {
+        // Oculto (descarga automática activada o sin el permiso), el campo no
+        // llega en el estado: se conserva el mensaje guardado. Vacío = texto por defecto.
+        if ($this->canManageTicketEmission() && array_key_exists('whatsapp_mensaje', $data)) {
             Setting::set(
                 Setting::WHATSAPP_MENSAJE,
                 filled($data['whatsapp_mensaje']) ? trim($data['whatsapp_mensaje']) : null,
@@ -637,21 +838,27 @@ class TicketSettings extends Page
             ->all();
         Setting::set(Setting::CONTACT_LINES, json_encode($contactLines));
 
-        $weekdays = array_values(array_unique(array_map('intval', $data['service_weekdays'] ?? [])));
-        sort($weekdays);
-        Setting::set(Setting::SERVICE_WEEKDAYS, json_encode($weekdays));
+        // Sin el permiso, la pestaña está oculta: el calendario queda como
+        // estaba aunque el pedido lo traiga.
+        if ($canManageCalendar && array_key_exists('service_weekdays', $data)) {
+            $weekdays = array_values(array_unique(array_map('intval', $data['service_weekdays'] ?? [])));
+            sort($weekdays);
+            Setting::set(Setting::SERVICE_WEEKDAYS, json_encode($weekdays));
+        }
 
-        $exceptions = collect($data['service_exceptions'] ?? [])
-            ->filter(fn (array $exception): bool => filled($exception['date'] ?? null))
-            ->map(fn (array $exception): array => [
-                'date' => Carbon::parse($exception['date'])->format('Y-m-d'),
-                'has_service' => (bool) (int) ($exception['has_service'] ?? 0),
-                'reason' => filled($exception['reason'] ?? null) ? trim($exception['reason']) : null,
-            ])
-            ->sortBy('date')
-            ->values()
-            ->all();
-        Setting::set(Setting::SERVICE_EXCEPTIONS, json_encode($exceptions));
+        if ($canManageCalendar && array_key_exists('service_exceptions', $data)) {
+            $exceptions = collect($data['service_exceptions'] ?? [])
+                ->filter(fn (array $exception): bool => filled($exception['date'] ?? null))
+                ->map(fn (array $exception): array => [
+                    'date' => Carbon::parse($exception['date'])->format('Y-m-d'),
+                    'has_service' => (bool) (int) ($exception['has_service'] ?? 0),
+                    'reason' => filled($exception['reason'] ?? null) ? trim($exception['reason']) : null,
+                ])
+                ->sortBy('date')
+                ->values()
+                ->all();
+            Setting::set(Setting::SERVICE_EXCEPTIONS, json_encode($exceptions));
+        }
 
         // Sin el permiso, la pestaña está oculta: el color queda como estaba
         // aunque el pedido lo traiga.
@@ -668,6 +875,15 @@ class TicketSettings extends Page
             );
         }
 
+        // Oculto (panel apagado en el formulario) no llega en el estado: el
+        // valor guardado se conserva. Mismo permiso que la pestaña.
+        if ($this->canManageClientPanel() && array_key_exists('client_advance_notice_hours', $data)) {
+            Setting::set(
+                Setting::CLIENT_ADVANCE_NOTICE_HOURS,
+                (string) max(0, (int) $data['client_advance_notice_hours']),
+            );
+        }
+
         // Sin el permiso, la sección está oculta: el parámetro queda como
         // estaba aunque el pedido lo traiga.
         if ($this->canManageSaleSelectors() && array_key_exists('selectores_detallados', $data)) {
@@ -675,6 +891,29 @@ class TicketSettings extends Page
                 Setting::SELECTORES_DETALLADOS,
                 $data['selectores_detallados'] ? '1' : '0',
             );
+        }
+
+        if ($this->canManageSaleObservations() && array_key_exists('observaciones_activas', $data)) {
+            Setting::set(
+                Setting::OBSERVACIONES_VENTA,
+                $data['observaciones_activas'] ? '1' : '0',
+            );
+        }
+
+        // Sin el permiso, la sección está oculta: el precio fijo queda como
+        // estaba aunque el pedido lo traiga. Con el interruptor apagado los
+        // montos están ocultos, no llegan en el estado y se conservan.
+        if ($this->canManageFixedPrice() && array_key_exists('precio_fijo_activo', $data)) {
+            Setting::set(
+                Setting::PRECIO_FIJO_ACTIVO,
+                $data['precio_fijo_activo'] ? '1' : '0',
+            );
+
+            foreach ([Setting::PRECIO_FIJO_BOLETO => 'precio_fijo_boleto', Setting::PRECIO_FIJO_SEGURO_MENOR => 'precio_fijo_seguro_menor'] as $key => $field) {
+                if ($data['precio_fijo_activo'] && array_key_exists($field, $data)) {
+                    Setting::set($key, (string) (int) $data[$field]);
+                }
+            }
         }
 
         $body = 'Los cambios se aplicaron correctamente.';

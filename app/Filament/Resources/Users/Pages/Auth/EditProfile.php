@@ -5,7 +5,6 @@ namespace App\Filament\Resources\Users\Pages\Auth;
 use Filament\Auth\Pages\EditProfile as BaseEditProfile;
 use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Schema;
-use Filament\Schemas\Components\Utilities\Get;
 use Illuminate\Support\Facades\Auth;
 
 class EditProfile extends BaseEditProfile
@@ -32,7 +31,7 @@ class EditProfile extends BaseEditProfile
                         'max' => 'El apellido no debe exceder los :max caracteres.',
                     ]),
 
-/*                 // Correo electrónico
+                /*                 // Correo electrónico
                 $this->getEmailFormComponent()
                     ->label('Correo electrónico')
                     ->validationMessages([
@@ -97,5 +96,15 @@ class EditProfile extends BaseEditProfile
                     ->readOnly()
                     ->dehydrated(false),
             ]);
+    }
+
+    /**
+     * Tras guardar, vuelve a llenar el formulario con lo persistido en la
+     * base: el modo SPA de Livewire puede servir después la página con el
+     * estado del HTML horneado antes del guardado.
+     */
+    protected function afterSave(): void
+    {
+        $this->fillForm();
     }
 }

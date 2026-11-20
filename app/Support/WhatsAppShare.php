@@ -2,39 +2,46 @@
 
 namespace App\Support;
 
+use App\Models\Clients;
 use App\Models\Sale;
 use App\Models\Setting;
 
 /**
- * Armado de links de compartir por WhatsApp (wa.me) para los boletos.
+ * Teléfonos y links de compartir por WhatsApp (wa.me) para los boletos.
  *
  * Reglas decididas con el usuario:
  *  - Candidatos: TODOS los teléfonos de la venta (teléfono de cada pasajero
  *    + el que el padrón tenga por el DNI del pasajero), sin duplicados.
- *  - Un solo candidato → link directo wa.me/{tel}?text=...
- *  - Ninguno → no se muestra botón de WhatsApp; la página queda con el
- *    link, el preview y la descarga.
- *  - El texto viene de Parametros (Setting::WHATSAPP_MENSAJE) con {link}.
+ *  - Cada candidato recuerda de qué pasajero salió, para que el modal de
+ *    entrega preseleccione el teléfono del pasajero de cada boleto.
+ *  - El texto viene de Parámetros (Setting::WHATSAPP_MENSAJE) con {link}.
+ *    El modal de entrega arma sus links de wa.me en el navegador; el
+ *    detalle del boleto usa url().
  */
 final class WhatsAppShare
 {
     /**
-     * @param  string  $link  URL del boleto que se comparte (en el texto).
-     * @return array<int, array{name: string, phone: string, url: string}>
+     * Teléfonos de la venta, normalizados y sin repetir. Si el mismo número
+     * aparece en dos pasajeros, queda con el primero que lo tiene. Con
+     * `$unique = false` se conservan las repeticiones, para saber todos los
+     * teléfonos de cada pasajero.
+     *
+     * @return list<array{passenger_id: int, name: string, phone: string, source: 'passenger'|'padron'}>
      */
-    public static function forSale(Sale $sale, string $link): array
+    public static function candidatesForSale(Sale $sale, bool $unique = true): array
     {
-        // Pasajeros de la venta con su teléfono cargado en el wizard.
-        $passengers = collect($sale->tickets()->with('passenger')->get())
+        $passengers = $sale->tickets()
+            ->with('passenger')
+            ->orderBy('id')
+            ->get()
             ->pluck('passenger')
             ->filter()
             ->unique('id');
 
-        // Teléfono contenido en el padrón, cruzando por DNI.
         $dnis = $passengers->pluck('dni')->filter()->unique()->values();
 
         $padronByDni = $dnis->isNotEmpty()
-            ? \App\Models\Clients::query()->whereIn('dni', $dnis->all())->get()->keyBy('dni')
+            ? Clients::query()->whereIn('dni', $dnis->all())->get()->keyBy('dni')
             : collect();
 
         $candidates = collect();
@@ -42,8 +49,10 @@ final class WhatsAppShare
         foreach ($passengers as $passenger) {
             if (filled($passenger->phone_number)) {
                 $candidates->push([
+                    'passenger_id' => $passenger->id,
                     'name' => $passenger->full_name,
-                    'phone' => $passenger->phone_number,
+                    'phone' => self::normalizePhone($passenger->phone_number),
+                    'source' => 'passenger',
                 ]);
             }
 
@@ -51,33 +60,31 @@ final class WhatsAppShare
 
             if ($client && filled($client->telefono)) {
                 $candidates->push([
+                    'passenger_id' => $passenger->id,
                     'name' => trim($client->nombre.' '.$client->apellido),
-                    'phone' => $client->telefono,
+                    'phone' => self::normalizePhone($client->telefono),
+                    'source' => 'padron',
                 ]);
             }
         }
 
-        // Normalizar y quitar duplicados por teléfono normalizado.
-        return $candidates
-            ->map(function (array $candidate) use ($link): array {
-                $phone = self::normalizePhone($candidate['phone']);
+        $candidates = $candidates->filter(fn (array $candidate): bool => $candidate['phone'] !== '');
 
-                return [
-                    'name' => $candidate['name'],
-                    'phone' => $phone !== '' ? $phone : $candidate['phone'],
-                    'url' => $phone !== '' ? self::url($phone, $link) : null,
-                ];
-            })
-            ->filter(fn (array $candidate): bool => $candidate['url'] !== null)
-            ->unique('phone')
-            ->values()
-            ->all();
+        if ($unique) {
+            $candidates = $candidates->unique('phone');
+        }
+
+        return $candidates->values()->all();
     }
 
     /**
      * wa.me con país argentino por defecto: los teléfonos se cargan como
      * códigos de área locales (p. ej. 3881234567); wa.me exige país, así
      * que se antepone 54 a los cortos sin código país.
+     *
+     * La vista del modal de entrega (filament.tickets.delivery-modal) repite
+     * esta regla en JS para los números escritos a mano: si cambia acá,
+     * cambiala allá también.
      */
     public static function normalizePhone(?string $phone): string
     {
@@ -100,14 +107,13 @@ final class WhatsAppShare
     }
 
     /**
-     * URL de wa.me con el texto configurado (o genérica sin teléfono).
+     * URL de wa.me hacia un teléfono ya normalizado, con el mensaje de
+     * Parámetros y {link} reemplazado por el link del boleto.
      */
-    public static function url(?string $phone, string $link): string
+    public static function url(string $phone, string $link): string
     {
         $text = str_replace('{link}', $link, Setting::whatsappMensaje());
 
-        return filled($phone)
-            ? 'https://wa.me/'.$phone.'?text='.rawurlencode($text)
-            : 'https://wa.me/?text='.rawurlencode($text);
+        return 'https://wa.me/'.$phone.'?text='.rawurlencode($text);
     }
 }

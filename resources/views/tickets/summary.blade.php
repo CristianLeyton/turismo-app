@@ -18,13 +18,27 @@
 
     // Cálculo centralizado (compartido con el header de pasos intermedios del wizard)
     $timesService = app(\App\Services\TripTimesService::class);
-    $idaTimes = $timesService->getLegTimes($trip, $schedule, $get('origin_location_id'), $get('destination_location_id'));
-    $vueltaTimes = $timesService->getLegTimes($returnTrip, $returnSchedule, $get('destination_location_id'), $get('origin_location_id'));
+    $idaTimes = $timesService->getLegTimes(
+        $trip,
+        $schedule,
+        $get('origin_location_id'),
+        $get('destination_location_id'),
+    );
+    $vueltaTimes = $timesService->getLegTimes(
+        $returnTrip,
+        $returnSchedule,
+        $get('destination_location_id'),
+        $get('origin_location_id'),
+    );
 
     $idaBoardingDeparture = $idaTimes['departure'];
     $idaBoardingArrival = $idaTimes['arrival'];
     $vueltaBoardingDeparture = $vueltaTimes['departure'];
     $vueltaBoardingArrival = $vueltaTimes['arrival'];
+
+    // El paso "Resumen" renderiza la vista dos veces ('trip' y 'passengers')
+    // para ubicar el campo Observaciones entre las dos partes.
+    $section = $section ?? 'all';
 
     $passengers = $get('passengers') ?? [];
     $seatIds = $get('seat_ids') ?? [];
@@ -48,6 +62,7 @@
 
 <div class="space-y-6">
 
+    @if ($section !== 'passengers')
     {{-- ================== RESUMEN GENERAL ================== --}}
     <div
         class="rounded-xl border p-5
@@ -130,6 +145,9 @@
         @endif
     </div>
 
+    @endif
+
+    @if ($section !== 'trip')
     {{-- ================== PASAJEROS ================== --}}
     <div class="space-y-4">
 
@@ -280,7 +298,7 @@
                             Ida
                         </span>
                         <span class="text-lg font-bold text-gray-900 dark:text-gray-100">
-                            {{ $get('sell_without_date_ida') ? 'A asignar' : ($seatNumber ?? '—') }}
+                            {{ $get('sell_without_date_ida') ? 'A asignar' : $seatNumber ?? '—' }}
                         </span>
                     </div>
 
@@ -293,7 +311,7 @@
                                 Vuelta
                             </span>
                             <span class="text-lg font-bold text-gray-900 dark:text-gray-100">
-                                {{ $get('sell_without_date_vuelta') ? 'A asignar' : ($returnSeatNumber ?? '—') }}
+                                {{ $get('sell_without_date_vuelta') ? 'A asignar' : $returnSeatNumber ?? '—' }}
                             </span>
                         </div>
                     @endif
@@ -307,9 +325,21 @@
                                 Precio
                             </div>
                             <div class="text-lg font-semibold text-primary-600 dark:text-primary-400">
-                                ${{ isset($passenger['price']) && is_numeric($passenger['price'])
-                                    ? number_format($passenger['price'], 2, ',', '.')
-                                    : 'No especificado' }}
+                                @php
+                                    // Con precio fijo se muestra el calculado, no lo que traiga el formulario.
+                                    $fixedPrice = \App\Support\FixedTicketPrice::fromSnapshot(
+                                        $get('fixed_price_snapshot'),
+                                        (bool) ($passenger['travels_with_child'] ?? false),
+                                        (bool) $get('is_round_trip'),
+                                    );
+                                @endphp
+                                @if ($fixedPrice !== null)
+                                    ${{ number_format($fixedPrice, 2, ',', '.') }}
+                                @else
+                                    ${{ isset($passenger['price']) && is_numeric($passenger['price'])
+                                        ? number_format($passenger['price'], 2, ',', '.')
+                                        : 'No especificado' }}
+                                @endif
                             </div>
                         </div>
                         <div class="flex-1 text-right">
@@ -318,7 +348,7 @@
                             </div>
                             @if (filled($passenger['payment_method'] ?? null))
                                 <span
-                                    class="inline-block px-3 py-1 rounded-full text-xs font-semibold bg-gray-100 dark:bg-gray-800 {{ str_contains(\App\Models\PaymentMethod::badgeClasses($passenger['payment_method']), 'emerald') ? 'text-lime-500 dark:text-lime-400' : (str_contains(\App\Models\PaymentMethod::badgeClasses($passenger['payment_method']), 'sky') ? 'text-sky-500 dark:text-sky-400' : 'text-gray-500 dark:text-gray-300') }}">
+                                    class="inline-block px-3 py-1 rounded-full text-xs font-semibold {{ \App\Models\PaymentMethod::badgeClasses($passenger['payment_method']) }}">
                                     {{ \App\Models\PaymentMethod::label($passenger['payment_method']) }}
                                 </span>
                             @else
@@ -333,5 +363,7 @@
 
 
     </div>
+
+    @endif
 
 </div>

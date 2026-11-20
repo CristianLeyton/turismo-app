@@ -2,18 +2,24 @@
 
 namespace App\Filament\Client\Schemas;
 
+use App\Models\Schedule;
 use App\Models\Seat;
 use App\Models\SeatReservation;
 use App\Models\Ticket;
 use App\Models\Trip;
+use App\Support\ClientAdvanceNotice;
 use App\Support\ServiceDays;
 use Carbon\Carbon;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\ViewField;
+use Filament\Notifications\Notification;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
+use Filament\Schemas\Components\View;
+use Filament\Schemas\Components\Wizard\Step;
+use Filament\Support\Exceptions\Halt;
 
 /**
  * Formulario del action "Elegir fecha" del panel de clientes: mismo
@@ -26,6 +32,63 @@ use Filament\Schemas\Components\Utilities\Set;
  */
 class ClientTicketAssignForm
 {
+    /**
+     * Pasos del action "Elegir fecha": primero se elige el viaje y después se
+     * reconfirma, avisando que no se podrá cambiar de nuevo. Confirmar es
+     * definitivo: sólo el personal reprograma un boleto que ya tiene fecha.
+     *
+     * @return array<int, Step>
+     */
+    public static function steps(Ticket $ticket): array
+    {
+        return [
+            Step::make('Elegí tu viaje')
+                ->schema(self::make($ticket))
+                // Sin asiento no se pasa a confirmar: se avisa en el momento.
+                ->afterValidation(function (Get $get): void {
+                    if (filled($get('seat_ids'))) {
+                        return;
+                    }
+
+                    Notification::make()
+                        ->title('Falta elegir el asiento')
+                        ->body('Elegí tu asiento en el mapa antes de continuar.')
+                        ->danger()
+                        ->persistent()
+                        ->send();
+
+                    throw new Halt;
+                }),
+
+            Step::make('Confirmá tu elección')
+                ->schema([
+                    View::make('filament.client.assign-confirmation')
+                        ->viewData(fn (Get $get): array => self::summary($ticket, $get)),
+                ]),
+        ];
+    }
+
+    /**
+     * Resumen de lo elegido para la reconfirmación.
+     *
+     * @return array{leg: string, route: string, date: ?string, schedule: ?string, seat: ?string}
+     */
+    private static function summary(Ticket $ticket, Get $get): array
+    {
+        $date = $get('date');
+        $schedule = filled($get('schedule_id')) ? Schedule::query()->find((int) $get('schedule_id')) : null;
+        $seatIds = array_values(array_filter((array) $get('seat_ids')));
+        $seat = $seatIds !== [] ? Seat::query()->find((int) $seatIds[0]) : null;
+
+        return [
+            'leg' => $ticket->isReturnLeg() ? 'vuelta' : 'ida',
+            'route' => trim(($ticket->origin?->name ?? '?').' → '.($ticket->destination?->name ?? '?')),
+            'date' => filled($date) ? Carbon::parse($date)->format('d/m/Y') : null,
+            'schedule' => $schedule?->display_name,
+            'seat' => $seat?->seat_number !== null ? (string) $seat->seat_number : null,
+        ];
+    }
+
     public static function make(Ticket $ticket): array
     {
         $isReturnLeg = $ticket->isReturnLeg();
@@ -45,9 +108,17 @@ class ClientTicketAssignForm
                 // Días de servicio: siempre filtrado, sin excepción por permiso.
                 ->disabledDates(fn (): array => ServiceDays::disabledTravelDates())
                 ->live()
-                ->afterStateUpdated(function (Set $set) {
+                ->afterStateUpdated(function (Set $set, Get $get, $state) use ($originId, $destinationId) {
                     $set('trip_id', null);
                     $set('seat_ids', []);
+
+                    // Un horario ya elegido que no cumple la anticipación en
+                    // la fecha nueva deja de valer.
+                    $scheduleId = $get('schedule_id');
+
+                    if (filled($scheduleId) && ! array_key_exists((int) $scheduleId, self::scheduleOptions($originId, $destinationId, $state))) {
+                        $set('schedule_id', null);
+                    }
                 })
                 ->validationMessages([
                     'required' => 'Elegí una fecha para tu viaje.',
@@ -60,9 +131,13 @@ class ClientTicketAssignForm
                 ->required()
                 ->live()
                 ->disabled(fn (Get $get) => blank($get('date')))
-                ->placeholder(fn (Get $get) => blank($get('date'))
-                    ? 'Elegí una fecha primero'
-                    : 'Elegí un horario')
+                ->placeholder(fn (Get $get) => match (true) {
+                    blank($get('date')) => 'Elegí una fecha primero',
+                    // El día tiene horarios, pero ninguno con la anticipación exigida.
+                    self::scheduleOptions($originId, $destinationId, $get('date')) === []
+                        && self::scheduleOptions($originId, $destinationId) !== [] => ClientAdvanceNotice::emptyOptionsMessage(),
+                    default => 'Elegí un horario',
+                })
                 ->options(function (Get $get) use ($originId, $destinationId): array {
                     $date = $get('date');
 
@@ -70,7 +145,7 @@ class ClientTicketAssignForm
                         return [];
                     }
 
-                    return self::scheduleOptions($originId, $destinationId);
+                    return self::scheduleOptions($originId, $destinationId, $date);
                 })
                 ->afterStateUpdated(function (Set $set, Get $get, $state) use ($ticket) {
                     $set('seat_ids', []);
@@ -218,8 +293,13 @@ class ClientTicketAssignForm
         return null;
     }
 
-    /** Horarios activos que cubren el segmento del boleto. */
-    private static function scheduleOptions(int $originId, int $destinationId): array
+    /**
+     * Horarios activos que cubren el segmento del boleto. Con una fecha, solo
+     * los que salen con la anticipación mínima de Parámetros > Clientes.
+     *
+     * @return array<int, string>
+     */
+    private static function scheduleOptions(int $originId, int $destinationId, mixed $date = null): array
     {
         return \App\Models\Schedule::query()
             ->bookable()
@@ -228,6 +308,7 @@ class ClientTicketAssignForm
             ->with('route.stops')
             ->get()
             ->filter(fn ($schedule) => $schedule->route->isValidSegment($originId, $destinationId))
+            ->filter(fn (\App\Models\Schedule $schedule) => blank($date) || ClientAdvanceNotice::allows($schedule, $date))
             ->sortBy(fn (\App\Models\Schedule $schedule) => $schedule->display_name, SORT_NATURAL | SORT_FLAG_CASE)
             ->mapWithKeys(fn (\App\Models\Schedule $schedule) => [$schedule->id => $schedule->display_name])
             ->toArray();

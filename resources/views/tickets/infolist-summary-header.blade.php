@@ -5,7 +5,7 @@
 
     /* Resuelve el registro tanto desde el infolist Filament (ViewEntry le
        pasa $getRecord() como closure) como al incluir la vista manualmente
-       con ['record' => $ticket] (p. ej. la página pública /boletos/{token}). */
+       con ['record' => $ticket]. */
     $record = $record ?? null;
     if (! $record && isset($getRecord) && is_callable($getRecord)) {
         $record = $getRecord();
@@ -191,7 +191,7 @@
             <div class="flex justify-between gap-3 mb-1 flex-nowrap">
                 <div>
                     <div class="text-lg font-semibold text-gray-900 dark:text-gray-100">
-                        {{ $record->passenger->last_name ?? '' }} {{ $record->passenger->first_name ?? '' }} 
+                        {{ $record->passenger->last_name ?? '' }} {{ $record->passenger->first_name ?? '' }}
                     </div>
 
                     <div class="text-sm text-gray-600 dark:text-gray-400">

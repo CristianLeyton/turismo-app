@@ -3,9 +3,11 @@
 namespace App\Filament\Resources\Sales;
 
 use App\Filament\Clusters\Sales\SalesCluster;
-use App\Models\PaymentMethod;
 use App\Filament\Resources\Sales\Pages\ManageSales;
+use App\Models\PaymentMethod;
+use App\Models\User;
 use BackedEnum;
+use Carbon\Carbon;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
 use Filament\Actions\BulkActionGroup;
@@ -21,23 +23,20 @@ use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
-use Filament\Support\Enums\Width;
+use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Schema;
+use Filament\Support\Enums\Width;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Enums\FiltersLayout;
+use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\TrashedFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\SoftDeletingScope;
-use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletingScope;
 use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Support\Facades\DB;
-use Carbon\Carbon;
-use Filament\Schemas\Components\Grid;
-use Filament\Schemas\Components\Section;
-use Filament\Tables\Filters\Filter;
-use Filament\Tables\Enums\FiltersLayout;
 
 class SalesResource extends Resource
 {
@@ -48,8 +47,11 @@ class SalesResource extends Resource
     protected static string|BackedEnum|null $navigationIcon = Heroicon::PresentationChartBar;
 
     protected static ?string $modelLabel = 'venta';
+
     protected static ?string $pluralModelLabel = 'Ventas';
+
     protected static bool $hasTitleCaseModelLabel = false;
+
     /*     protected static string | UnitEnum | null $navigationGroup = 'Sistema'; */
     protected static ?int $navigationSort = 1;
 
@@ -76,134 +78,108 @@ class SalesResource extends Resource
 
     protected static function formatMoney(float $amount): string
     {
-        return '$' . number_format($amount, 0, ',', '.');
+        return '$'.number_format($amount, 0, ',', '.');
     }
 
     /**
-     * Subquery reutilizable: cantidad de tickets vendidos por un usuario en el
-     * rango de fechas vigente. Se usa para ordenar la columna de tickets sin
-     * necesidad de agregarla al SELECT principal.
+     * Filtros vigentes de la tabla (rango y métodos de pago), normalizados.
+     * "Hasta" incluye el día completo: el DatePicker entrega solo la fecha y
+     * '<= $to' excluía las ventas del último día.
+     *
+     * Se lee del estado del componente porque los totales se calculan en la
+     * query base (modifyQueryUsing): Filament aplica los filtros dentro de un
+     * where anidado, donde un select agregado se pierde.
+     *
+     * @return array{from: ?string, to: ?Carbon, methods: list<string>}
      */
-    protected static function ticketsCountSubquery(?string $from, ?string $to, array $paymentMethods = []): QueryBuilder
+    public static function salesFilterState(mixed $livewire): array
+    {
+        $filters = is_object($livewire) && property_exists($livewire, 'tableFilters')
+            ? ($livewire->tableFilters ?? [])
+            : [];
+
+        $from = data_get($filters, 'date_range.from');
+        $to = data_get($filters, 'date_range.to');
+
+        return [
+            'from' => filled($from) ? (string) $from : null,
+            'to' => filled($to) ? Carbon::parse($to)->endOfDay() : null,
+            'methods' => array_values(array_filter(
+                (array) (data_get($filters, 'payment_method.methods') ?? []),
+                fn (mixed $code): bool => is_string($code) && $code !== '',
+            )),
+        ];
+    }
+
+    /**
+     * Boletos vigentes de ventas vigentes del vendedor (users.id de la query
+     * externa) en el rango y los métodos indicados. Base de los conteos,
+     * sumas y del criterio "aparece en el período".
+     *
+     * @param  list<string>  $methods
+     */
+    protected static function ticketsBaseSubquery(?string $from, ?Carbon $to, array $methods): QueryBuilder
     {
         return DB::table('tickets')
             ->join('sales', 'sales.id', '=', 'tickets.sale_id')
             ->whereColumn('sales.user_id', 'users.id')
             ->whereNull('sales.deleted_at')
             ->whereNull('tickets.deleted_at')
-            ->when($from, fn($q, $date) => $q->where('sales.sale_date', '>=', $date))
-            ->when($to, fn($q, $date) => $q->where('sales.sale_date', '<=', $date))
-            ->when($paymentMethods !== [], fn($q) => $q->whereIn('tickets.payment_method', $paymentMethods))
-            ->selectRaw('COUNT(tickets.id)');
+            ->when($from, fn ($q, $date) => $q->where('sales.sale_date', '>=', $date))
+            ->when($to, fn ($q, $date) => $q->where('sales.sale_date', '<=', $date))
+            ->when($methods !== [], fn ($q) => $q->whereIn('tickets.payment_method', $methods));
     }
 
     /**
-     * Subquery reutilizable: suma de tickets de un usuario por método de pago
-     * (o varios), en el rango de fechas vigente. Se usa tanto para ordenar
-     * las columnas de montos como para el total del footer.
-     */
-    protected static function ticketsSumSubquery(?string $paymentMethod, array $paymentMethods, ?string $from, ?string $to): QueryBuilder
-    {
-        $query = DB::table('tickets')
-            ->selectRaw('COALESCE(SUM(tickets.price), 0)')
-            ->join('sales', 'sales.id', '=', 'tickets.sale_id')
-            ->whereColumn('sales.user_id', 'users.id')
-            ->whereNull('sales.deleted_at')
-            ->whereNull('tickets.deleted_at')
-            ->when($from, fn($q, $date) => $q->where('sales.sale_date', '>=', $date))
-            ->when($to, fn($q, $date) => $q->where('sales.sale_date', '<=', $date));
-
-        if ($paymentMethod !== null) {
-            $query->where('tickets.payment_method', $paymentMethod);
-        } elseif ($paymentMethods !== []) {
-            $query->whereIn('tickets.payment_method', $paymentMethods);
-        } // ambos vacíos = todos los métodos
-
-        return $query;
-    }
-
-    /**
-     * Total para el footer: toma los IDs de usuarios que la tabla ya está
-     * mostrando (respeta búsqueda + filtro de fecha) y suma sus tickets
-     * acotado al mismo rango de fechas ($from/$to).
-     */
-    protected static function sumTicketsForFooter(QueryBuilder $query, ?string $paymentMethod, array $paymentMethods, ?string $from, ?string $to): float
-    {
-        $userIds = (clone $query)->pluck('users.id');
-
-        $sumQuery = DB::table('tickets')
-            ->join('sales', 'sales.id', '=', 'tickets.sale_id')
-            ->whereNull('sales.deleted_at')
-            ->whereNull('tickets.deleted_at')
-            ->whereIn('sales.user_id', $userIds)
-            ->when($from, fn($q, $date) => $q->where('sales.sale_date', '>=', $date))
-            ->when($to, fn($q, $date) => $q->where('sales.sale_date', '<=', $date));
-
-        if ($paymentMethod !== null) {
-            $sumQuery->where('tickets.payment_method', $paymentMethod);
-        } elseif ($paymentMethods !== []) {
-            $sumQuery->whereIn('tickets.payment_method', $paymentMethods);
-        } // ambos vacíos = todos los métodos
-
-        return (float) $sumQuery->sum('tickets.price');
-    }
-
-    /**
-     * Subquery reutilizable: cantidad de pagos recibidos de un usuario en el
-     * rango de fechas vigente.
-     */
-    protected static function paymentsCountSubquery(?string $from, ?string $to): QueryBuilder
-    {
-        return DB::table('payments')
-            ->whereColumn('payments.user_id', 'users.id')
-            ->whereNull('payments.deleted_at')
-            ->when($from, fn($q, $date) => $q->where('payments.payment_date', '>=', $date))
-            ->when($to, fn($q, $date) => $q->where('payments.payment_date', '<=', $date))
-            ->selectRaw('COUNT(payments.id)');
-    }
-
-    /**
-     * Subquery reutilizable: suma de montos de los pagos recibidos de un
-     * usuario en el rango de fechas vigente.
-     */
-    protected static function paymentsSumSubquery(?string $from, ?string $to): QueryBuilder
-    {
-        return DB::table('payments')
-            ->whereColumn('payments.user_id', 'users.id')
-            ->whereNull('payments.deleted_at')
-            ->when($from, fn($q, $date) => $q->where('payments.payment_date', '>=', $date))
-            ->when($to, fn($q, $date) => $q->where('payments.payment_date', '<=', $date))
-            ->selectRaw('COALESCE(SUM(payments.amount), 0)');
-    }
-
-    /**
-     * Totales para el footer: toma los IDs de usuarios que la tabla ya está
-     * mostrando (respeta búsqueda + filtro de fecha) y cuenta/suma sus pagos
-     * acotado al mismo rango de fechas ($from/$to).
+     * Pagos vigentes recibidos del vendedor en el rango y los métodos indicados.
      *
-     * @return array{count: int, sum: float}
+     * @param  list<string>  $methods
      */
-    protected static function paymentsForFooter(QueryBuilder $query, ?string $from, ?string $to): array
+    protected static function paymentsBaseSubquery(?string $from, ?Carbon $to, array $methods): QueryBuilder
     {
-        $userIds = (clone $query)->pluck('users.id');
-
-        $paymentQuery = DB::table('payments')
+        return DB::table('payments')
+            ->whereColumn('payments.user_id', 'users.id')
             ->whereNull('payments.deleted_at')
-            ->whereIn('payments.user_id', $userIds)
-            ->when($from, fn($q, $date) => $q->where('payments.payment_date', '>=', $date))
-            ->when($to, fn($q, $date) => $q->where('payments.payment_date', '<=', $date));
-
-        return [
-            'count' => (clone $paymentQuery)->count(),
-            'sum' => (float) (clone $paymentQuery)->sum('payments.amount'),
-        ];
+            ->when($from, fn ($q, $date) => $q->where('payments.payment_date', '>=', $date))
+            ->when($to, fn ($q, $date) => $q->where('payments.payment_date', '<=', $date))
+            ->when($methods !== [], fn ($q) => $q->whereIn('payments.payment_method', $methods));
     }
 
     /**
-     * Totales agregados de la tabla con los filtros vigentes (fechas, método
-     * de pago, búsqueda). Es la MISMA fuente de verdad que la fila "Resumen"
-     * del footer de escritorio; lo consume la tarjeta mobile-only inyectada
-     * vía render hook (resources/views/filament/resources/sales/summary-card).
+     * Agrega a la query de vendedores los totales del período (boletos,
+     * ventas, pagos y saldo) como columnas calculadas en la base, y deja solo
+     * a quienes tienen al menos un boleto o un pago dentro del rango y los
+     * métodos filtrados. Es la única regla de cálculo: la usan las filas, el
+     * ordenamiento y la tarjeta de resumen.
+     *
+     * @param  array{from: ?string, to: ?Carbon, methods: list<string>}  $state
+     */
+    public static function applySalesTotals(Builder $query, array $state): Builder
+    {
+        ['from' => $from, 'to' => $to, 'methods' => $methods] = $state;
+
+        $ventas = static::ticketsBaseSubquery($from, $to, $methods)->selectRaw('COALESCE(SUM(tickets.price), 0)');
+        $pagos = static::paymentsBaseSubquery($from, $to, $methods)->selectRaw('COALESCE(SUM(payments.amount), 0)');
+
+        return $query
+            ->select('users.*')
+            ->selectSub(static::ticketsBaseSubquery($from, $to, $methods)->selectRaw('COUNT(tickets.id)'), 'tickets_count')
+            ->selectSub($ventas, 'total_amount')
+            ->selectSub(static::paymentsBaseSubquery($from, $to, $methods)->selectRaw('COUNT(payments.id)'), 'payments_count')
+            ->selectSub($pagos, 'payments_total')
+            ->selectRaw(
+                '(('.$ventas->toSql().') - ('.$pagos->toSql().')) as saldo',
+                [...$ventas->getBindings(), ...$pagos->getBindings()],
+            )
+            ->where(fn (Builder $q) => $q
+                ->whereExists(static::ticketsBaseSubquery($from, $to, $methods)->selectRaw('1'))
+                ->orWhereExists(static::paymentsBaseSubquery($from, $to, $methods)->selectRaw('1')));
+    }
+
+    /**
+     * Totales de la tarjeta de resumen: suma las mismas columnas calculadas
+     * que muestran las filas sobre la query ya filtrada (fechas, métodos y
+     * búsqueda), así el resumen nunca difiere de la tabla.
      *
      * @return array{boletos: int, ventas: float, pagos_count: int, pagos: float, saldo: float, from: ?string, to: ?string}
      */
@@ -215,41 +191,20 @@ class SalesResource extends Resource
             return ['boletos' => 0, 'ventas' => 0.0, 'pagos_count' => 0, 'pagos' => 0.0, 'saldo' => 0.0, 'from' => null, 'to' => null];
         }
 
-        $state = $livewire->getTableFiltersForm()?->getState() ?? [];
-        $from = $state['date_range']['from'] ?? null;
-        $to = $state['date_range']['to'] ?? null;
+        $rows = $livewire->getFilteredTableQuery()->toBase()->get();
 
-        // Mismo criterio que el filtro: "Hasta" incluye el día completo.
-        if ($to) {
-            $to = Carbon::parse($to)->endOfDay();
-        }
-
-        $methods = array_values($state['payment_method']['methods'] ?? []);
-        // Los helpers del footer esperan el Query\Builder base (igual que
-        // Filament les pasa a los Summarizer::using()).
-        $query = $livewire->getFilteredTableQuery()->toBase();
-
-        $ventas = static::sumTicketsForFooter($query, null, $methods, $from, $to);
-        $pagos = static::paymentsForFooter($query, $from, $to);
-
-        $boletos = DB::table('tickets')
-            ->join('sales', 'sales.id', '=', 'tickets.sale_id')
-            ->whereNull('sales.deleted_at')
-            ->whereNull('tickets.deleted_at')
-            ->whereIn('sales.user_id', (clone $query)->pluck('users.id'))
-            ->when($from, fn ($q, $date) => $q->where('sales.sale_date', '>=', $date))
-            ->when($to, fn ($q, $date) => $q->where('sales.sale_date', '<=', $date))
-            ->when($methods !== [], fn ($q) => $q->whereIn('tickets.payment_method', $methods))
-            ->count();
+        $ventas = (float) $rows->sum('total_amount');
+        $pagos = (float) $rows->sum('payments_total');
+        $filters = $livewire->tableFilters ?? [];
 
         return [
-            'boletos' => $boletos,
+            'boletos' => (int) $rows->sum('tickets_count'),
             'ventas' => $ventas,
-            'pagos_count' => $pagos['count'],
-            'pagos' => $pagos['sum'],
-            'saldo' => $ventas - $pagos['sum'],
-            'from' => $state['date_range']['from'] ?? null,
-            'to' => $state['date_range']['to'] ?? null,
+            'pagos_count' => (int) $rows->sum('payments_count'),
+            'pagos' => $pagos,
+            'saldo' => $ventas - $pagos,
+            'from' => data_get($filters, 'date_range.from'),
+            'to' => data_get($filters, 'date_range.to'),
         ];
     }
 
@@ -263,23 +218,11 @@ class SalesResource extends Resource
 
     public static function table(Table $table): Table
     {
-        // Rango de fechas actualmente seleccionado. Se completa dentro del
-        // query() del filtro 'date_range' (siempre corre porque tiene
-        // valores por defecto y deferFilters(false)).
-        //
-        // OJO: se lee más abajo desde closures NORMALES con "use (&$dateFilter)"
-        // (nunca desde arrow functions "fn() => ..."), porque las arrow
-        // functions capturan las variables externas POR VALOR, no por
-        // referencia, y quedarían con el snapshot ['from' => null, 'to' => null]
-        // de este momento en vez del valor real que fija el filtro.
-        $dateFilter = ['from' => null, 'to' => null];
-
-        // Métodos de pago seleccionados en el filtro (por referencia: lo fija
-        // el query() del filtro 'payment_method' y lo leen las columnas).
-        $methodFilter = [];
-
         return $table
             ->recordTitleAttribute('username')
+            // Totales del período calculados en la base (una sola query, sin
+            // cargar ventas ni boletos): ver applySalesTotals().
+            ->modifyQueryUsing(fn (Builder $query, mixed $livewire): Builder => static::applySalesTotals($query, static::salesFilterState($livewire)))
             ->columns([
                 TextColumn::make('username')
                     ->label('Usuario')
@@ -288,7 +231,7 @@ class SalesResource extends Resource
                     ->hidden(),
                 TextColumn::make('name')
                     ->label('Nombre')
-                    ->getStateUsing(fn(Model $record): string => $record->name . ' ' . ($record->surname ?? ''))
+                    ->getStateUsing(fn (Model $record): string => $record->name.' '.($record->surname ?? ''))
                     ->searchable()
                     ->sortable(['name', 'surname'])
                     ->limit(22),
@@ -301,44 +244,18 @@ class SalesResource extends Resource
                     ->alignCenter()
                     ->toggleable()
                     ->visibleFrom('md')
-                    ->getStateUsing(function (Model $record): int {
-                        $ticketCount = 0;
-
-                        foreach ($record->sales as $sale) {
-                            $ticketCount += $sale->tickets->count();
-                        }
-
-                        return $ticketCount;
-                    })
-                    ->sortable(query: function (Builder $query, string $direction) use (&$dateFilter, &$methodFilter): Builder {
-                        return $query->orderBy(
-                            static::ticketsCountSubquery($dateFilter['from'], $dateFilter['to'], $methodFilter),
-                            $direction
-                        );
-                    }),
+                    ->getStateUsing(fn (Model $record): int => (int) $record->getAttribute('tickets_count'))
+                    ->sortable(query: fn (Builder $query, string $direction): Builder => $query->orderBy('tickets_count', $direction)),
                 // Una sola columna de dinero: el desglose por método de pago
                 // vive en el filtro del modal de detalle y en su desglose plegable.
                 TextColumn::make('total_amount')
                     ->label('Total ventas')
                     ->color('primary')
                     ->visibleFrom('md')
-                    ->getStateUsing(function (Model $record) {
-                        $total = 0;
-                        foreach ($record->sales as $sale) {
-                            foreach ($sale->tickets as $ticket) {
-                                $total += $ticket->price;
-                            }
-                        }
-                        return static::formatMoney($total);
-                    })
+                    ->getStateUsing(fn (Model $record): string => static::formatMoney((float) $record->getAttribute('total_amount')))
                     ->weight('bold')
                     ->toggleable()
-                    ->sortable(query: function (Builder $query, string $direction) use (&$dateFilter): Builder {
-                        return $query->orderBy(
-                            static::ticketsSumSubquery(null, [], $dateFilter['from'], $dateFilter['to']),
-                            $direction
-                        );
-                    }),
+                    ->sortable(query: fn (Builder $query, string $direction): Builder => $query->orderBy('total_amount', $direction)),
                 TextColumn::make('payments_count')
                     ->label('Pagos')
                     ->badge()
@@ -348,72 +265,31 @@ class SalesResource extends Resource
                     ->iconPosition('after')
                     ->alignCenter()
                     ->toggleable()
-                    ->getStateUsing(function (Model $record): int {
-                        return $record->payments->count();
-                    })
-                    ->sortable(query: function (Builder $query, string $direction) use (&$dateFilter): Builder {
-                        return $query->orderBy(
-                            static::paymentsCountSubquery($dateFilter['from'], $dateFilter['to']),
-                            $direction
-                        );
-                    }),
+                    ->getStateUsing(fn (Model $record): int => (int) $record->getAttribute('payments_count'))
+                    ->sortable(query: fn (Builder $query, string $direction): Builder => $query->orderBy('payments_count', $direction)),
                 TextColumn::make('payments_total')
                     ->label('Total pagos')
                     ->badge()
                     ->visibleFrom('md')
                     ->color('warning')
                     ->toggleable()
-                    ->getStateUsing(function (Model $record): string {
-                        $total = 0;
-
-                        foreach ($record->payments as $payment) {
-                            $total += (float) $payment->amount;
-                        }
-
-                        return static::formatMoney($total);
-                    })
-                    ->sortable(query: function (Builder $query, string $direction) use (&$dateFilter): Builder {
-                        return $query->orderBy(
-                            static::paymentsSumSubquery($dateFilter['from'], $dateFilter['to']),
-                            $direction
-                        );
-                    }),
+                    ->getStateUsing(fn (Model $record): string => static::formatMoney((float) $record->getAttribute('payments_total')))
+                    ->sortable(query: fn (Builder $query, string $direction): Builder => $query->orderBy('payments_total', $direction)),
                 TextColumn::make('saldo')
                     ->label('Saldo')
                     ->toggleable()
-                    ->getStateUsing(function (Model $record): float {
-                        $ventas = 0;
-
-                        foreach ($record->sales as $sale) {
-                            foreach ($sale->tickets as $ticket) {
-                                $ventas += (float) $ticket->price;
-                            }
-                        }
-
-                        $pagos = 0;
-
-                        foreach ($record->payments as $payment) {
-                            $pagos += (float) $payment->amount;
-                        }
-
-                        return $ventas - $pagos;
-                    })
-                    ->formatStateUsing(fn(float $state): string => static::formatMoney($state))
-                    ->color(fn(float $state): string => $state > 0 ? 'warning' : ($state < 0 ? 'danger' : 'success'))
+                    ->getStateUsing(fn (Model $record): float => (float) $record->getAttribute('saldo'))
+                    ->formatStateUsing(fn (float $state): string => static::formatMoney($state))
+                    ->color(fn (float $state): string => $state > 0 ? 'warning' : ($state < 0 ? 'danger' : 'success'))
                     ->weight('bold')
                     ->alignEnd()
-                    ->sortable(query: function (Builder $query, string $direction) use (&$dateFilter): Builder {
-                        $ventas = static::ticketsSumSubquery(null, [], $dateFilter['from'], $dateFilter['to']);
-                        $pagos = static::paymentsSumSubquery($dateFilter['from'], $dateFilter['to']);
-
-                        return $query->orderByRaw(
-                            '(' . $ventas->toSql() . ') - (' . $pagos->toSql() . ') ' . ($direction === 'asc' ? 'asc' : 'desc'),
-                            [...$ventas->getBindings(), ...$pagos->getBindings()]
-                        );
-                    }),
+                    ->sortable(query: fn (Builder $query, string $direction): Builder => $query->orderBy('saldo', $direction)),
             ])
             ->recordUrl(null)
             ->recordAction(null)
+            // Los filtros no modifican la query por sí mismos: su estado lo
+            // lee applySalesTotals(), que combina rango y métodos en una sola
+            // condición por relación.
             ->filters([
                 Filter::make('date_range')
                     ->form([
@@ -424,72 +300,17 @@ class SalesResource extends Resource
                             \Filament\Forms\Components\DatePicker::make('to')
                                 ->label('Hasta')
                                 ->default(Carbon::now()->endOfMonth()),
-                        ])
+                        ]),
                     ])
-                    ->query(function (Builder $query, array $data) use (&$dateFilter): Builder {
-                        $from = $data['from'] ?? null;
-                        $to = $data['to'] ?? null;
-
-                        // El DatePicker entrega solo la fecha (sin hora), por lo que
-                        // '<= $to' se interpretaba como '$to 00:00:00' y excluía las
-                        // ventas cargadas durante el día de hoy. Llevamos $to al final
-                        // del día para incluir todas las ventas de esa fecha.
-                        if ($to) {
-                            $to = Carbon::parse($to)->endOfDay();
-                        }
-
-                        // Guardamos el rango vigente: lo leen los sortable(query:)
-                        // de las columnas y la tarjeta de resumen (TOOLBAR_AFTER).
-                        $dateFilter['from'] = $from;
-                        $dateFilter['to'] = $to;
-
-                        return $query
-                            // Carga 'sales.tickets' acotado al mismo rango de fechas
-                            // que filtra qué usuarios aparecen (whereHas abajo), para
-                            // que los valores mostrados en cada fila coincidan.
-                            ->with(['sales' => function ($query) use ($from, $to, &$methodFilter) {
-                                $query->with(['tickets' => function ($q) use (&$methodFilter) {
-                                    // Respetar el filtro por método de pago también
-                                    // en los montos mostrados por fila.
-                                    if (($methodFilter ?? []) !== []) {
-                                        $q->whereIn('tickets.payment_method', $methodFilter);
-                                    }
-                                }]);
-                                if ($from) {
-                                    $query->where('sale_date', '>=', $from);
-                                }
-                                if ($to) {
-                                    $query->where('sale_date', '<=', $to);
-                                }
-                            }, 'payments' => function ($query) use ($from, $to) {
-                                if ($from) {
-                                    $query->where('payment_date', '>=', $from);
-                                }
-                                if ($to) {
-                                    $query->where('payment_date', '<=', $to);
-                                }
-                            }])
-                            ->when(
-                                $from,
-                                fn(Builder $query, $date): Builder => $query->whereHas('sales', function (Builder $query) use ($date) {
-                                    $query->where('sale_date', '>=', $date);
-                                })
-                            )
-                            ->when(
-                                $to,
-                                fn(Builder $query, $date): Builder => $query->whereHas('sales', function (Builder $query) use ($date) {
-                                    $query->where('sale_date', '<=', $date);
-                                })
-                            );
-                    })
                     ->indicateUsing(function (array $data): array {
                         $indicators = [];
                         if ($data['from'] ?? null) {
-                            $indicators[] = 'Desde: ' . Carbon::parse($data['from'])->format('d/m/Y');
+                            $indicators[] = 'Desde: '.Carbon::parse($data['from'])->format('d/m/Y');
                         }
                         if ($data['to'] ?? null) {
-                            $indicators[] = 'Hasta: ' . Carbon::parse($data['to'])->format('d/m/Y');
+                            $indicators[] = 'Hasta: '.Carbon::parse($data['to'])->format('d/m/Y');
                         }
+
                         return $indicators;
                     }),
                 Filter::make('payment_method')
@@ -500,21 +321,6 @@ class SalesResource extends Resource
                             ->multiple()
                             ->placeholder('Todos los métodos'),
                     ])
-                    ->query(function (Builder $query, array $data) use (&$methodFilter): Builder {
-                        $methods = array_values($data['methods'] ?? []);
-                        $methodFilter = $methods;
-
-                        // El whereHas define QUÉ usuarios aparecen; los montos
-                        // de cada fila se ajustan vía el eager load de arriba.
-                        return $query
-                            ->when(
-                                $methods !== [],
-                                fn (Builder $q) => $q->whereHas('sales', function (Builder $q) use ($methods) {
-                                    $q->whereHas('tickets', fn (Builder $t) => $t->whereIn('tickets.payment_method', $methods));
-                                }),
-                                fn (Builder $q) => $q
-                            );
-                    })
                     ->indicateUsing(function (array $data): array {
                         $methods = array_values($data['methods'] ?? []);
                         if ($methods === []) {
@@ -523,7 +329,7 @@ class SalesResource extends Resource
 
                         $labels = array_map(fn (string $code) => PaymentMethod::label($code), $methods);
 
-                        return ['Método: ' . implode(', ', $labels)];
+                        return ['Método: '.implode(', ', $labels)];
                     }),
                 /* TrashedFilter::make(), */
             ])
@@ -544,25 +350,12 @@ class SalesResource extends Resource
                     ->extraAttributes([
                         'title' => 'Ver detalle',
                     ])
-                    ->modalHeading(fn(Model $record) => 'Detalle de ' . trim($record->name . ' ' . ($record->surname ?? '')))
+                    ->modalHeading(fn (Model $record) => 'Detalle de '.trim($record->name.' '.($record->surname ?? '')))
                     ->modalDescription('Boletos vendidos y pagos recibidos en el período seleccionado')
                     ->modalWidth(Width::SevenExtraLarge)
                     ->modalSubmitAction(false)
                     ->modalCancelActionLabel('Cerrar')
-                    ->modalContent(function (Model $record, Action $action) {
-                        // El modal abre con el mismo rango de fechas que la tabla
-                        // está mostrando en ese momento.
-                        $livewire = $action->getLivewire();
-                        $range = $livewire
-                            ? data_get($livewire->getTableFiltersForm()?->getState(), 'date_range', [])
-                            : [];
-
-                        return view('filament.resources.sales.tickets-modal', [
-                            'user' => $record,
-                            'from' => $range['from'] ?? null,
-                            'to' => $range['to'] ?? null,
-                        ]);
-                    })->extraAttributes(['class' => 'hidden md:inline-flex', 'title' => 'Ver detalles']),
+                    ->modalContent(fn (Model $record, Action $action) => static::ticketsModalContent($record, $action))->extraAttributes(['class' => 'hidden md:inline-flex', 'title' => 'Ver detalles']),
                 Action::make('register_payment')
                     ->label('Registrar pago')
                     ->button()
@@ -575,7 +368,7 @@ class SalesResource extends Resource
                     ->extraAttributes([
                         'title' => 'Registrar pago',
                     ])
-                    ->modalHeading(fn(Model $record) => 'Registrar pago de ' . trim($record->name . ' ' . ($record->surname ?? '')))
+                    ->modalHeading(fn (Model $record) => 'Registrar pago de '.trim($record->name.' '.($record->surname ?? '')))
                     ->modalDescription('Cargá un pago recibido de este vendedor')
                     ->modalSubmitActionLabel('Guardar pago')
                     ->form([
@@ -606,9 +399,9 @@ class SalesResource extends Resource
                         Notification::make()
                             ->title('Pago registrado')
                             ->body(
-                                'Se registró $' . number_format((float) $data['amount'], 0, ',', '.')
-                                    . ' (' . PaymentMethod::label($data['payment_method']) . ')'
-                                    . ' de ' . trim($record->name . ' ' . ($record->surname ?? ''))
+                                'Se registró $'.number_format((float) $data['amount'], 0, ',', '.')
+                                    .' ('.PaymentMethod::label($data['payment_method']).')'
+                                    .' de '.trim($record->name.' '.($record->surname ?? ''))
                             )
                             ->success()
                             ->duration(4000)
@@ -624,25 +417,12 @@ class SalesResource extends Resource
                         ->extraAttributes([
                             'title' => 'Ver detalle',
                         ])
-                        ->modalHeading(fn(Model $record) => 'Detalle de ' . trim($record->name . ' ' . ($record->surname ?? '')))
+                        ->modalHeading(fn (Model $record) => 'Detalle de '.trim($record->name.' '.($record->surname ?? '')))
                         ->modalDescription('Boletos vendidos y pagos recibidos en el período seleccionado')
                         ->modalWidth(Width::SevenExtraLarge)
                         ->modalSubmitAction(false)
                         ->modalCancelActionLabel('Cerrar')
-                        ->modalContent(function (Model $record, Action $action) {
-                            // El modal abre con el mismo rango de fechas que la tabla
-                            // está mostrando en ese momento.
-                            $livewire = $action->getLivewire();
-                            $range = $livewire
-                                ? data_get($livewire->getTableFiltersForm()?->getState(), 'date_range', [])
-                                : [];
-
-                            return view('filament.resources.sales.tickets-modal', [
-                                'user' => $record,
-                                'from' => $range['from'] ?? null,
-                                'to' => $range['to'] ?? null,
-                            ]);
-                        }),
+                        ->modalContent(fn (Model $record, Action $action) => static::ticketsModalContent($record, $action)),
                     Action::make('register_payment')
                         ->label('Registrar pago')
                         ->button()
@@ -652,7 +432,7 @@ class SalesResource extends Resource
                         ->extraAttributes([
                             'title' => 'Registrar pago',
                         ])
-                        ->modalHeading(fn(Model $record) => 'Registrar pago de ' . trim($record->name . ' ' . ($record->surname ?? '')))
+                        ->modalHeading(fn (Model $record) => 'Registrar pago de '.trim($record->name.' '.($record->surname ?? '')))
                         ->modalDescription('Cargá un pago recibido de este vendedor')
                         ->modalSubmitActionLabel('Guardar pago')
                         ->form([
@@ -683,14 +463,14 @@ class SalesResource extends Resource
                             Notification::make()
                                 ->title('Pago registrado')
                                 ->body(
-                                    'Se registró $' . number_format((float) $data['amount'], 0, ',', '.')
-                                        . ' (' . PaymentMethod::label($data['payment_method']) . ')'
-                                        . ' de ' . trim($record->name . ' ' . ($record->surname ?? ''))
+                                    'Se registró $'.number_format((float) $data['amount'], 0, ',', '.')
+                                        .' ('.PaymentMethod::label($data['payment_method']).')'
+                                        .' de '.trim($record->name.' '.($record->surname ?? ''))
                                 )
                                 ->success()
                                 ->duration(4000)
                                 ->send();
-                        })
+                        }),
                 ])->extraAttributes(['class' => 'md:hidden']),
                 /*                 EditAction::make(),
                 DeleteAction::make(),
@@ -698,13 +478,30 @@ class SalesResource extends Resource
                 RestoreAction::make(), */
             ])
             ->toolbarActions([
-                /*                 BulkActionGroup::make([
+            /*                 BulkActionGroup::make([
                     DeleteBulkAction::make(),
                     ForceDeleteBulkAction::make(),
                     RestoreBulkAction::make(),
                 ]), */])
             ->emptyStateHeading('No hay ventas')
             ->emptyStateDescription('No se encontraron ventas para el período seleccionado.');
+    }
+
+    /**
+     * Contenido del modal "Ver detalle": abre con el mismo rango de fechas y
+     * los mismos métodos de pago que la tabla está mostrando, para que los
+     * totales del detalle coincidan con los de la fila.
+     */
+    protected static function ticketsModalContent(Model $record, Action $action): \Illuminate\Contracts\View\View
+    {
+        $state = $action->getLivewire()?->getTableFiltersForm()?->getState() ?? [];
+
+        return view('filament.resources.sales.tickets-modal', [
+            'user' => $record,
+            'from' => data_get($state, 'date_range.from'),
+            'to' => data_get($state, 'date_range.to'),
+            'payments' => array_values(data_get($state, 'payment_method.methods') ?? []),
+        ]);
     }
 
     public static function getPages(): array

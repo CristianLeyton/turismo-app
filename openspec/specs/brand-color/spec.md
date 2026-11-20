@@ -34,7 +34,7 @@ A partir del color principal, el sistema SHALL generar una paleta de once escalo
 - **THEN** la paleta sigue teniendo once escalones distintos y ordenados, y el escalón 50 es un tono casi blanco
 
 ### Requirement: El color principal se aplica en todo el sitio
-El color principal SHALL aplicarse, sin recompilar estilos, en los dos paneles, en la página pública del boleto y en los PDFs del sistema (boleto, ventas, viaje y pagos). Todo elemento que hoy usa el color de marca (fucsia) MUST tomar el escalón correspondiente de la paleta.
+El color principal SHALL aplicarse, sin recompilar estilos, en los dos paneles, en el modal de entrega de boletos y en los PDFs del sistema (boleto, ventas, viaje y pagos), incluido el PDF que muestra el link público del boleto. Todo elemento que hoy usa el color de marca (fucsia) MUST tomar el escalón correspondiente de la paleta.
 
 #### Scenario: Cambio inmediato en los paneles
 - **WHEN** un usuario con permiso cambia el color principal a `#0e7490` y guarda
@@ -43,7 +43,7 @@ El color principal SHALL aplicarse, sin recompilar estilos, en los dos paneles, 
 #### Scenario: Página pública del boleto
 - **GIVEN** el color principal guardado es `#0e7490`
 - **WHEN** un pasajero abre el link de su boleto
-- **THEN** los acentos de la página (nombres de origen y destino, logo, botones) usan la nueva paleta y no fucsia
+- **THEN** ve el PDF del boleto con los acentos de marca en la nueva paleta y no en fucsia
 
 #### Scenario: PDF del boleto
 - **GIVEN** el color principal guardado es `#0e7490`

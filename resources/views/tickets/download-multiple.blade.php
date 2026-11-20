@@ -31,7 +31,8 @@
 
         <div class="mt-6 space-y-3">
             @foreach ($downloads as $download)
-                <div class="flex flex-col md:flex-row items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200 gap-4">
+                <div
+                    class="flex flex-col md:flex-row items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200 gap-4">
                     <div class="flex-1 text-left">
                         <div class="text-sm font-medium text-gray-900">
                             {{ $download['filename'] }}

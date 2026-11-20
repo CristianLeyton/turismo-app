@@ -11,6 +11,7 @@ use App\Models\Ticket;
 use App\Models\TicketEdit;
 use App\Models\Trip;
 use App\Support\DuplicateTicketNotification;
+use App\Support\FixedTicketPrice;
 use App\Support\TripPassengerConflicts;
 use Filament\Actions\Action;
 use Filament\Forms\Components\TextInput;
@@ -112,6 +113,7 @@ class EditTicket extends ResourcePage
                 ? (float) $ticket->display_price
                 : $ticket->price,
             'payment_method' => $ticket->payment_method,
+            'observation' => $ticket->observation,
             'edit_reason' => null,
         ];
     }
@@ -277,10 +279,17 @@ class EditTicket extends ResourcePage
             }
         }
 
+        // Precio fijo: el seguro del menor ajusta el precio de la ida.
+        $adjustment = $this->fixedPriceAdjustment($ticket, (bool) ($data['travels_with_child'] ?? false));
+        if (is_array($adjustment)) {
+            $label = $adjustment['ticket']->is($ticket) ? 'Precio' : 'Precio del boleto de ida';
+            $details[] = $label.': $'.number_format($adjustment['old'], 0, ',', '.').' → $'.number_format($adjustment['new'], 0, ',', '.');
+        }
+
         // Venta (no en tramo de vuelta con precio compartido)
         if (! self::isReturnLegWithSharedPrice($ticket)) {
             $old = (float) $ticket->price;
-            $new = (float) ($data['price'] ?? $old);
+            $new = FixedTicketPrice::isActive() ? $old : (float) ($data['price'] ?? $old);
             if ($old !== $new) {
                 $details[] = 'Precio: $'.number_format($old, 0, ',', '.').' → $'.number_format($new, 0, ',', '.');
             }
@@ -294,11 +303,57 @@ class EditTicket extends ResourcePage
             }
         }
 
+        $obsOld = $ticket->observation;
+        $obsNew = Ticket::normalizeObservation($data['observation'] ?? null);
+        if (Setting::observacionesActivas() && $obsOld !== $obsNew) {
+            $details[] = 'Observación: "'.($obsOld ?? '').'" → "'.($obsNew ?? '').'"';
+        }
+
         if ($details === []) {
             return 'Sin cambios para guardar.';
         }
 
         return "Vas a guardar estos cambios:\n• ".implode("\n• ", $details);
+    }
+
+    /**
+     * Ajuste del seguro del menor con el precio fijo prendido: un seguro por
+     * tramo, sumado o restado siempre en el boleto de ida del pasajero (la
+     * vuelta vale 0). Se compara con la marca del propio boleto, que es la
+     * que dice si ese tramo viaja con menor.
+     *
+     * Devuelve null si no hay nada que ajustar y false si es una vuelta sin
+     * boleto de ida vigente donde cargar el seguro.
+     *
+     * @return array{ticket: Ticket, old: float, new: float, from_return_leg: bool}|false|null
+     */
+    protected function fixedPriceAdjustment(Ticket $ticket, bool $childFlagNew): array|false|null
+    {
+        if (! FixedTicketPrice::isActive()) {
+            return null;
+        }
+
+        $delta = FixedTicketPrice::insuranceDelta((bool) $ticket->travels_with_child, $childFlagNew);
+
+        if ($delta === 0) {
+            return null;
+        }
+
+        $fromReturnLeg = $ticket->isReturnLeg();
+        $target = $fromReturnLeg ? $ticket->outboundLeg() : $ticket;
+
+        if (! $target instanceof Ticket) {
+            return false;
+        }
+
+        $old = (float) $target->price;
+
+        return [
+            'ticket' => $target,
+            'old' => $old,
+            'new' => max(0, $old + $delta),
+            'from_return_leg' => $fromReturnLeg,
+        ];
     }
 
     /**
@@ -474,7 +529,8 @@ class EditTicket extends ResourcePage
 
         // ---- 4. Datos económicos (no en tramos de vuelta con precio compartido) ----
         if (! $isReturnLegWithSharedPrice) {
-            $priceNew = $data['price'] ?? null;
+            // Con precio fijo el precio no se edita a mano, aunque el pedido lo traiga.
+            $priceNew = FixedTicketPrice::isActive() ? null : ($data['price'] ?? null);
 
             if ($priceNew !== null && (float) $priceNew !== (float) $ticket->price) {
                 $changes[] = ['price', $ticket->price, $priceNew];
@@ -485,6 +541,38 @@ class EditTicket extends ResourcePage
             if (filled($paymentNew) && (string) $ticket->payment_method !== (string) $paymentNew) {
                 $changes[] = ['payment_method', $ticket->payment_method, $paymentNew];
             }
+        }
+
+        // ---- 5. Observación interna (solo de este boleto) ----
+        // Con el parámetro apagado el campo no se muestra: la observación
+        // guardada queda como estaba y no se registra en el historial.
+        $observationOld = $ticket->observation;
+        $observationNew = Setting::observacionesActivas()
+            ? Ticket::normalizeObservation($data['observation'] ?? null)
+            : $observationOld;
+
+        if (mb_strlen((string) $observationNew) > Ticket::MAX_OBSERVATION_LENGTH) {
+            $this->notifyProblem(
+                'No se puede guardar la edición',
+                'La observación no puede superar los '.Ticket::MAX_OBSERVATION_LENGTH.' caracteres. Acortala y volvé a intentar.',
+            );
+
+            return false;
+        }
+
+        if ($observationOld !== $observationNew) {
+            $changes[] = ['observation', $observationOld, $observationNew];
+        }
+
+        $priceAdjustment = $this->fixedPriceAdjustment($ticket, $childFlagNew);
+
+        if ($priceAdjustment === false) {
+            $this->notifyProblem(
+                'No se puede guardar la edición',
+                'No se encontró el boleto de ida de este pasajero para ajustar el seguro del menor. No se guardó ningún cambio.',
+            );
+
+            return false;
         }
 
         if ($changes === []) {
@@ -508,12 +596,22 @@ class EditTicket extends ResourcePage
         ])->filter(fn ($dni) => filled($dni))->values()->all();
 
         try {
-            DB::transaction(function () use ($ticket, $passenger, $changes, $passengerChanges, $child, $childFlagNew, $childData, $petFlagNew, $petData, $isReturnLegWithSharedPrice, $data, $reason, $newDnis) {
+            DB::transaction(function () use ($ticket, $passenger, $changes, $passengerChanges, $child, $childFlagNew, $childData, $petFlagNew, $petData, $isReturnLegWithSharedPrice, $data, $reason, $newDnis, $priceAdjustment) {
                 if ($newDnis !== [] && $passenger) {
                     $this->assertNewDnisNotOnPassengerTrips($passenger, $newDnis);
                 }
 
                 $this->applyChanges($ticket, $passenger, $changes, $passengerChanges, $child, $childFlagNew, $childData, $petFlagNew, $petData, $isReturnLegWithSharedPrice, $data, $reason);
+
+                if (is_array($priceAdjustment)) {
+                    $this->applyFixedPriceAdjustment($priceAdjustment, $reason);
+                }
+
+                // El total de la venta es la suma de sus boletos: se recalcula
+                // si la edición cambió algún precio (a mano o por el seguro).
+                if (is_array($priceAdjustment) || collect($changes)->contains(fn (array $change): bool => $change[0] === 'price')) {
+                    $ticket->sale?->recalculateTotal();
+                }
             });
         } catch (DuplicatePassengerOnTripException $e) {
             DuplicateTicketNotification::send($e->conflicts(), 'Volver');
@@ -614,6 +712,9 @@ class EditTicket extends ResourcePage
                 $ticket->price = $data['price'];
             }
         }
+        if (Setting::observacionesActivas()) {
+            $ticket->observation = $data['observation'] ?? null;
+        }
         $ticket->save();
 
         // Auditoría: una fila por campo cambiado.
@@ -628,6 +729,35 @@ class EditTicket extends ResourcePage
                 'user_id' => Auth::id(),
             ]);
         }
+    }
+
+    /**
+     * Carga el ajuste del seguro en el boleto de ida y lo deja en su
+     * historial; si el menor se cambió desde la vuelta, el motivo lo aclara.
+     *
+     * @param  array{ticket: Ticket, old: float, new: float, from_return_leg: bool}  $adjustment
+     */
+    private function applyFixedPriceAdjustment(array $adjustment, ?string $reason): void
+    {
+        $target = $adjustment['ticket']->fresh();
+        $target->price = $adjustment['new'];
+        $target->save();
+
+        if ($adjustment['from_return_leg']) {
+            $reason = $reason === null
+                ? 'Menor modificado en la vuelta'
+                : "{$reason} (menor modificado en la vuelta)";
+        }
+
+        TicketEdit::create([
+            'ticket_id' => $target->id,
+            'field' => 'price',
+            'field_label' => EditTicketForm::fieldLabel('price'),
+            'old_value' => (string) $adjustment['old'],
+            'new_value' => (string) $adjustment['new'],
+            'reason' => $reason,
+            'user_id' => Auth::id(),
+        ]);
     }
 
     /**

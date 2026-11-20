@@ -7,32 +7,53 @@
       - la vista del boleto (infolist "Historial de ediciones");
       - el detalle del Historial general (modal "Ver" y página de vista).
 
-    Variables: $edits (colección de TicketEdit). Si no se pasa, se toman del
-    registro del schema ($getRecord()) — así funciona como vista de un
-    ViewEntry de Filament.
+    Variables: $edits (colección de TicketEdit) y $forTicketId (el boleto que
+    se está mirando). Si no se pasan, se toman del registro del schema
+    ($getRecord()) — así funciona como vista de un ViewEntry de Filament.
+
+    Las ediciones del pasajero hechas desde su ida o su vuelta se muestran
+    con "Editado desde el boleto N° X": la ida y la vuelta comparten
+    pasajero, así que el cambio también afectó a este boleto.
 --}}
 @php
-    $record = (isset($getRecord) && $getRecord()) ? $getRecord() : null;
-    $edits = $edits ?? ($record?->edits ?? collect());
-    $groups = \App\Support\TicketEditHistory::groups($edits);
+    $record = isset($getRecord) && $getRecord() ? $getRecord() : null;
+    $edits = $edits ?? ($record?->visibleEdits() ?? collect());
+    $forTicketId = $forTicketId ?? $record?->id;
+    $groups = \App\Support\TicketEditHistory::groups($edits, $forTicketId);
 @endphp
 
 @forelse ($groups as $group)
     <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 last:border-b-0">
         <div class="flex flex-col sm:flex-row sm:justify-between gap-2">
-            <span class="self-start inline-block px-2.5 py-1 text-xs font-semibold rounded-lg
+            <span
+                class="self-start inline-block px-2.5 py-1 text-xs font-semibold rounded-lg
                          bg-primary-100 dark:bg-primary-900/30 text-primary-800 dark:text-primary-300">
-                {{ count($group['changes']) }} campo{{ count($group['changes']) === 1 ? '' : 's' }} corregido{{ count($group['changes']) === 1 ? '' : 's' }}
+                {{ count($group['changes']) }} campo{{ count($group['changes']) === 1 ? '' : 's' }}
+                corregido{{ count($group['changes']) === 1 ? '' : 's' }}
             </span>
 
             <div class="text-sm text-gray-600 dark:text-gray-400 sm:text-right">
                 <span class="font-semibold text-gray-900 dark:text-gray-100">
-                    Realizado por: {{ $group['user']?->name ?? 'Usuario eliminado del sistema' }}{{ $group['user']?->username ? ' (' . $group['user']->username . ')' : '' }}
+                    Realizado por:
+                    {{ $group['user']?->name ?? 'Usuario eliminado del sistema' }}{{ $group['user']?->username ? ' (' . $group['user']->username . ')' : '' }}
                 </span>
                 <span class="mx-1">•</span>
                 {{ $group['at']?->format('d/m/Y H:i') ?? '—' }}
             </div>
         </div>
+
+        @if ($group['from_ticket_id'])
+            <div class="mt-2 flex items-start gap-1.5 text-sm text-gray-600 dark:text-gray-400" data-shared-edit>
+                <x-filament::icon icon="heroicon-m-arrows-right-left" class="mt-0.5 h-4 w-4 shrink-0" />
+                <span>
+                    Editado desde el boleto
+                    <a href="{{ \App\Filament\Resources\Tickets\TicketResource::getUrl('view', ['record' => $group['from_ticket_id']]) }}"
+                        target="_blank" rel="noopener"
+                        class="font-semibold text-primary-600 hover:underline dark:text-primary-400">N° {{ $group['from_ticket_id'] }}</a>
+                    (mismo pasajero)
+                </span>
+            </div>
+        @endif
 
         @if ($group['reason'])
             <div class="mt-2 text-sm text-gray-600 dark:text-gray-400">

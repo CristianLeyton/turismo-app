@@ -1,22 +1,24 @@
 {{-- Tarjeta "Detalles de venta" del infolist del boleto --}}
 @php
     /* Mismo criterio que infolist-summary-header: $record inyectado al incluir
-       la vista fuera del infolist; fallback al ViewEntry con $getRecord(). */
+ la vista fuera del infolist; fallback al ViewEntry con $getRecord(). */
     $record = $record ?? null;
-    if (! $record && isset($getRecord) && is_callable($getRecord)) {
+    if (!$record && isset($getRecord) && is_callable($getRecord)) {
         $record = $getRecord();
     }
 
     $sale = $record?->sale;
     $methodLabel = $record ? \App\Models\PaymentMethod::label($record->payment_method) : '—';
-    $methodBadge = $record ? \App\Models\PaymentMethod::badgeClasses($record->payment_method) : 'bg-gray-500/10 text-gray-600 dark:text-gray-300';
+    $methodBadge = $record
+        ? \App\Models\PaymentMethod::badgeClasses($record->payment_method)
+        : 'bg-gray-500/10 text-gray-600 dark:text-gray-300';
     $isReturnLegShared = $record
         ? \App\Filament\Resources\Tickets\Pages\EditTicket::isReturnLegWithSharedPrice($record)
         : false;
     $price = $isReturnLegShared ? (float) $record->display_price : (float) ($record?->price ?? 0);
 @endphp
 
-<h2 class="text-2xl font-bold">Detalles de venta</h2>
+<h2 class="text-2xl font-bold mb-4">Detalles de venta</h2>
 
 <div class="rounded-xl border p-5 bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-700 mb-4">
     <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
@@ -61,4 +63,13 @@
             </div>
         </div>
     </div>
+
+    @if (filled($record?->observation) && \App\Models\Setting::observacionesActivas())
+        {{-- Observación interna: nunca va en el PDF del pasajero. --}}
+        <div
+            class="mt-4 rounded-lg border-l-4 border-amber-400 bg-amber-50 px-4 py-3 dark:border-amber-500 dark:bg-amber-900/20">
+            <div class="text-xs uppercase tracking-wide text-amber-800 dark:text-amber-300">Observación</div>
+            <div class="mt-1 text-sm break-words whitespace-pre-line text-gray-900 dark:text-gray-100">{{ $record->observation }}</div>
+        </div>
+    @endif
 </div>

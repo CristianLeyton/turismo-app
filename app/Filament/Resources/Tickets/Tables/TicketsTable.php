@@ -8,10 +8,6 @@ use App\Models\User;
 use App\Services\TicketPdfService;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
-use Filament\Actions\BulkActionGroup;
-use Filament\Actions\DeleteBulkAction;
-use Filament\Actions\ForceDeleteBulkAction;
-use Filament\Actions\RestoreBulkAction;
 use Filament\Actions\ViewAction;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Select;
@@ -38,16 +34,6 @@ class TicketsTable
                     ->color('gray')
                     ->visibleFrom('md'),
 
-                /*                 TextColumn::make('passenger.first_name')
-                    ->label('Nombre')
-                    ->limit(13)
-                    ->tooltip(fn($state, $record) => $record->passenger->last_name . ' ' . $record->passenger->first_name)
-                    ->formatStateUsing(
-                        fn($state, $record) =>
-                        $record->passenger->last_name . ' ' . $record->passenger->first_name,
-                    )
-                    ->hiddenFrom('md'), */
-
                 TextColumn::make('passenger.last_name')
                     ->label('Nombre')
                     ->limit(22)
@@ -58,7 +44,8 @@ class TicketsTable
 
                 TextColumn::make('passenger.dni')
                     ->label('DNI')
-                    ->visibleFrom('md'),
+                    ->visibleFrom('md')
+                    ->placeholder('—'),
 
                 TextColumn::make('sale.sale_date')
                     ->label('Emisión')
@@ -123,25 +110,10 @@ class TicketsTable
                     ->visibleFrom('md')
                     ->boolean()
                     ->alignCenter(),
-
-                /*                 TextColumn::make('companion_type')
-                    ->label('Acompañante')
-                    ->badge()
-                    ->color(function ($record) {
-                        if ($record->travels_with_child) {
-                            return 'primary'; // Rosa/fucsia para menores
-                        } elseif ($record->travels_with_pets) {
-                            return 'warning'; // Naranja para mascotas
-                        }
-                        return 'gray';
-                    })
-                    ->visibleFrom('md')
-                    ->alignCenter(), */
             ])
             ->defaultSort('id', 'desc')
             ->recordUrl(null)
             ->recordAction(null)
-            /* ->persistSortInSession() */
             ->paginated([5, 10, 25, 50, 100])
             ->defaultPaginationPageOption(50)
             ->filters([
@@ -323,68 +295,45 @@ class TicketsTable
             ->persistFiltersInSession()
             ->hiddenFilterIndicators()
             ->recordActions([
-
+                // Menú de tres puntitos (sólo celular): los ítems conservan su label.
                 ActionGroup::make([
-                    ViewAction::make()->button()->size('sm')->extraAttributes(
-                        ['title' => 'Ver boleto', 'class' => 'inline-flex md:hidden']
-                    ),
-                    Action::make('download_pdf')
-                        ->label('Descargar')
-                        ->size('sm')
-                        ->icon('heroicon-m-arrow-down-tray')
-                        ->color('primary')
-                        ->button()->extraAttributes(
-                            ['title' => 'Descargar boleto', 'class' => 'md:hidden']
-                        )
-                        ->action(function (Ticket $record) {
-
-                            $pdf = (new TicketPdfService)->forTicket($record);
-
-                            return response()->streamDownload(
-                                fn () => print ($pdf['content']),
-                                $pdf['filename'],
-                                ['Content-Type' => 'application/pdf']
-                            );
-                        }),
+                    self::viewAction()->button()->size('sm'),
+                    self::downloadAction()->button()->size('sm'),
                 ])->icon('heroicon-m-ellipsis-vertical')
                     ->hiddenLabel()
                     ->size('sm')
                     ->extraAttributes(['class' => 'md:hidden']),
 
-                ViewAction::make()->button()->hiddenLabel()->extraAttributes(
+                self::viewAction()->button()->hiddenLabel()->extraAttributes(
                     ['title' => 'Ver boleto', 'class' => 'hidden md:inline-flex']
                 ),
-                /*                 Action::make('edit_ticket')
-                    ->label('Editar')
-                    ->icon('heroicon-m-pencil-square')
-                    ->color('info')
-                    ->button()
-                    ->visible(fn (Ticket $record) => (bool) \Illuminate\Support\Facades\Auth::user()?->can('tickets.edit'))
-                    ->url(fn (Ticket $record) => \App\Filament\Resources\Tickets\TicketResource::getUrl('edit', ['record' => $record])), */
-                Action::make('download_pdf')
-                    ->label('Descargar')
-                    ->icon('heroicon-m-arrow-down-tray')
-                    ->color('primary')
-                    ->button()->hiddenLabel()->extraAttributes(
-                        ['title' => 'Descargar boleto', 'class' => 'hidden md:inline-flex']
-                    )
-                    ->action(function (Ticket $record) {
+                self::downloadAction()->button()->hiddenLabel()->extraAttributes(
+                    ['title' => 'Descargar boleto', 'class' => 'hidden md:inline-flex']
+                ),
+            ]);
+    }
 
-                        $pdf = (new TicketPdfService)->forTicket($record);
+    /** "Ver boleto": se declara una vez y se usa en el menú del celular y en los botones de escritorio. */
+    private static function viewAction(): ViewAction
+    {
+        return ViewAction::make()->label('Ver boleto');
+    }
 
-                        return response()->streamDownload(
-                            fn () => print ($pdf['content']),
-                            $pdf['filename'],
-                            ['Content-Type' => 'application/pdf']
-                        );
-                    }),
-            ])
-            /* ->toolbarActions([
-                BulkActionGroup::make([
-                    DeleteBulkAction::make(),
-                    ForceDeleteBulkAction::make(),
-                    RestoreBulkAction::make(),
-                ]),
-            ]) */;
+    /** "Descargar": el PDF del boleto, igual en las dos variantes de la fila. */
+    private static function downloadAction(): Action
+    {
+        return Action::make('download_pdf')
+            ->label('Descargar')
+            ->icon('heroicon-m-arrow-down-tray')
+            ->color('primary')
+            ->action(function (Ticket $record) {
+                $pdf = (new TicketPdfService)->forTicket($record);
+
+                return response()->streamDownload(
+                    fn () => print ($pdf['content']),
+                    $pdf['filename'],
+                    ['Content-Type' => 'application/pdf']
+                );
+            });
     }
 }

@@ -16,7 +16,6 @@ use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
 use Filament\Navigation\NavigationItem;
-use Filament\Notifications\Notification;
 use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\View\PanelsRenderHook;
@@ -119,11 +118,6 @@ class AdminPanelProvider extends PanelProvider
                         }, { passive: false });                    </script>
                 HTML,
             )
-            /* "Copiar link" de la notification de emisión por link. */
-            ->renderHook(
-                PanelsRenderHook::BODY_END,
-                fn (): string => \App\Support\ShareLinkNotification::copyListenerScript(),
-            )
             /* Atajo para clientes: un pasajero puede llegar por error al login
                del panel de administración; desde ahí lo mando al ingreso del
                panel de clientes. Solo con el parámetro "Panel de clientes
@@ -134,6 +128,13 @@ class AdminPanelProvider extends PanelProvider
                 fn (): string => Setting::panelClientesActivo()
                     ? view('filament.admin.client-login-shortcut')->render()
                     : '',
+            )
+            /* Al volver al ingreso con Atrás, lo que el navegador repone en
+               los campos pasa al formulario (ver la vista). */
+            ->renderHook(
+                PanelsRenderHook::BODY_END,
+                fn (): string => view('filament.login-back-navigation-sync')->render(),
+                scopes: CustomLogin::class,
             );
     }
 }

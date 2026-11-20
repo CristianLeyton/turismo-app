@@ -38,11 +38,11 @@ class TicketInfolist
                 // Antes/Después de cada campo: el mismo render que el detalle
                 // del Historial general (tickets/partials/edit-history).
                 ComponentsSection::make('Historial de ediciones')
-                    ->description(fn ($record): string => \App\Support\TicketEditHistory::summary($record?->edits))
+                    ->description(fn ($record): string => \App\Support\TicketEditHistory::summary($record?->visibleEdits()))
                     ->columnSpanFull()
                     ->collapsible()
                     ->collapsed()
-                    ->visible(fn ($record) => $record?->edits()->exists())
+                    ->visible(fn ($record): bool => (bool) $record?->visibleEdits()->isNotEmpty())
                     ->schema([
                         ViewEntry::make('edit_history')
                             ->label('')

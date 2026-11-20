@@ -3,15 +3,21 @@
 namespace Tests\Feature;
 
 use App\Models\Bus;
+use App\Models\Clients;
 use App\Models\Location;
 use App\Models\Route;
 use App\Models\RouteStop;
 use App\Models\Sale;
 use App\Models\Schedule;
 use App\Models\Seat;
+use App\Models\Setting;
 use App\Models\Ticket;
+use App\Models\TicketDateChange;
 use App\Models\Trip;
+use App\Models\User;
+use App\Services\ClientTicketAssignmentService;
 use App\Services\TicketRescheduleService;
+use App\Support\Permissions;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\ValidationException;
@@ -112,6 +118,10 @@ class TicketRescheduleServiceTest extends TestCase
             'password' => bcrypt('password'),
             'is_admin' => true,
         ]);
+
+        // Dejar con fecha abierta exige también "Vender sin fecha/horario",
+        // que el rol Administrador no trae por defecto.
+        $admin->givePermissionTo('tickets.vender_sin_fecha');
 
         $this->actingAs($admin);
     }
@@ -903,5 +913,383 @@ class TicketRescheduleServiceTest extends TestCase
         ]));
 
         $this->assertSame('2026-10-01', $ticket->fresh()->trip->trip_date->format('Y-m-d'));
+    }
+
+    // ====================== Tipo de cambio ======================
+
+    public function test_una_reprogramacion_queda_registrada_como_reprogramacion_sin_motivo(): void
+    {
+        $ticket = $this->createRoundTripSale('2026-10-01', '2026-10-08');
+
+        $this->service->reschedule($ticket, [
+            'scope' => 'outbound',
+            'date' => '2026-10-05',
+            'schedule_id' => $this->scheduleIda->id,
+            'seat_id' => $this->seat('3')->id,
+        ]);
+
+        $change = $ticket->dateChanges()->sole();
+        $this->assertSame(TicketDateChange::KIND_RESCHEDULE, $change->kind);
+        $this->assertNull($change->reason);
+        $this->assertFalse($change->isOpenDate());
+    }
+
+    public function test_una_fila_sin_tipo_toma_reprogramacion_por_defecto(): void
+    {
+        $ticket = $this->createRoundTripSale('2026-10-01', '2026-10-08');
+
+        $change = TicketDateChange::create([
+            'ticket_id' => $ticket->id,
+            'leg' => TicketDateChange::LEG_OUTBOUND,
+            'from_trip_id' => $ticket->trip_id,
+            'to_trip_id' => $ticket->trip_id,
+            'user_id' => Auth::id(),
+        ]);
+
+        $this->assertSame(TicketDateChange::KIND_RESCHEDULE, $change->fresh()->kind);
+    }
+
+    // ====================== Fecha abierta ======================
+
+    private function seat(string $number, ?Bus $bus = null): Seat
+    {
+        return Seat::where('bus_id', ($bus ?? $this->bus1)->id)->where('seat_number', $number)->firstOrFail();
+    }
+
+    private function registerPassengerInPadron(string $dni = '12345678'): Clients
+    {
+        return Clients::create(['dni' => $dni, 'nombre' => 'Juan', 'apellido' => 'Pérez', 'can_buy' => true]);
+    }
+
+    private function returnLegOf(Ticket $outbound): Ticket
+    {
+        return Ticket::query()
+            ->where('sale_id', $outbound->sale_id)
+            ->where('is_return_leg', true)
+            ->firstOrFail();
+    }
+
+    /**
+     * @param  list<string>  $permissions
+     */
+    private function actingAsUserWith(array $permissions): User
+    {
+        Permissions::syncToDatabase();
+
+        $user = User::factory()->create();
+        $user->givePermissionTo($permissions);
+        $this->actingAs($user);
+
+        return $user;
+    }
+
+    public function test_deja_solo_la_ida_con_fecha_abierta_y_conserva_la_vuelta(): void
+    {
+        $this->registerPassengerInPadron();
+        $ida = $this->createRoundTripSale('2026-10-01', '2026-10-08');
+        $vuelta = $this->returnLegOf($ida);
+        $originalTripId = $ida->trip_id;
+        $originalSeatId = $ida->seat_id;
+        $returnTripId = $vuelta->trip_id;
+
+        $this->service->openDate($ida, ['scope' => 'outbound']);
+
+        $ida->refresh();
+        $vuelta->refresh();
+
+        $this->assertTrue($ida->isPendingDate());
+        $this->assertNull($ida->seat_id);
+        // Con la ida pendiente, la ida sigue ligada al viaje de vuelta.
+        $this->assertSame($returnTripId, $ida->return_trip_id);
+        $this->assertSame($returnTripId, $vuelta->trip_id);
+        $this->assertNotNull($vuelta->seat_id);
+
+        $change = $ida->dateChanges()->sole();
+        $this->assertSame(TicketDateChange::KIND_OPEN_DATE, $change->kind);
+        $this->assertTrue($change->isOpenDate());
+        $this->assertSame(TicketDateChange::LEG_OUTBOUND, $change->leg);
+        $this->assertSame($originalTripId, $change->from_trip_id);
+        $this->assertSame($this->scheduleIda->id, $change->from_schedule_id);
+        $this->assertSame($originalSeatId, $change->from_seat_id);
+        $this->assertNull($change->to_trip_id);
+        $this->assertNull($change->to_schedule_id);
+        $this->assertNull($change->to_seat_id);
+        $this->assertSame(Auth::id(), $change->user_id);
+        $this->assertSame(TicketDateChange::ACTOR_USER, $change->actor_type);
+        $this->assertSame(0, $vuelta->dateChanges()->count());
+    }
+
+    public function test_deja_solo_la_vuelta_con_fecha_abierta_y_desliga_la_ida(): void
+    {
+        $this->registerPassengerInPadron();
+        $ida = $this->createRoundTripSale('2026-10-01', '2026-10-08');
+        $vuelta = $this->returnLegOf($ida);
+        $idaTripId = $ida->trip_id;
+
+        $this->service->openDate($vuelta, ['scope' => 'both']);
+
+        $ida->refresh();
+        $vuelta->refresh();
+
+        $this->assertTrue($vuelta->isPendingDate());
+        $this->assertNull($vuelta->seat_id);
+        $this->assertSame($idaTripId, $ida->trip_id);
+        $this->assertNull($ida->return_trip_id);
+        $this->assertSame(TicketDateChange::LEG_RETURN, $vuelta->dateChanges()->sole()->leg);
+        $this->assertSame(0, $ida->dateChanges()->count());
+    }
+
+    public function test_deja_ambos_tramos_con_fecha_abierta(): void
+    {
+        $this->registerPassengerInPadron();
+        $ida = $this->createRoundTripSale('2026-10-01', '2026-10-08');
+        $vuelta = $this->returnLegOf($ida);
+
+        $result = $this->service->openDate($ida, ['scope' => 'both', 'reason' => 'No sabe cuándo viaja']);
+
+        $ida->refresh();
+        $vuelta->refresh();
+
+        $this->assertTrue($ida->isPendingDate());
+        $this->assertTrue($vuelta->isPendingDate());
+        $this->assertNull($ida->return_trip_id);
+        $this->assertCount(2, $result['changes']);
+        $this->assertSame(TicketDateChange::LEG_OUTBOUND, $ida->dateChanges()->sole()->leg);
+        $this->assertSame(TicketDateChange::LEG_RETURN, $vuelta->dateChanges()->sole()->leg);
+        $this->assertSame('No sabe cuándo viaja', $vuelta->dateChanges()->sole()->reason);
+    }
+
+    public function test_ambos_con_la_vuelta_ya_sin_fecha_registra_solo_la_ida(): void
+    {
+        $this->registerPassengerInPadron();
+        $ida = $this->createRoundTripSale('2026-10-01', '2026-10-08');
+        $vuelta = $this->returnLegOf($ida);
+        $this->service->openDate($vuelta, []);
+
+        $this->service->openDate($ida->fresh(), ['scope' => 'both']);
+
+        $this->assertTrue($ida->fresh()->isPendingDate());
+        $this->assertTrue($vuelta->fresh()->isPendingDate());
+        $this->assertSame(1, $ida->dateChanges()->count());
+        $this->assertSame(1, $vuelta->dateChanges()->count());
+    }
+
+    public function test_rechaza_un_boleto_que_ya_esta_sin_fecha(): void
+    {
+        $this->registerPassengerInPadron();
+        $ida = $this->createRoundTripSale('2026-10-01', '2026-10-08');
+        $this->service->openDate($ida, []);
+
+        try {
+            $this->service->openDate($ida->fresh(), []);
+            $this->fail('Un boleto ya sin fecha no debió poder abrirse otra vez.');
+        } catch (ValidationException $e) {
+            $this->assertSame('El boleto ya está sin fecha.', $e->errors()['ticket'][0]);
+        }
+
+        $this->assertSame(1, $ida->dateChanges()->count());
+    }
+
+    public function test_conserva_los_datos_del_boleto_y_libera_el_asiento_aunque_el_viaje_ya_paso(): void
+    {
+        $this->registerPassengerInPadron();
+        // Viaje anterior a hoy: el pasajero perdió el colectivo.
+        $ida = $this->createRoundTripSale(now()->subDay()->format('Y-m-d'), now()->addDays(5)->format('Y-m-d'));
+        $trip = $ida->trip;
+        $seat = $ida->seat;
+        $before = $ida->only(['id', 'sale_id', 'passenger_id', 'price', 'origin_location_id', 'destination_location_id']);
+        $saleTotal = $ida->sale->total_amount;
+
+        $this->service->openDate($ida, []);
+
+        $ida->refresh();
+        $this->assertSame($before, $ida->only(array_keys($before)));
+        $this->assertSame($this->bus1->id, (int) $ida->bus_id);
+        $this->assertEquals($saleTotal, $ida->sale->fresh()->total_amount);
+
+        // Fuera de la lista de pasajeros del viaje original.
+        $this->assertSame(0, Ticket::query()->where('trip_id', $trip->id)->count());
+
+        // El asiento se puede vender de nuevo en ese viaje.
+        $other = $this->sellOtherTicket($trip, '99887766', (string) $seat->seat_number);
+        $this->assertSame($seat->id, $other->seat_id);
+    }
+
+    public function test_sin_permiso_de_vender_sin_fecha_rechaza_y_no_cambia_nada(): void
+    {
+        $this->registerPassengerInPadron();
+        $this->actingAsUserWith(['tickets.reschedule']);
+        $ida = $this->createRoundTripSale('2026-10-01', '2026-10-08');
+        $tripId = $ida->trip_id;
+
+        try {
+            $this->service->openDate($ida, []);
+            $this->fail('Sin tickets.vender_sin_fecha no debió poder dejar la fecha abierta.');
+        } catch (ValidationException $e) {
+            $this->assertArrayHasKey('user', $e->errors());
+        }
+
+        $this->assertSame($tripId, $ida->fresh()->trip_id);
+        $this->assertSame(0, TicketDateChange::count());
+    }
+
+    public function test_sin_permiso_de_reprogramar_rechaza_y_no_cambia_nada(): void
+    {
+        $this->registerPassengerInPadron();
+        $this->actingAsUserWith(['tickets.vender_sin_fecha']);
+        $ida = $this->createRoundTripSale('2026-10-01', '2026-10-08');
+        $tripId = $ida->trip_id;
+
+        try {
+            $this->service->openDate($ida, []);
+            $this->fail('Sin tickets.reschedule no debió poder dejar la fecha abierta.');
+        } catch (ValidationException $e) {
+            $this->assertArrayHasKey('user', $e->errors());
+        }
+
+        $this->assertSame($tripId, $ida->fresh()->trip_id);
+    }
+
+    public function test_con_los_dos_permisos_deja_la_fecha_abierta(): void
+    {
+        $this->registerPassengerInPadron();
+        $this->actingAsUserWith(['tickets.reschedule', 'tickets.vender_sin_fecha']);
+        $ida = $this->createRoundTripSale('2026-10-01', '2026-10-08');
+
+        $this->service->openDate($ida, []);
+
+        $this->assertTrue($ida->fresh()->isPendingDate());
+    }
+
+    public function test_con_contrasena_exigida_rechaza_una_incorrecta(): void
+    {
+        Setting::set(Setting::REQUIRE_PASSWORD_TICKET_RESCHEDULE, '1');
+        $this->registerPassengerInPadron();
+        $ida = $this->createRoundTripSale('2026-10-01', '2026-10-08');
+        $tripId = $ida->trip_id;
+
+        try {
+            $this->service->openDate($ida, ['confirm_password' => 'otra']);
+            $this->fail('Con contraseña incorrecta no debió abrir la fecha.');
+        } catch (ValidationException $e) {
+            $this->assertArrayHasKey('confirm_password', $e->errors());
+        }
+
+        $this->assertSame($tripId, $ida->fresh()->trip_id);
+
+        $this->service->openDate($ida, ['confirm_password' => 'password']);
+        $this->assertTrue($ida->fresh()->isPendingDate());
+    }
+
+    public function test_rechaza_un_pasajero_fuera_del_padron(): void
+    {
+        $ida = $this->createRoundTripSale('2026-10-01', '2026-10-08');
+        $tripId = $ida->trip_id;
+
+        try {
+            $this->service->openDate($ida, []);
+            $this->fail('Un pasajero fuera del padrón no debió quedar con fecha abierta.');
+        } catch (ValidationException $e) {
+            $this->assertSame(
+                'El pasajero no está registrado en el padrón de clientes. Agregalo desde Clientes y volvé a intentar.',
+                $e->errors()['ticket'][0],
+            );
+        }
+
+        $this->assertSame($tripId, $ida->fresh()->trip_id);
+        $this->assertSame(0, TicketDateChange::count());
+    }
+
+    public function test_motivo_vacio_queda_sin_motivo(): void
+    {
+        $this->registerPassengerInPadron();
+        $ida = $this->createRoundTripSale('2026-10-01', '2026-10-08');
+
+        $this->service->openDate($ida, ['reason' => '   ']);
+
+        $this->assertNull($ida->dateChanges()->sole()->reason);
+    }
+
+    // ============ Reasignar la fecha después de abrirla ============
+
+    public function test_el_personal_reasigna_la_fecha_de_un_boleto_abierto(): void
+    {
+        $this->registerPassengerInPadron();
+        $ida = $this->createRoundTripSale('2026-10-01', '2026-10-08');
+        $this->service->openDate($ida, []);
+
+        $this->service->reschedule($ida->fresh(), [
+            'scope' => 'outbound',
+            'date' => '2026-10-05',
+            'schedule_id' => $this->scheduleIda->id,
+            'seat_id' => $this->seat('4')->id,
+        ]);
+
+        $ida->refresh();
+        $this->assertSame('2026-10-05', $ida->trip->trip_date->format('Y-m-d'));
+        $this->assertSame($this->seat('4')->id, $ida->seat_id);
+        $this->assertSame(
+            [TicketDateChange::KIND_OPEN_DATE, TicketDateChange::KIND_RESCHEDULE],
+            $ida->dateChanges()->orderBy('id')->pluck('kind')->all(),
+        );
+    }
+
+    public function test_la_ida_abierta_no_puede_quedar_despues_de_la_vuelta_fechada(): void
+    {
+        $this->registerPassengerInPadron();
+        $ida = $this->createRoundTripSale('2026-10-01', '2026-10-08');
+        $this->service->openDate($ida, ['scope' => 'outbound']);
+
+        try {
+            $this->service->reschedule($ida->fresh(), [
+                'scope' => 'outbound',
+                'date' => '2026-10-10',
+                'schedule_id' => $this->scheduleIda->id,
+                'seat_id' => $this->seat('1')->id,
+            ]);
+            $this->fail('La ida no debió quedar después de la vuelta.');
+        } catch (ValidationException $e) {
+            $this->assertArrayHasKey('return_schedule_id', $e->errors());
+        }
+
+        $this->assertTrue($ida->fresh()->isPendingDate());
+    }
+
+    public function test_el_cliente_elige_la_fecha_de_un_boleto_abierto_y_queda_bloqueado(): void
+    {
+        $client = $this->registerPassengerInPadron();
+        $ida = $this->createRoundTripSale('2026-10-01', '2026-10-08');
+        $this->service->openDate($ida, ['scope' => 'both']);
+
+        $date = now()->addDays(10)->format('Y-m-d');
+        $this->actingAs($client, 'client');
+
+        app(ClientTicketAssignmentService::class)->assign($ida->fresh(), [
+            'date' => $date,
+            'schedule_id' => $this->scheduleIda->id,
+            'seat_ids' => [$this->seat('2')->id],
+        ]);
+
+        $ida->refresh();
+        $this->assertSame($date, $ida->trip->trip_date->format('Y-m-d'));
+
+        $change = $ida->dateChanges()->orderByDesc('id')->first();
+        $this->assertSame(TicketDateChange::KIND_RESCHEDULE, $change->kind);
+        $this->assertSame(TicketDateChange::ACTOR_CLIENT, $change->actor_type);
+        $this->assertSame($client->id, $change->client_id);
+
+        // Con fecha otra vez, el cliente ya no puede cambiarla.
+        try {
+            app(ClientTicketAssignmentService::class)->assign($ida->fresh(), [
+                'date' => now()->addDays(12)->format('Y-m-d'),
+                'schedule_id' => $this->scheduleIda->id,
+                'seat_ids' => [$this->seat('2')->id],
+            ]);
+            $this->fail('El cliente no debió poder cambiar una fecha ya asignada.');
+        } catch (ValidationException $e) {
+            $this->assertArrayHasKey('ticket', $e->errors());
+        }
+
+        $this->assertSame($date, $ida->fresh()->trip->trip_date->format('Y-m-d'));
     }
 }

@@ -18,23 +18,61 @@ class RolesAndPermissionsTest extends TestCase
 
     // ====================== Paridad del rol Vendedor ======================
 
-    public function test_vendedor_puede_vender_y_ver_clientes_ventas_y_viajes(): void
+    public function test_vendedor_puede_vender_y_ver_viajes(): void
     {
         $vendedor = User::factory()->vendedor()->create();
 
         $this->actingAs($vendedor);
 
-        // Paridad: lo que un usuario sin is_admin podía hacer antes.
         $this->assertTrue($vendedor->can('tickets.view_any'));
         $this->assertTrue($vendedor->can('tickets.view'));
         $this->assertTrue($vendedor->can('tickets.create'));
-        $this->assertTrue($vendedor->can('clients.view_any'));
-        $this->assertTrue($vendedor->can('clients.view'));
-        $this->assertTrue($vendedor->can('clients.create'));
-        $this->assertTrue($vendedor->can('clients.update'));
-        $this->assertTrue($vendedor->can('sales.view_any'));
         $this->assertTrue($vendedor->can('trips.view_any'));
         $this->assertTrue($vendedor->can('trips.create'));
+    }
+
+    public function test_vendedor_no_tiene_clientes_ventas_ni_force_delete_por_defecto(): void
+    {
+        $vendedor = User::factory()->vendedor()->create();
+
+        $this->actingAs($vendedor);
+
+        foreach (Permissions::all() as $permission) {
+            if ($permission === 'sales.view_own') {
+                continue;
+            }
+
+            if (str_starts_with($permission, 'clients.') || str_starts_with($permission, 'sales.') || str_ends_with($permission, '.force_delete')) {
+                $this->assertFalse($vendedor->can($permission), "El vendedor no debería tener {$permission}");
+            }
+        }
+    }
+
+    public function test_vendedor_trae_ver_mis_ventas_y_el_administrador_no(): void
+    {
+        // Se verifica sobre los roles: el factory admin() conserva el rol
+        // Vendedor que el observer asigna al crear el usuario.
+        $vendedor = User::factory()->vendedor()->create();
+
+        $this->assertTrue($vendedor->can('sales.view_own'));
+        $this->assertTrue(Role::findByName(Permissions::ROLE_SELLER)->hasPermissionTo('sales.view_own'));
+        $this->assertFalse(Role::findByName(Permissions::ROLE_ADMIN)->hasPermissionTo('sales.view_own'));
+    }
+
+    public function test_el_sync_agrega_ver_mis_ventas_a_un_vendedor_existente_sin_quitarle_permisos(): void
+    {
+        Permissions::syncToDatabase();
+
+        $role = Role::findByName(Permissions::ROLE_SELLER);
+        $role->revokePermissionTo('sales.view_own');
+        $role->givePermissionTo('clients.view_any');
+
+        Permissions::syncToDatabase();
+
+        $role->refresh();
+        $this->assertTrue($role->hasPermissionTo('sales.view_own'));
+        $this->assertTrue($role->hasPermissionTo('clients.view_any'));
+        $this->assertTrue($role->hasPermissionTo('tickets.create'));
     }
 
     public function test_vendedor_no_puede_acceder_a_gestion(): void
@@ -73,10 +111,23 @@ class RolesAndPermissionsTest extends TestCase
         $this->assertTrue($admin->can('settings.manage'));
         $this->assertTrue($admin->can('tickets.reschedule'));
         $this->assertTrue($admin->can('tickets.delete'));
-        $this->assertTrue($admin->can('clients.delete'));
-        $this->assertTrue($admin->can('clients.ban'));
+        $this->assertTrue($admin->can('tickets.restore'));
+        $this->assertTrue($admin->can('sales.delete'));
         $this->assertTrue($admin->can('roles.view_any'));
         $this->assertTrue($admin->can('roles.assign'));
+    }
+
+    public function test_administrador_no_tiene_clientes_ni_force_delete_por_defecto(): void
+    {
+        $admin = User::factory()->admin()->create();
+
+        $this->actingAs($admin);
+
+        foreach (Permissions::all() as $permission) {
+            if (str_starts_with($permission, 'clients.') || str_ends_with($permission, '.force_delete')) {
+                $this->assertFalse($admin->can($permission), "El administrador no debería tener {$permission}");
+            }
+        }
     }
 
     public function test_administrador_no_accede_a_modulos_de_configuracion_como_antes(): void
@@ -247,6 +298,76 @@ class RolesAndPermissionsTest extends TestCase
         $this->assertTrue(User::factory()->superAdmin()->create()->can('settings.sale_selectors'));
     }
 
+    public function test_permiso_de_observaciones_se_registra_sin_asignarse_a_ningun_rol(): void
+    {
+        Permissions::syncToDatabase();
+
+        $this->assertDatabaseHas('permissions', ['name' => 'settings.sale_observations']);
+
+        $this->assertFalse(Role::findByName(Permissions::ROLE_ADMIN)->hasPermissionTo('settings.sale_observations'));
+        $this->assertFalse(Role::findByName(Permissions::ROLE_SELLER)->hasPermissionTo('settings.sale_observations'));
+
+        $this->assertFalse(User::factory()->admin()->create()->can('settings.sale_observations'));
+        $this->assertTrue(User::factory()->superAdmin()->create()->can('settings.sale_observations'));
+    }
+
+    public function test_permiso_de_emision_al_finalizar_la_venta_se_registra_sin_asignarse_a_ningun_rol(): void
+    {
+        Permissions::syncToDatabase();
+
+        $this->assertDatabaseHas('permissions', ['name' => 'settings.ticket_emission']);
+
+        $this->assertFalse(Role::findByName(Permissions::ROLE_ADMIN)->hasPermissionTo('settings.ticket_emission'));
+        $this->assertFalse(Role::findByName(Permissions::ROLE_SELLER)->hasPermissionTo('settings.ticket_emission'));
+
+        $this->assertFalse(User::factory()->admin()->create()->can('settings.ticket_emission'));
+        $this->assertTrue(User::factory()->superAdmin()->create()->can('settings.ticket_emission'));
+    }
+
+    public function test_permisos_de_calendario_y_seguridad_se_registran_sin_asignarse_a_ningun_rol(): void
+    {
+        Permissions::syncToDatabase();
+
+        $admin = User::factory()->admin()->create();
+        $superAdmin = User::factory()->superAdmin()->create();
+
+        foreach (['settings.calendar', 'settings.security'] as $permission) {
+            $this->assertDatabaseHas('permissions', ['name' => $permission]);
+
+            $this->assertFalse(Role::findByName(Permissions::ROLE_ADMIN)->hasPermissionTo($permission));
+            $this->assertFalse(Role::findByName(Permissions::ROLE_SELLER)->hasPermissionTo($permission));
+
+            $this->assertFalse($admin->can($permission));
+            $this->assertTrue($superAdmin->can($permission));
+        }
+    }
+
+    public function test_permiso_de_precio_fijo_se_registra_sin_asignarse_a_ningun_rol(): void
+    {
+        Permissions::syncToDatabase();
+
+        $this->assertDatabaseHas('permissions', ['name' => 'settings.fixed_price']);
+
+        $this->assertFalse(Role::findByName(Permissions::ROLE_ADMIN)->hasPermissionTo('settings.fixed_price'));
+        $this->assertFalse(Role::findByName(Permissions::ROLE_SELLER)->hasPermissionTo('settings.fixed_price'));
+
+        $this->assertFalse(User::factory()->admin()->create()->can('settings.fixed_price'));
+        $this->assertTrue(User::factory()->superAdmin()->create()->can('settings.fixed_price'));
+    }
+
+    public function test_permiso_de_limite_de_pasajeros_se_registra_sin_asignarse_a_ningun_rol(): void
+    {
+        Permissions::syncToDatabase();
+
+        $this->assertDatabaseHas('permissions', ['name' => 'settings.passenger_limit']);
+
+        $this->assertFalse(Role::findByName(Permissions::ROLE_ADMIN)->hasPermissionTo('settings.passenger_limit'));
+        $this->assertFalse(Role::findByName(Permissions::ROLE_SELLER)->hasPermissionTo('settings.passenger_limit'));
+
+        $this->assertFalse(User::factory()->admin()->create()->can('settings.passenger_limit'));
+        $this->assertTrue(User::factory()->superAdmin()->create()->can('settings.passenger_limit'));
+    }
+
     public function test_permisos_de_lineas_se_registran_sin_asignarse_a_admin_ni_vendedor(): void
     {
         Permissions::syncToDatabase();
@@ -413,7 +534,8 @@ class RolesAndPermissionsTest extends TestCase
         $labels = $checkboxLists->map(fn ($list) => $list->getLabel())->values()->all();
 
         $this->assertContains('Boletos', $labels);
-        $this->assertContains('Clientes', $labels);
+        // El admin no tiene permisos de clientes por defecto: no puede otorgarlos.
+        $this->assertNotContains('Clientes', $labels);
         $this->assertContains('Pagos', $labels);
         $this->assertContains('Usuarios', $labels);
         $this->assertContains('Configuración', $labels);

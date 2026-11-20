@@ -7,7 +7,6 @@
 @source '../../../../resources/views/tickets/**/*.blade.php';
 @source '../../../../resources/views/livewire/**/*.blade.php';
 @source '../../../../resources/views/buses/**/*.blade.php';
-@source '../../../../resources/views/boletos/**/*.blade.php';
 
 /* Personalización del botón de resetear filtros */
 
@@ -153,7 +152,6 @@ input[type="checkbox"].toggle-checkbox.fi-checkbox-input:checked::before {
     transform: translateX(26px) !important;
 }
 
-
 /* Modal de detalle de ventas (7xl): que la ventana y su contenido se
    ajusten al viewport (sobre todo en mobile) y solo la tabla de
    resultados scrollee en horizontal. Los flex items con min-width:auto
@@ -182,7 +180,7 @@ input[type="number"]::-webkit-inner-spin-button {
 /* Logo personalizado: fondo del color de la empresa y texto blanco u
    oscuro según el contraste (--primary-text, ver BrandPalette). */
 .logo-personalizado {
-    margin-top: -0.30rem;
+    margin-top: -0.3rem;
     padding: 0.5rem;
     color: var(--primary-text, #f8fafc);
     background-color: var(--primary-600);

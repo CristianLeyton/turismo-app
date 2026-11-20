@@ -18,37 +18,73 @@ La página "Parámetros", con tilde, SHALL figurar en el grupo "Configuración" 
 - **THEN** no la ve en el menú y el acceso se rechaza
 
 ### Requirement: Parámetros agrupados en pestañas
-La página SHALL organizar los parámetros en pestañas, en este orden: "Venta" (acompañantes y venta fuera de término), "Boleto" (PDF automático, WhatsApp y líneas de contacto), "Calendario" (días con servicio y excepciones), "Seguridad" (confirmación de contraseña), "Clientes" (panel de clientes), esta solo con el permiso del panel de clientes, y "Apariencia" (color principal), esta solo con el permiso de apariencia. Un único botón "Guardar cambios" MUST guardar todas las pestañas visibles.
+La página SHALL organizar los parámetros en pestañas, en este orden: "Venta" (acompañantes, venta fuera de término y, con su permiso, pasajeros por venta y, con su permiso, selectores de origen y destino y, con su permiso, observaciones y, con su permiso, precio de los boletos), "Boleto" (con su permiso, emisión al finalizar la venta con el PDF automático y el mensaje de WhatsApp; y líneas de contacto), "Calendario" (días con servicio y excepciones), esta solo con el permiso de calendario, "Seguridad" (confirmación de contraseña), esta solo con el permiso de seguridad, "Clientes" (panel de clientes), esta solo con el permiso del panel de clientes, y "Apariencia" (color principal), esta solo con el permiso de apariencia. Un único botón "Guardar cambios" MUST guardar todas las pestañas visibles.
 
 #### Scenario: Abrir la página
-- **WHEN** un administrador sin el permiso del panel de clientes ni el de apariencia abre Parámetros
+- **WHEN** un usuario con `settings.manage` y sin los permisos de calendario, seguridad, panel de clientes ni apariencia abre Parámetros
+- **THEN** ve las pestañas Venta y Boleto, en ese orden, con la pestaña Venta abierta
+
+#### Scenario: Abrir la página con los permisos de calendario y seguridad
+- **WHEN** un usuario con `settings.manage`, el permiso de calendario y el de seguridad, sin los del panel de clientes ni apariencia, abre Parámetros
 - **THEN** ve las pestañas Venta, Boleto, Calendario y Seguridad, en ese orden, con la pestaña Venta abierta
 
+#### Scenario: Abrir la página con un solo permiso de pestaña
+- **WHEN** un usuario con `settings.manage` y solo el permiso de seguridad abre Parámetros
+- **THEN** ve las pestañas Venta, Boleto y Seguridad, en ese orden
+
 #### Scenario: Abrir la página con el permiso del panel de clientes
-- **WHEN** un usuario con `settings.manage` y con el permiso del panel de clientes, sin el de apariencia, abre Parámetros
-- **THEN** ve las pestañas Venta, Boleto, Calendario, Seguridad y Clientes, en ese orden, con la pestaña Venta abierta
+- **WHEN** un usuario con `settings.manage` y con el permiso del panel de clientes, sin los de calendario, seguridad ni apariencia, abre Parámetros
+- **THEN** ve las pestañas Venta, Boleto y Clientes, en ese orden, con la pestaña Venta abierta
 
 #### Scenario: Abrir la página con el permiso de apariencia
-- **WHEN** un usuario con `settings.manage` y con el permiso de apariencia, sin el del panel de clientes, abre Parámetros
-- **THEN** ve las pestañas Venta, Boleto, Calendario, Seguridad y Apariencia, en ese orden, con la pestaña Venta abierta
+- **WHEN** un usuario con `settings.manage` y con el permiso de apariencia, sin los de calendario, seguridad ni panel de clientes, abre Parámetros
+- **THEN** ve las pestañas Venta, Boleto y Apariencia, en ese orden, con la pestaña Venta abierta
 
 #### Scenario: Abrir la página con los dos permisos
-- **WHEN** un usuario con `settings.manage`, el permiso del panel de clientes y el de apariencia abre Parámetros
+- **WHEN** un usuario con `settings.manage`, el permiso del panel de clientes y el de apariencia, sin los de calendario ni seguridad, abre Parámetros
+- **THEN** ve las pestañas Venta, Boleto, Clientes y Apariencia, en ese orden
+
+#### Scenario: Abrir la página con todos los permisos
+- **WHEN** un usuario con `settings.manage` y los permisos de calendario, seguridad, panel de clientes y apariencia abre Parámetros
 - **THEN** ve las pestañas Venta, Boleto, Calendario, Seguridad, Clientes y Apariencia, en ese orden
 
 #### Scenario: Guardar desde otra pestaña
-- **WHEN** el administrador cambia un parámetro de Venta, pasa a la pestaña Seguridad, cambia otro y toca "Guardar cambios"
+- **WHEN** un usuario con el permiso de seguridad cambia un parámetro de Venta, pasa a la pestaña Seguridad, cambia otro y toca "Guardar cambios"
 - **THEN** se guardan los dos cambios
+
+#### Scenario: Pestaña Venta con el permiso de los selectores
+- **WHEN** un usuario con `settings.manage` y con el permiso de los selectores de origen y destino abre la pestaña Venta
+- **THEN** ve las secciones de acompañantes, venta fuera de término y selectores de origen y destino
+
+#### Scenario: Pestaña Venta con el permiso de las observaciones
+- **WHEN** un usuario con `settings.manage` y con el permiso de las observaciones abre la pestaña Venta
+- **THEN** ve, además de las secciones que le correspondan, la sección "Observaciones"
+
+#### Scenario: Pestaña Venta con el permiso del precio fijo
+- **WHEN** un usuario con `settings.manage` y con el permiso del precio fijo abre la pestaña Venta
+- **THEN** ve, además de las secciones que le correspondan, la sección "Precio de los boletos", al final de la pestaña
+
+#### Scenario: Pestaña Venta con el permiso del límite de pasajeros
+- **WHEN** un usuario con `settings.manage` y con el permiso del límite de pasajeros abre la pestaña Venta
+- **THEN** ve la sección "Pasajeros por venta" después de "Venta fuera de término"
+
+#### Scenario: Pestaña Boleto con el permiso de emisión
+- **WHEN** un usuario con `settings.manage` y con el permiso de emisión abre la pestaña Boleto
+- **THEN** ve las secciones "Emisión al finalizar la venta" y "Líneas de contacto"
+
+#### Scenario: Pestaña Boleto sin el permiso de emisión
+- **WHEN** un usuario con `settings.manage` pero sin el permiso de emisión abre la pestaña Boleto
+- **THEN** ve solo la sección "Líneas de contacto"
 
 ### Requirement: Texto visible limitado a lo esencial
 Cada sección y cada campo SHALL mostrar como texto visible a lo sumo una oración, y solo cuando sin ella el administrador podría configurar algo mal. La información complementaria (ejemplos, formato de carga, permisos que dejan saltear una regla) MUST ir en un ícono de información con tooltip y MUST NOT ser necesaria para configurar bien el parámetro.
 
 #### Scenario: Confirmación de contraseña
-- **WHEN** el administrador abre la pestaña Seguridad
+- **WHEN** un usuario con el permiso de seguridad abre la pestaña Seguridad
 - **THEN** la sección explica una sola vez que se pide la contraseña de quien ejecuta la acción y que, si no coincide, la acción no se ejecuta, y los tres interruptores no repiten esa explicación
 
 #### Scenario: Información de permisos
-- **WHEN** el administrador abre la pestaña Calendario
+- **WHEN** un usuario con el permiso de calendario abre la pestaña Calendario
 - **THEN** la aclaración sobre el permiso "Vender en días sin servicio" está en un tooltip y no como texto visible
 
 ### Requirement: Guardado todo o nada
@@ -59,15 +95,20 @@ Al tocar "Guardar cambios", la página SHALL guardar todos los parámetros solo 
 - **THEN** no se guarda ningún cambio y las horas de venta siguen con el valor anterior
 
 ### Requirement: Errores visibles en las pestañas
-Cuando el guardado falla por validación, la página SHALL abrir la pestaña que contiene el primer campo con error y desplazarse hasta él. Toda pestaña con campos inválidos MUST mostrar un indicador rojo con la cantidad de errores, que desaparece cuando se vuelve a guardar sin errores en esa pestaña.
+Cuando el guardado falla por validación, la página SHALL abrir la pestaña que contiene el primer campo con error y desplazarse hasta él. Toda pestaña con campos inválidos MUST mostrar un indicador rojo con la cantidad de errores, que desaparece cuando se vuelve a guardar sin errores en esa pestaña. Una pestaña oculta por falta de permiso MUST NOT validar sus campos ni impedir el guardado.
 
 #### Scenario: Errores en dos pestañas
-- **WHEN** el administrador guarda con un teléfono inválido en Boleto y sin ningún día de servicio en Calendario
+- **WHEN** un usuario con el permiso de calendario guarda con un teléfono inválido en Boleto y sin ningún día de servicio en Calendario
 - **THEN** se abre la pestaña Boleto en el teléfono inválido, y las pestañas Boleto y Calendario muestran un indicador rojo con 1 error cada una
 
 #### Scenario: Error corregido
-- **WHEN** después de ese error el administrador corrige los dos campos y guarda
+- **WHEN** después de ese error el usuario corrige los dos campos y guarda
 - **THEN** los indicadores desaparecen y la configuración se guarda
+
+#### Scenario: Pestaña oculta sin errores propios
+- **GIVEN** un usuario sin el permiso de calendario
+- **WHEN** guarda Parámetros con un teléfono inválido en Boleto
+- **THEN** solo la pestaña Boleto muestra el indicador rojo y la notificación nombra solo Boleto
 
 ### Requirement: Aviso de guardado fallido
 Cuando el guardado falla por validación, la página SHALL mostrar una notificación de error que diga que no se guardó ningún cambio y nombre las pestañas que tienen errores.
@@ -95,7 +136,7 @@ Las horas de venta después de la salida SHALL ser obligatorias y MUST ser un n�
 - **THEN** el valor se guarda y la venta fuera de término queda sin límite
 
 ### Requirement: Validación del mensaje de WhatsApp
-El mensaje de WhatsApp SHALL ser opcional: vacío, se usa el texto por defecto. Si se carga, MUST incluir `{link}` y tener como máximo 300 caracteres. Mientras el campo está oculto porque la descarga automática está activada, guardar MUST NOT modificar el mensaje guardado.
+El mensaje de WhatsApp SHALL ser opcional: vacío, se usa el texto por defecto "Podés acceder a tu(s) boleto(s) desde aquí: {link}". Si se carga, MUST incluir `{link}` y tener como máximo 300 caracteres. Mientras el campo está oculto porque la descarga automática está activada, guardar MUST NOT modificar el mensaje guardado.
 
 #### Scenario: Mensaje sin el link
 - **WHEN** el administrador carga "Gracias por viajar con nosotros" y guarda
@@ -103,7 +144,7 @@ El mensaje de WhatsApp SHALL ser opcional: vacío, se usa el texto por defecto. 
 
 #### Scenario: Mensaje vacío
 - **WHEN** el administrador borra el mensaje y guarda
-- **THEN** se guarda y al compartir se usa el texto por defecto "Podés acceder a tu boleto desde aquí: {link}"
+- **THEN** se guarda y al compartir se usa el texto por defecto "Podés acceder a tu(s) boleto(s) desde aquí: {link}"
 
 #### Scenario: Campo oculto
 - **GIVEN** el mensaje guardado es "Tu pasaje: {link}"
@@ -168,3 +209,269 @@ Solo un usuario con el permiso "Cambiar apariencia" del módulo Configuración M
 #### Scenario: Permiso no asignado por defecto
 - **WHEN** se sincronizan los permisos y roles del sistema
 - **THEN** el rol Administrador no recibe el permiso de apariencia, y se lo puede asignar desde la matriz de roles
+
+### Requirement: Elegir el estilo de los selectores de origen y destino
+La pestaña "Venta" SHALL ofrecer el interruptor "Selectores de origen y destino detallados", que muestra el valor guardado y, sin configurar, aparece apagado. Solo un usuario con el permiso "Configurar selectores de origen y destino" del módulo Configuración MUST ver la sección y cambiar el parámetro. Si quien guarda no tiene el permiso, el parámetro MUST quedar como estaba, aunque el pedido traiga otro valor.
+
+#### Scenario: Prender los selectores detallados
+- **WHEN** un usuario con el permiso prende "Selectores de origen y destino detallados" y guarda
+- **THEN** el parámetro queda prendido y la venta muestra los selectores detallados
+
+#### Scenario: Valor inicial
+- **WHEN** nadie configuró el parámetro y un usuario con el permiso abre la pestaña Venta
+- **THEN** el interruptor aparece apagado
+
+#### Scenario: Sin el permiso
+- **WHEN** un usuario con `settings.manage` pero sin el permiso de los selectores abre la pestaña Venta
+- **THEN** no ve la sección de los selectores de origen y destino
+
+#### Scenario: Pedido manipulado
+- **GIVEN** el parámetro apagado
+- **WHEN** un usuario sin el permiso de los selectores guarda Parámetros enviando el parámetro prendido
+- **THEN** los demás parámetros se guardan y el parámetro sigue apagado
+
+#### Scenario: Permiso no asignado por defecto
+- **WHEN** se sincronizan los permisos y roles del sistema
+- **THEN** el rol Administrador no recibe el permiso de los selectores, y se lo puede asignar desde la matriz de roles
+
+### Requirement: Activar las observaciones de la venta
+La pestaña "Venta" SHALL ofrecer, en la sección "Observaciones", el interruptor "Observaciones en la venta", que muestra el valor guardado y, sin configurar, aparece apagado. Solo un usuario con el permiso "Activar/desactivar observaciones" (`settings.sale_observations`) del módulo Configuración MUST ver la sección y cambiar el parámetro. Si quien guarda no tiene el permiso, el parámetro MUST quedar como estaba, aunque el pedido traiga otro valor.
+
+#### Scenario: Prender las observaciones
+- **WHEN** un usuario con el permiso prende "Observaciones en la venta" y guarda
+- **THEN** el parámetro queda prendido y el paso "Resumen" de la venta muestra el campo "Observaciones"
+
+#### Scenario: Valor inicial
+- **WHEN** nadie configuró el parámetro y un usuario con el permiso abre la pestaña Venta
+- **THEN** el interruptor aparece apagado
+
+#### Scenario: Sin el permiso
+- **WHEN** un usuario con `settings.manage` pero sin el permiso de las observaciones abre la pestaña Venta
+- **THEN** no ve la sección "Observaciones"
+
+#### Scenario: Pedido manipulado
+- **GIVEN** el parámetro apagado
+- **WHEN** un usuario sin el permiso de las observaciones guarda Parámetros enviando el parámetro prendido
+- **THEN** los demás parámetros se guardan y el parámetro sigue apagado
+
+#### Scenario: Permiso no asignado por defecto
+- **WHEN** se sincronizan los permisos y roles del sistema
+- **THEN** ni el rol Administrador ni el Vendedor reciben el permiso de las observaciones, y se lo puede asignar desde la matriz de roles
+
+### Requirement: Permiso para configurar la emisión al finalizar la venta
+Solo un usuario con el permiso "Configurar emisión al finalizar la venta" del módulo Configuración MUST ver la sección "Emisión al finalizar la venta" y cambiar el interruptor "Descargar PDF automáticamente al vender" y el mensaje de WhatsApp. Si quien guarda no tiene el permiso, los dos MUST quedar como estaban, aunque el pedido traiga otros valores o no los traiga.
+
+#### Scenario: Cambiar la emisión con el permiso
+- **GIVEN** la descarga automática activada
+- **WHEN** un usuario con el permiso desactiva "Descargar PDF automáticamente al vender", carga "Tu pasaje: {link}" como mensaje y guarda
+- **THEN** la descarga automática queda desactivada y el mensaje guardado es "Tu pasaje: {link}"
+
+#### Scenario: Guardar sin el permiso conserva la emisión por link
+- **GIVEN** la descarga automática desactivada y el mensaje "Tu pasaje: {link}"
+- **WHEN** un usuario sin el permiso de emisión cambia las horas de venta a 8 y guarda
+- **THEN** las horas de venta quedan en 8, la descarga automática sigue desactivada y el mensaje sigue siendo "Tu pasaje: {link}"
+
+#### Scenario: Pedido manipulado
+- **GIVEN** la descarga automática desactivada y el mensaje "Tu pasaje: {link}"
+- **WHEN** un usuario sin el permiso de emisión guarda Parámetros enviando la descarga automática activada y el mensaje "Otro: {link}"
+- **THEN** los demás parámetros se guardan, la descarga automática sigue desactivada y el mensaje sigue siendo "Tu pasaje: {link}"
+
+#### Scenario: Permiso no asignado por defecto
+- **WHEN** se sincronizan los permisos y roles del sistema
+- **THEN** el rol Administrador no recibe el permiso de emisión, y se lo puede asignar desde la matriz de roles
+
+### Requirement: Configurar el precio fijo de los boletos
+La sección "Precio de los boletos" de la pestaña Venta SHALL ofrecer el interruptor "Precio fijo activo", que sin configurar aparece apagado, y, solo con el interruptor prendido, los campos "Precio del boleto" y "Seguro para menores", con prefijo `$` y los valores guardados.
+
+#### Scenario: Valor inicial
+- **WHEN** nadie configuró el precio fijo y un usuario con el permiso abre la pestaña Venta
+- **THEN** el interruptor aparece apagado y los campos de montos no se ven
+
+#### Scenario: Prender el precio fijo
+- **WHEN** un usuario con el permiso prende "Precio fijo activo", carga 5000 como precio del boleto y 800 como seguro, y guarda
+- **THEN** los tres parámetros quedan guardados y la venta calcula el precio con esos montos
+
+#### Scenario: Apagar conserva los montos
+- **GIVEN** el precio fijo prendido con precio 5000 y seguro 800
+- **WHEN** el usuario apaga el interruptor, guarda y lo vuelve a prender
+- **THEN** los campos muestran 5000 y 800
+
+### Requirement: Validación de los montos del precio fijo
+Con "Precio fijo activo" prendido, "Precio del boleto" y "Seguro para menores" SHALL ser obligatorios y MUST ser números enteros, sin centavos: el precio entre 1 y 999.999 y el seguro entre 0 y 999.999. Un valor con decimales MUST rechazarse en lugar de redondearse. Con el interruptor apagado, los montos MUST NOT validarse ni modificarse al guardar.
+
+#### Scenario: Prender sin montos
+- **WHEN** el usuario prende "Precio fijo activo" sin cargar el precio del boleto y guarda
+- **THEN** el campo muestra un mensaje en español que pide el precio del boleto y no se guarda ningún parámetro
+
+#### Scenario: Precio en cero
+- **WHEN** el usuario carga 0 como precio del boleto y guarda
+- **THEN** el campo muestra que el precio debe ser de al menos $1 y no se guarda ningún parámetro
+
+#### Scenario: Seguro en cero
+- **WHEN** el usuario carga 5000 como precio del boleto y 0 como seguro y guarda
+- **THEN** se guarda y la venta no suma seguro al viajar con menor
+
+#### Scenario: Monto con centavos
+- **WHEN** el usuario carga 5000,50 como precio del boleto y guarda
+- **THEN** el campo muestra que el precio debe ser un número entero y no se guarda ningún parámetro
+
+#### Scenario: Monto fuera de rango
+- **WHEN** el usuario carga 1000000 como seguro y guarda
+- **THEN** el campo muestra que el máximo es $999.999 y no se guarda ningún parámetro
+
+### Requirement: Permiso para configurar el precio fijo
+Solo un usuario con el permiso "Configurar precio fijo de los boletos" (`settings.fixed_price`) del módulo Configuración MUST ver la sección "Precio de los boletos" y cambiar sus tres parámetros. Si quien guarda no tiene el permiso, los tres MUST quedar como estaban, aunque el pedido traiga otros valores o no los traiga.
+
+#### Scenario: Sin el permiso
+- **WHEN** un usuario con `settings.manage` pero sin el permiso del precio fijo abre la pestaña Venta
+- **THEN** no ve la sección "Precio de los boletos"
+
+#### Scenario: Guardar sin el permiso conserva el precio fijo
+- **GIVEN** el precio fijo prendido con precio 5000 y seguro 800
+- **WHEN** un usuario sin el permiso del precio fijo cambia las horas de venta a 8 y guarda
+- **THEN** las horas de venta quedan en 8 y el precio fijo sigue prendido con precio 5000 y seguro 800
+
+#### Scenario: Pedido manipulado
+- **GIVEN** el precio fijo apagado
+- **WHEN** un usuario sin el permiso del precio fijo guarda Parámetros enviando el precio fijo prendido con precio 1
+- **THEN** los demás parámetros se guardan y el precio fijo sigue apagado, sin montos cambiados
+
+#### Scenario: Permiso no asignado por defecto
+- **WHEN** se sincronizan los permisos y roles del sistema
+- **THEN** ni el rol Administrador ni el Vendedor reciben el permiso del precio fijo, y se lo puede asignar desde la matriz de roles
+
+### Requirement: Permiso para configurar el calendario de servicio
+Solo un usuario con el permiso "Configurar calendario de servicio" (`settings.calendar`) del módulo Configuración MUST ver la pestaña "Calendario" y cambiar los días con servicio y las excepciones por fecha. Si quien guarda no tiene el permiso, los días con servicio y las excepciones MUST quedar como estaban, aunque el pedido traiga otros valores o no los traiga.
+
+#### Scenario: Sin el permiso
+- **WHEN** un usuario con `settings.manage` pero sin el permiso de calendario abre Parámetros
+- **THEN** no ve la pestaña Calendario
+
+#### Scenario: Guardar sin el permiso conserva el calendario
+- **GIVEN** los días con servicio son lunes a viernes y hay una excepción "sin servicio" el 25/12/2026
+- **WHEN** un usuario sin el permiso de calendario cambia las horas de venta a 8 y guarda
+- **THEN** las horas de venta quedan en 8 y los días con servicio y la excepción siguen iguales
+
+#### Scenario: Pedido manipulado
+- **GIVEN** los días con servicio son lunes a viernes
+- **WHEN** un usuario sin el permiso de calendario guarda Parámetros enviando solo el domingo como día con servicio y una excepción nueva
+- **THEN** los demás parámetros se guardan y el calendario sigue sin cambios
+
+#### Scenario: Permiso no asignado por defecto
+- **WHEN** se sincronizan los permisos y roles del sistema
+- **THEN** ni el rol Administrador ni el Vendedor reciben el permiso de calendario, y se lo puede asignar desde la matriz de roles
+
+### Requirement: Permiso para configurar la confirmación de contraseña
+Solo un usuario con el permiso "Configurar confirmación de contraseña" (`settings.security`) del módulo Configuración MUST ver la pestaña "Seguridad" y cambiar los interruptores de confirmación de contraseña al borrar, reprogramar y editar boletos. Si quien guarda no tiene el permiso, los tres MUST quedar como estaban, aunque el pedido traiga otros valores o no los traiga.
+
+#### Scenario: Sin el permiso
+- **WHEN** un usuario con `settings.manage` pero sin el permiso de seguridad abre Parámetros
+- **THEN** no ve la pestaña Seguridad
+
+#### Scenario: Guardar sin el permiso conserva la confirmación
+- **GIVEN** la confirmación de contraseña está activada al borrar boletos
+- **WHEN** un usuario sin el permiso de seguridad cambia las horas de venta a 8 y guarda
+- **THEN** las horas de venta quedan en 8 y la confirmación al borrar boletos sigue activada
+
+#### Scenario: Pedido manipulado
+- **GIVEN** la confirmación de contraseña está activada en las tres acciones
+- **WHEN** un usuario sin el permiso de seguridad guarda Parámetros enviando las tres desactivadas
+- **THEN** los demás parámetros se guardan y las tres siguen activadas
+
+#### Scenario: Permiso no asignado por defecto
+- **WHEN** se sincronizan los permisos y roles del sistema
+- **THEN** ni el rol Administrador ni el Vendedor reciben el permiso de seguridad, y se lo puede asignar desde la matriz de roles
+
+### Requirement: Anticipación mínima para elegir fecha
+La pestaña "Clientes" SHALL ofrecer el campo "Anticipación mínima para elegir fecha", en horas, que muestra el valor guardado y, sin configurar, 24. El campo MUST aceptar solo números enteros de 0 a 720 y MUST ser obligatorio cuando se muestra, con los errores en español. Con 0 no se exige anticipación. El mismo permiso que gobierna la pestaña Clientes MUST gobernar el campo.
+
+#### Scenario: Valor inicial
+- **GIVEN** que nadie configuró la anticipación y el panel de clientes está activo
+- **WHEN** un usuario con el permiso abre la pestaña Clientes
+- **THEN** el campo muestra 24
+
+#### Scenario: Cambiar las horas
+- **WHEN** un usuario con el permiso escribe 48 y guarda
+- **THEN** el parámetro queda en 48 y el panel de clientes y el PDF usan ese valor
+
+#### Scenario: Valor inválido
+- **WHEN** el usuario escribe un texto, un decimal, un número negativo o un número mayor que 720
+- **THEN** no se guarda nada y el campo muestra el error debajo, en voseo
+
+#### Scenario: Campo vacío
+- **WHEN** el usuario deja el campo vacío con el panel de clientes activo y guarda
+- **THEN** no se guarda nada y el campo pide ingresar las horas
+
+#### Scenario: Cero horas
+- **WHEN** el usuario escribe 0 y guarda
+- **THEN** el parámetro queda en 0 y el panel de clientes no exige anticipación
+
+### Requirement: La anticipación solo se ve con el panel de clientes activo
+El campo "Anticipación mínima para elegir fecha" SHALL mostrarse solo mientras el interruptor "Panel de clientes activo" está encendido en el formulario, y MUST aparecer o desaparecer al cambiar el interruptor, sin guardar antes. Con el campo oculto, guardar la página MUST conservar el valor guardado y MUST NOT exigir ni validar el campo.
+
+#### Scenario: Panel apagado
+- **WHEN** el interruptor "Panel de clientes activo" está apagado
+- **THEN** la pestaña Clientes no muestra la anticipación mínima
+
+#### Scenario: Encender el interruptor
+- **WHEN** el usuario enciende "Panel de clientes activo" sin guardar
+- **THEN** el campo de anticipación aparece con el valor guardado
+
+#### Scenario: Guardar con el panel apagado
+- **GIVEN** la anticipación guardada en 48 y el panel de clientes apagado
+- **WHEN** el usuario guarda la página sin mostrar el campo
+- **THEN** la anticipación sigue en 48
+
+#### Scenario: Pedido manipulado sin permiso
+- **GIVEN** un usuario sin el permiso del panel de clientes
+- **WHEN** guarda Parámetros enviando otra anticipación
+- **THEN** la anticipación guardada no cambia
+
+### Requirement: Configurar el límite de pasajeros por venta
+La sección "Pasajeros por venta" de la pestaña Venta SHALL ofrecer el campo "Máximo de pasajeros por venta", que muestra el valor guardado y, sin configurar, 4. El campo MUST ser obligatorio y aceptar solo números enteros de 1 a 8, con los errores en español con voseo. Cambiar el límite MUST NOT modificar ventas ya emitidas.
+
+#### Scenario: Valor inicial
+- **WHEN** nadie configuró el límite y un usuario con el permiso abre la pestaña Venta
+- **THEN** el campo muestra 4
+
+#### Scenario: Cambiar el límite
+- **WHEN** un usuario con el permiso escribe 6 y guarda
+- **THEN** el parámetro queda en 6 y la venta ofrece de 1 a 6 pasajeros
+
+#### Scenario: Valor fuera de rango
+- **WHEN** el usuario escribe 0 o 9 y guarda
+- **THEN** no se guarda ningún parámetro y el campo muestra el error debajo, en español
+
+#### Scenario: Valor con decimales
+- **WHEN** el usuario escribe 2,5 y guarda
+- **THEN** no se guarda ningún parámetro y el campo indica que tiene que ser un número entero
+
+#### Scenario: Campo vacío
+- **WHEN** el usuario deja el campo vacío y guarda
+- **THEN** no se guarda ningún parámetro y el campo pide ingresar la cantidad
+
+#### Scenario: Ventas ya emitidas
+- **GIVEN** una venta emitida con 4 pasajeros
+- **WHEN** el límite baja a 2
+- **THEN** la venta y sus 4 boletos siguen iguales
+
+### Requirement: Permiso para configurar el límite de pasajeros por venta
+Solo un usuario con el permiso "Configurar límite de pasajeros por venta" (`settings.passenger_limit`) del módulo Configuración MUST ver la sección "Pasajeros por venta" y cambiar el parámetro. Si quien guarda no tiene el permiso, el límite MUST quedar como estaba, aunque el pedido traiga otro valor o no lo traiga.
+
+#### Scenario: Sin el permiso
+- **WHEN** un usuario con `settings.manage` pero sin el permiso del límite de pasajeros abre la pestaña Venta
+- **THEN** no ve la sección "Pasajeros por venta"
+
+#### Scenario: Guardar sin el permiso conserva el límite
+- **GIVEN** el límite de pasajeros por venta en 6
+- **WHEN** un usuario sin el permiso cambia las horas de venta a 8 y guarda
+- **THEN** las horas de venta quedan en 8 y el límite sigue en 6
+
+#### Scenario: Pedido manipulado
+- **GIVEN** el límite de pasajeros por venta en 4
+- **WHEN** un usuario sin el permiso guarda Parámetros enviando 8 como límite
+- **THEN** los demás parámetros se guardan y el límite sigue en 4
+
+#### Scenario: Permiso no asignado por defecto
+- **WHEN** se sincronizan los permisos y roles del sistema
+- **THEN** ni el rol Administrador ni el Vendedor reciben el permiso del límite de pasajeros, y se lo puede asignar desde la matriz de roles

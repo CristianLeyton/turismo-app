@@ -4,10 +4,15 @@ namespace App\Models;
 
 use App\Models\Concerns\HasShareToken;
 use Carbon\Carbon;
+use Closure;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Casts\Attribute;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\ValidationException;
 
@@ -15,6 +20,9 @@ class Ticket extends Model
 {
     use HasShareToken;
     use SoftDeletes;
+
+    /** @var Collection<int, TicketEdit>|null */
+    private ?Collection $visibleEditsCache = null;
 
     protected $fillable = [
         'sale_id',
@@ -29,6 +37,7 @@ class Ticket extends Model
         'travels_with_pets',
         'pet_names',
         'pet_count',
+        'observation',
         'price',
         'payment_method',
         'origin_location_id',
@@ -44,6 +53,31 @@ class Ticket extends Model
         'travels_with_child' => 'boolean',
         'travels_with_pets' => 'boolean',
     ];
+
+    /** Largo máximo de la observación interna del boleto (como un tweet). */
+    public const MAX_OBSERVATION_LENGTH = 280;
+
+    /**
+     * Normaliza una observación: recorta espacios y convierte el vacío en null,
+     * para que la venta, la edición y el historial comparen igual.
+     */
+    public static function normalizeObservation(mixed $value): ?string
+    {
+        $text = trim((string) ($value ?? ''));
+
+        return $text === '' ? null : $text;
+    }
+
+    /**
+     * Observación interna: nunca se muestra al pasajero (PDF, link público ni
+     * panel de clientes).
+     */
+    protected function observation(): Attribute
+    {
+        return Attribute::make(
+            set: fn (mixed $value): ?string => self::normalizeObservation($value),
+        );
+    }
 
     public function getCompanionTypeAttribute()
     {
@@ -187,6 +221,56 @@ class Ticket extends Model
     }
 
     /**
+     * Ediciones del historial de este boleto: las propias y las de datos del
+     * pasajero hechas desde su boleto hermano (ver TicketEdit::visibleFor()).
+     * Memorizadas: el detalle las pide varias veces por render.
+     *
+     * @return Collection<int, TicketEdit>
+     */
+    public function visibleEdits(): Collection
+    {
+        return $this->visibleEditsCache ??= TicketEdit::visibleFor($this);
+    }
+
+    /**
+     * Solo boletos con al menos una edición visible; `$constraint` filtra
+     * sobre la misma edición (tabla `visible_edits`).
+     *
+     * @param  Builder<Ticket>  $query
+     * @param  (Closure(QueryBuilder): mixed)|null  $constraint
+     * @return Builder<Ticket>
+     */
+    public function scopeWithVisibleEdits(Builder $query, ?Closure $constraint = null): Builder
+    {
+        $edits = TicketEdit::visibleForOuterTicket();
+
+        if ($constraint) {
+            $constraint($edits);
+        }
+
+        return $query->whereExists($edits);
+    }
+
+    /**
+     * Agrega `last_visible_edit_at`: fecha de la última edición visible del
+     * boleto (null si no tiene), calculada en la misma consulta de la lista.
+     *
+     * @param  Builder<Ticket>  $query
+     * @return Builder<Ticket>
+     */
+    public function scopeWithLastVisibleEditAt(Builder $query): Builder
+    {
+        if ($query->getQuery()->columns === null) {
+            $query->select('tickets.*');
+        }
+
+        return $query->selectSub(
+            TicketEdit::visibleForOuterTicket()->selectRaw('MAX(visible_edits.created_at)'),
+            'last_visible_edit_at',
+        );
+    }
+
+    /**
      * Fecha de la última actividad registrada del boleto.
      */
     public function getUltimaActividadAttribute(): ?\Illuminate\Support\Carbon
@@ -270,13 +354,22 @@ class Ticket extends Model
             return (float) $this->price;
         }
 
-        $outbound = self::where('sale_id', $this->sale_id)
+        $outbound = $this->outboundLeg();
+
+        return $outbound ? (float) $outbound->price : 0;
+    }
+
+    /**
+     * Boleto de ida vigente de este tramo de vuelta (mismo pasajero, misma
+     * venta), que es el que lleva el precio de la ida y vuelta.
+     */
+    public function outboundLeg(): ?self
+    {
+        return self::where('sale_id', $this->sale_id)
             ->where('passenger_id', $this->passenger_id)
             ->where('is_round_trip', true)
             ->where('is_return_leg', false)
             ->first();
-
-        return $outbound ? (float) $outbound->price : 0;
     }
 
     /**

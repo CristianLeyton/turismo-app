@@ -64,7 +64,7 @@ class Setting extends Model
      */
     public const WHATSAPP_MENSAJE = 'tickets.whatsapp_mensaje';
 
-    public const WHATSAPP_MENSAJE_DEFAULT = 'Podés acceder a tu boleto desde aquí: {link}';
+    public const WHATSAPP_MENSAJE_DEFAULT = 'Podés acceder a tu(s) boleto(s) desde aquí: {link}';
 
     /**
      * Días de la semana con servicio (JSON con enteros ISO 1 = lunes … 7 = domingo).
@@ -105,11 +105,51 @@ class Setting extends Model
     public const PANEL_CLIENTES_ACTIVO = 'clients.panel_activo';
 
     /**
+     * Horas de anticipación mínima con las que un cliente puede elegir el
+     * horario de un boleto sin fecha desde su panel. También es el número
+     * que dice el aviso del PDF de un boleto sin fecha. 0 = sin mínimo.
+     */
+    public const CLIENT_ADVANCE_NOTICE_HOURS = 'clients.anticipacion_horas';
+
+    public const CLIENT_ADVANCE_NOTICE_HOURS_DEFAULT = 24;
+
+    public const CLIENT_ADVANCE_NOTICE_HOURS_MAX = 720;
+
+    /**
      * Estilo de los selectores Origen y Destino de la venta. Apagado
      * (default): selects nativos con lista plana. Prendido: select con
      * buscador, paradas numeradas y destinos agrupados por sentido.
      */
     public const SELECTORES_DETALLADOS = 'sales.selectores_detallados';
+
+    /**
+     * Observaciones internas de la venta. Apagado (default): no se cargan ni
+     * se muestran en ninguna pantalla ni archivo; las guardadas se conservan.
+     */
+    public const OBSERVACIONES_VENTA = 'sales.observaciones';
+
+    /**
+     * Precio fijo de los boletos. Apagado (default): el vendedor carga el
+     * precio a mano. Prendido: el precio sale de los dos montos de abajo
+     * (ver App\Support\FixedTicketPrice) y nadie lo puede editar.
+     */
+    public const PRECIO_FIJO_ACTIVO = 'sales.precio_fijo_activo';
+
+    /** Precio del boleto por tramo, en pesos enteros. */
+    public const PRECIO_FIJO_BOLETO = 'sales.precio_fijo_boleto';
+
+    /** Seguro para menores por tramo, en pesos enteros (0 = no se cobra). */
+    public const PRECIO_FIJO_SEGURO_MENOR = 'sales.precio_fijo_seguro_menor';
+
+    /**
+     * Máximo de pasajeros por venta. Sin configurar, 4 (el límite histórico
+     * que estaba fijo en el selector "Cantidad de pasajeros").
+     */
+    public const LIMITE_PASAJEROS_VENTA = 'sales.limite_pasajeros';
+
+    public const LIMITE_PASAJEROS_VENTA_DEFAULT = 4;
+
+    public const LIMITE_PASAJEROS_VENTA_MAX = 8;
 
     /**
      * Color principal de la empresa (hex `#RRGGBB`). De él sale la paleta
@@ -172,6 +212,19 @@ class Setting extends Model
     }
 
     /**
+     * Máximo de pasajeros por venta, acotado a [1, 8]: un valor cargado a
+     * mano en la base no puede dejar la venta sin opciones ni habilitar
+     * ventas más grandes que el tope.
+     */
+    public static function limitePasajerosVenta(): int
+    {
+        return min(
+            self::LIMITE_PASAJEROS_VENTA_MAX,
+            max(1, self::getInt(self::LIMITE_PASAJEROS_VENTA, self::LIMITE_PASAJEROS_VENTA_DEFAULT)),
+        );
+    }
+
+    /**
      * ¿Se puede vender con acompañante (menor/mascota)? Activado por defecto
      * para conservar el comportamiento actual cuando la clave no existe.
      */
@@ -191,6 +244,26 @@ class Setting extends Model
     }
 
     /**
+     * Horas de anticipación mínima para que un cliente elija fecha. Un valor
+     * guardado que no es un entero entre 0 y el máximo (datos corruptos)
+     * vuelve al valor por defecto.
+     */
+    public static function clientAdvanceNoticeHours(): int
+    {
+        $value = self::raw(self::CLIENT_ADVANCE_NOTICE_HOURS);
+
+        if ($value === null || ! ctype_digit(trim($value))) {
+            return self::CLIENT_ADVANCE_NOTICE_HOURS_DEFAULT;
+        }
+
+        $hours = (int) $value;
+
+        return $hours <= self::CLIENT_ADVANCE_NOTICE_HOURS_MAX
+            ? $hours
+            : self::CLIENT_ADVANCE_NOTICE_HOURS_DEFAULT;
+    }
+
+    /**
      * ¿El panel de clientes está disponible? Desactivado por defecto: mientras
      * nadie lo active, /clientes no existe para el público.
      */
@@ -206,6 +279,39 @@ class Setting extends Model
     public static function selectoresDetallados(): bool
     {
         return self::getBool(self::SELECTORES_DETALLADOS, false);
+    }
+
+    /**
+     * ¿Está activa la observación interna de la venta y de los boletos?
+     * Apagada por defecto.
+     */
+    public static function observacionesActivas(): bool
+    {
+        return self::getBool(self::OBSERVACIONES_VENTA, false);
+    }
+
+    /**
+     * ¿El precio de los boletos se calcula por parámetro? Apagado por defecto.
+     */
+    public static function precioFijoActivo(): bool
+    {
+        return self::getBool(self::PRECIO_FIJO_ACTIVO, false);
+    }
+
+    /**
+     * Precio del boleto por tramo. Sin configurar (o corrupto), 0.
+     */
+    public static function precioFijoBoleto(): int
+    {
+        return max(0, self::getInt(self::PRECIO_FIJO_BOLETO, 0));
+    }
+
+    /**
+     * Seguro para menores por tramo. Sin configurar (o corrupto), 0.
+     */
+    public static function precioFijoSeguroMenor(): int
+    {
+        return max(0, self::getInt(self::PRECIO_FIJO_SEGURO_MENOR, 0));
     }
 
     /**
@@ -277,6 +383,37 @@ class Setting extends Model
         $digits = preg_replace('/\D+/', '', $phone) ?? '';
 
         return (str_starts_with($phone, '+') ? '+' : '').$digits;
+    }
+
+    /**
+     * Número para un enlace wa.me: sólo dígitos y con código de país.
+     * Con "+" se usan sus dígitos tal cual. Sin "+" se lo trata como celular
+     * argentino: se quita el "0" inicial y el "15" que sigue al código de área
+     * (el número queda en 10 dígitos) y se antepone "549".
+     * "3878-804506" y "+54 9 (3878) 804-506" → "5493878804506".
+     */
+    public static function whatsappNumber(string $phone): string
+    {
+        $phone = trim($phone);
+        $digits = preg_replace('/\D+/', '', $phone) ?? '';
+
+        if (str_starts_with($phone, '+')) {
+            return $digits;
+        }
+
+        $digits = ltrim($digits, '0');
+
+        if (strlen($digits) === 12) {
+            foreach ([2, 3, 4] as $areaLength) {
+                if (substr($digits, $areaLength, 2) === '15') {
+                    $digits = substr($digits, 0, $areaLength).substr($digits, $areaLength + 2);
+
+                    break;
+                }
+            }
+        }
+
+        return '549'.$digits;
     }
 
     /**

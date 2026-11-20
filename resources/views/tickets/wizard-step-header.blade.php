@@ -10,7 +10,8 @@
     $arrivalTime = $arrivalTime ?? null;
     $returnDepartureTime = $returnDepartureTime ?? null;
     $returnArrivalTime = $returnArrivalTime ?? null;
-    $showReturn = $isRoundTrip && $returnBusName !== null && $returnOriginName !== null && $returnDestinationName !== null;
+    $showReturn =
+        $isRoundTrip && $returnBusName !== null && $returnOriginName !== null && $returnDestinationName !== null;
 @endphp
 @if($busName !== '—' || $originName !== '—' || $destinationName !== '—' || $showReturn)
 <div class="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 px-4 py-3 text-sm space-y-2">

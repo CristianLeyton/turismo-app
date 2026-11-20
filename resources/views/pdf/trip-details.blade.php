@@ -160,6 +160,49 @@
             margin-top: 2px;
         }
 
+        /* Separador por parada de subida: la hoja se recorre en el orden del viaje. */
+        .group-row td {
+            background: #f3f4f6;
+            color: {{ $brand[700] }};
+            font-size: 11px;
+            font-weight: bold;
+            padding: 5px 6px;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        .group-count {
+            color: #6b7280;
+            font-weight: normal;
+        }
+
+        .companion-row td {
+            color: #4b5563;
+        }
+
+        .companion-tag {
+            display: inline-block;
+            padding: 1px 4px;
+            border: 1px solid #d1d5db;
+            border-radius: 4px;
+            font-size: 8px;
+            font-weight: bold;
+            text-transform: uppercase;
+            color: #4b5563;
+        }
+
+        /* Observación interna: gris para que se distinga también impresa en blanco y negro. */
+        .observation {
+            background: #eeeeee;
+            border-left: 3px solid #9ca3af;
+            border-radius: 6px;
+            padding: 4px 6px;
+            word-wrap: break-word;
+        }
+
+        .observation-empty {
+            color: #9ca3af;
+        }
+
         .empty {
             padding: 20px;
             font-size: 11px;
@@ -179,9 +222,11 @@
 <body>
 
     @php
-        $stops = $trip->route->stops()->with('location')->get();
-        $firstStop = $stops->first();
-        $lastStop = $stops->last();
+        // Paradas vigentes numeradas (1..n), las mismas del modal. Quien
+        // renderiza las pasa; si no, se calculan acá.
+        $passengerStops = $passengerStops ?? $trip->passengerListStops();
+        $passengerStopsByOrder = $passengerStops->keyBy('order');
+        $blank = fn ($value): bool => blank($value) || $value === 'N/A';
     @endphp
 
     <!-- ===== ENCABEZADO DEL VIAJE ===== -->
@@ -201,11 +246,11 @@
 
                     <div class="trip-title">
                         <span class="text-brand">
-                            {{ $firstStop?->location->name ?? 'Origen' }}
+                            {{ $passengerStops->first()['name'] ?? 'Origen' }}
                         </span>
                         >
                         <span class="text-brand">
-                            {{ $lastStop?->location->name ?? 'Destino' }}
+                            {{ $passengerStops->last()['name'] ?? 'Destino' }}
                         </span>
                     </div>
 
@@ -267,47 +312,76 @@
 
 
 
+        @php
+            // Con observaciones activas, la columna Observación reemplaza a
+            // Teléfono (que no se borra: queda listo para cuando la lista
+            // permita elegir qué columnas mostrar). Apagadas, queda como antes.
+            $showObservation = $showObservation ?? \App\Models\Setting::observacionesActivas();
+            $showPhone = $showPhone ?? ! $showObservation;
+            $widths = match (true) {
+                $showObservation && $showPhone => ['ticket' => 7, 'name' => 18, 'dni' => 10, 'phone' => 10, 'seat' => 7, 'origin' => 12, 'destination' => 12, 'observation' => 24],
+                $showObservation => ['ticket' => 7, 'name' => 20, 'dni' => 11, 'phone' => 0, 'seat' => 8, 'origin' => 13, 'destination' => 13, 'observation' => 28],
+                $showPhone => ['ticket' => 8, 'name' => 22, 'dni' => 12, 'phone' => 12, 'seat' => 10, 'origin' => 18, 'destination' => 18, 'observation' => 0],
+                default => ['ticket' => 8, 'name' => 28, 'dni' => 14, 'phone' => 0, 'seat' => 10, 'origin' => 20, 'destination' => 20, 'observation' => 0],
+            };
+        @endphp
+
         @if (($passengersCount ?? 0) > 0)
             <table>
                 <thead>
                     <tr>
-                        <th width="8%">Boleto</th>
-                        <th width="22%">Nombre</th>
-                        <th width="12%">DNI</th>
-                        <th width="12%">Teléfono</th>
-                        <th width="10%" style="text-align: center;">Asiento</th>
-                        <th width="18%" style="text-align: center;">Origen</th>
-                        <th width="18%" style="text-align: center;">Destino</th>
+                        <th width="{{ $widths['ticket'] }}%">Boleto</th>
+                        <th width="{{ $widths['name'] }}%">Nombre</th>
+                        <th width="{{ $widths['dni'] }}%">DNI</th>
+                        @if ($showPhone)
+                            <th width="{{ $widths['phone'] }}%">Teléfono</th>
+                        @endif
+                        <th width="{{ $widths['seat'] }}%" style="text-align: center;">Asiento</th>
+                        <th width="{{ $widths['origin'] }}%" style="text-align: center;">Origen</th>
+                        <th width="{{ $widths['destination'] }}%" style="text-align: center;">Destino</th>
+                        @if ($showObservation)
+                            <th width="{{ $widths['observation'] }}%">Observación</th>
+                        @endif
                     </tr>
                 </thead>
                 <tbody>
-                    @foreach ($passengers as $passenger)
-                        <tr>
+                    @foreach ($passengers->groupBy(fn (array $row): string => (string) ($row['origin_order'] ?? 'out')) as $groupKey => $groupRows)
+                        @php
+                            $groupStop = $passengerStopsByOrder->get((int) $groupKey);
+                        @endphp
+                        <tr class="group-row">
+                            <td colspan="{{ 6 + ($showPhone ? 1 : 0) + ($showObservation ? 1 : 0) }}">
+                                {{ $groupStop ? $groupStop['order'].'. '.$groupStop['name'] : 'Fuera del recorrido' }}
+                                <span class="group-count">— suben {{ $groupRows->count() }}</span>
+                            </td>
+                        </tr>
+                    @foreach ($groupRows as $passenger)
+                        <tr @class(['companion-row' => $passenger['type'] !== 'adult'])>
                             <td style="text-align: center;">
-                                {{ $passenger['ticket_id'] }}
+                                {{ $passenger['type'] === 'adult' ? $passenger['ticket_id'] : '' }}
                             </td>
                             <td>
-                                {{ $passenger['name'] }}
-                                @if ($passenger['type'] === 'child' && isset($passenger['parent_name']))
-                                    <div class="child-info">
-                                        Viaja con: {{ $passenger['parent_name'] }}
-                                    </div>
-                                @endif
-                                @if ($passenger['type'] === 'pet' && isset($passenger['parent_name']))
-                                    <div class="child-info">
-                                        Mascota de: {{ $passenger['parent_name'] }}
-                                    </div>
-                                    @if (isset($passenger['pet_count']) && $passenger['pet_count'] > 1)
+                                @if ($passenger['type'] === 'adult')
+                                    {{ $passenger['name'] }}
+                                    @if (filled($passenger['travels_with'] ?? null))
                                         <div class="child-info">
-                                            ({{ $passenger['pet_count'] }} mascotas)
+                                            Viaja con: {{ $passenger['travels_with'] }}
                                         </div>
+                                    @endif
+                                @else
+                                    <span class="companion-tag">{{ $passenger['type'] === 'child' ? 'Menor' : 'Mascota' }}</span>
+                                    {{ $passenger['name'] }}
+                                    @if ($passenger['type'] === 'pet' && ($passenger['pet_count'] ?? 0) > 1)
+                                        ({{ $passenger['pet_count'] }} mascotas)
                                     @endif
                                 @endif
                             </td>
 
-                            <td>{{ $passenger['dni'] == 'N/A' ? '-' : $passenger['dni'] }}</td>
+                            <td>{{ $blank($passenger['dni']) ? '—' : $passenger['dni'] }}</td>
 
-                            <td>{{ $passenger['phone'] == 'N/A' ? '-' : $passenger['phone'] }}</td>
+                            @if ($showPhone)
+                                <td>{{ $blank($passenger['phone']) ? '—' : $passenger['phone'] }}</td>
+                            @endif
 
                             <td style="text-align: center;">
                                 @if ($passenger['type'] === 'pet')
@@ -320,13 +394,30 @@
                             </td>
 
                             <td style="text-align: center;">
-                                <span class="badge badge-location">{{ $passenger['origin'] }}</span>
+                                @if ($passenger['type'] === 'adult')
+                                    <span class="badge badge-location">{{ $passenger['origin'] }}</span>
+                                @endif
                             </td>
 
                             <td style="text-align: center;">
-                                <span class="badge badge-location">{{ $passenger['destination'] }}</span>
+                                @if ($passenger['type'] === 'adult')
+                                    <span class="badge badge-location">{{ $passenger['destination'] }}</span>
+                                @endif
                             </td>
+
+                            {{-- Solo en la fila del adulto; el menor y la mascota quedan vacíos.
+                                 Recuadro redondeado como en el detalle del boleto. --}}
+                            @if ($showObservation)
+                                @if ($passenger['type'] === 'adult' && filled($passenger['observation'] ?? null))
+                                    <td><div class="observation">{{ $passenger['observation'] }}</div></td>
+                                @elseif ($passenger['type'] === 'adult')
+                                    <td class="observation-empty">-</td>
+                                @else
+                                    <td></td>
+                                @endif
+                            @endif
                         </tr>
+                    @endforeach
                     @endforeach
                 </tbody>
             </table>

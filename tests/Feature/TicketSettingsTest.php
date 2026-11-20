@@ -44,6 +44,22 @@ class TicketSettingsTest extends TestCase
             'password' => bcrypt('secreto123'),
             'is_admin' => true,
         ]);
+
+        // El admin de estos tests configura Calendario y Seguridad; los casos
+        // sin esos permisos usan adminWithoutTabPermissions().
+        Permissions::syncToDatabase();
+        $this->admin->givePermissionTo([TicketSettings::CALENDAR_PERMISSION, TicketSettings::SECURITY_PERMISSION]);
+    }
+
+    /**
+     * Administrador con los permisos por defecto (sin calendario ni seguridad) más los indicados.
+     */
+    private function adminWithoutTabPermissions(string ...$permissions): User
+    {
+        $admin = User::factory()->admin()->create();
+        $admin->givePermissionTo($permissions);
+
+        return $admin->refresh();
     }
 
     protected function tearDown(): void
@@ -473,6 +489,125 @@ class TicketSettingsTest extends TestCase
         $this->assertDatabaseMissing('settings', ['key' => Setting::PANEL_CLIENTES_ACTIVO]);
     }
 
+    // ====================== Anticipación mínima de los clientes ======================
+
+    public function test_la_anticipacion_muestra_24_horas_por_defecto(): void
+    {
+        $this->actingAs(User::factory()->superAdmin()->create());
+        Setting::set(Setting::PANEL_CLIENTES_ACTIVO, '1');
+
+        Livewire::test(TicketSettings::class)
+            ->assertSet('data.client_advance_notice_hours', 24)
+            ->assertSee('Anticipación mínima para elegir fecha');
+    }
+
+    public function test_la_anticipacion_se_guarda_incluido_cero(): void
+    {
+        $this->actingAs(User::factory()->superAdmin()->create());
+        Setting::set(Setting::PANEL_CLIENTES_ACTIVO, '1');
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.client_advance_notice_hours', 48)
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $this->assertSame(48, Setting::clientAdvanceNoticeHours());
+
+        Livewire::test(TicketSettings::class)
+            ->assertSet('data.client_advance_notice_hours', 48)
+            ->set('data.client_advance_notice_hours', 0)
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $this->assertSame(0, Setting::clientAdvanceNoticeHours());
+        $this->assertFalse(\App\Support\ClientAdvanceNotice::enabled());
+    }
+
+    /**
+     * @return array<string, array{0: mixed, 1: string}>
+     */
+    public static function invalidAdvanceNoticeValues(): array
+    {
+        return [
+            'texto' => ['abc', 'numeric'],
+            'decimal' => [1.5, 'integer'],
+            'negativo' => [-1, 'min'],
+            'mayor al máximo' => [721, 'max'],
+            'vacío' => [null, 'required'],
+        ];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('invalidAdvanceNoticeValues')]
+    public function test_la_anticipacion_rechaza_valores_invalidos(mixed $value, string $rule): void
+    {
+        $this->actingAs(User::factory()->superAdmin()->create());
+        Setting::set(Setting::PANEL_CLIENTES_ACTIVO, '1');
+        Setting::set(Setting::CLIENT_ADVANCE_NOTICE_HOURS, '48');
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.client_advance_notice_hours', $value)
+            ->call('save')
+            ->assertHasFormErrors(['client_advance_notice_hours' => $rule]);
+
+        $this->assertSame(48, Setting::clientAdvanceNoticeHours(), 'Un valor inválido no se guarda.');
+    }
+
+    public function test_el_error_de_la_anticipacion_esta_en_voseo(): void
+    {
+        $this->actingAs(User::factory()->superAdmin()->create());
+        Setting::set(Setting::PANEL_CLIENTES_ACTIVO, '1');
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.client_advance_notice_hours', null)
+            ->call('save')
+            ->assertSee('Ingresá la cantidad de horas.');
+    }
+
+    public function test_la_anticipacion_no_se_ve_con_el_panel_apagado_y_aparece_al_encenderlo(): void
+    {
+        $this->actingAs(User::factory()->superAdmin()->create());
+
+        Livewire::test(TicketSettings::class)
+            ->assertSet('data.panel_clientes_activo', false)
+            ->assertDontSee('Anticipación mínima para elegir fecha')
+            ->set('data.panel_clientes_activo', true)
+            ->assertSee('Anticipación mínima para elegir fecha');
+    }
+
+    public function test_guardar_con_el_campo_oculto_conserva_el_valor_y_no_lo_valida(): void
+    {
+        $this->actingAs(User::factory()->superAdmin()->create());
+        Setting::set(Setting::CLIENT_ADVANCE_NOTICE_HOURS, '48');
+
+        // Panel apagado: el campo no se muestra, ni se exige ni se pisa.
+        Livewire::test(TicketSettings::class)
+            ->set('data.panel_clientes_activo', false)
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $this->assertSame(48, Setting::clientAdvanceNoticeHours());
+    }
+
+    public function test_sin_el_permiso_un_pedido_manipulado_no_cambia_la_anticipacion(): void
+    {
+        $this->actingAs($this->admin);
+        Setting::set(Setting::CLIENT_ADVANCE_NOTICE_HOURS, '48');
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.panel_clientes_activo', true)
+            ->set('data.client_advance_notice_hours', 2)
+            ->set('data.require_password_ticket_delete', true)
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertSame(48, Setting::clientAdvanceNoticeHours());
+    }
+
+    public function test_la_anticipacion_pertenece_a_la_pestana_clientes(): void
+    {
+        $this->assertContains('client_advance_notice_hours', TicketSettings::TAB_FIELDS['Clientes']);
+    }
+
     // ====================== Apariencia ======================
 
     private function adminWithPermissions(string ...$permissions): User
@@ -653,6 +788,455 @@ class TicketSettingsTest extends TestCase
         $this->assertDatabaseMissing('settings', ['key' => Setting::SELECTORES_DETALLADOS]);
     }
 
+    // ====================== Observaciones de la venta ======================
+
+    public function test_las_observaciones_estan_apagadas_por_defecto(): void
+    {
+        $this->assertFalse(Setting::observacionesActivas());
+
+        Setting::set(Setting::OBSERVACIONES_VENTA, '1');
+        $this->assertTrue(Setting::observacionesActivas());
+    }
+
+    public function test_con_el_permiso_se_ve_la_seccion_de_observaciones_apagada_en_venta(): void
+    {
+        $this->actingAs($this->adminWithPermissions(TicketSettings::SALE_OBSERVATIONS_PERMISSION));
+
+        $component = Livewire::test(TicketSettings::class)
+            ->assertSet('data.observaciones_activas', false)
+            ->assertSee('Observaciones en la venta')
+            ->assertSee('Venta con acompañante');
+
+        // Es una sección de Venta, no una pestaña nueva.
+        $this->assertSame(
+            ['Venta', 'Boleto', 'Calendario', 'Seguridad'],
+            array_keys($this->tabBadges($component)),
+        );
+        $this->assertContains('observaciones_activas', TicketSettings::TAB_FIELDS['Venta']);
+    }
+
+    public function test_sin_el_permiso_no_se_ve_la_seccion_de_observaciones(): void
+    {
+        $this->actingAs($this->admin);
+
+        $this->assertFalse($this->admin->can(TicketSettings::SALE_OBSERVATIONS_PERMISSION));
+
+        Livewire::test(TicketSettings::class)
+            ->assertDontSee('Observaciones en la venta');
+    }
+
+    public function test_con_el_permiso_se_prenden_y_apagan_las_observaciones(): void
+    {
+        $this->actingAs($this->adminWithPermissions(TicketSettings::SALE_OBSERVATIONS_PERMISSION));
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.observaciones_activas', true)
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertTrue(Setting::observacionesActivas());
+
+        Livewire::test(TicketSettings::class)
+            ->assertSet('data.observaciones_activas', true)
+            ->set('data.observaciones_activas', false)
+            ->call('save');
+
+        $this->assertFalse(Setting::observacionesActivas());
+    }
+
+    public function test_sin_el_permiso_un_pedido_manipulado_no_cambia_las_observaciones(): void
+    {
+        $this->actingAs($this->admin);
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.observaciones_activas', true)
+            ->set('data.require_password_ticket_delete', true)
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertTrue(Setting::getBool(Setting::REQUIRE_PASSWORD_TICKET_DELETE));
+        $this->assertFalse(Setting::observacionesActivas());
+        $this->assertDatabaseMissing('settings', ['key' => Setting::OBSERVACIONES_VENTA]);
+    }
+
+    // ====================== Precio fijo de los boletos ======================
+
+    private function fixedPriceAdmin(): User
+    {
+        return $this->adminWithPermissions(TicketSettings::FIXED_PRICE_PERMISSION);
+    }
+
+    public function test_con_el_permiso_se_ve_la_seccion_de_precio_fijo_apagada_y_sin_montos(): void
+    {
+        $this->actingAs($this->fixedPriceAdmin());
+
+        $component = Livewire::test(TicketSettings::class)
+            ->assertSet('data.precio_fijo_activo', false)
+            ->assertSee('Precio de los boletos')
+            ->assertSee('Precio fijo activo')
+            ->assertDontSee('Seguro para menores');
+
+        $this->assertSame(
+            ['Venta', 'Boleto', 'Calendario', 'Seguridad'],
+            array_keys($this->tabBadges($component)),
+        );
+        $this->assertContains('precio_fijo_activo', TicketSettings::TAB_FIELDS['Venta']);
+        $this->assertContains('precio_fijo_boleto', TicketSettings::TAB_FIELDS['Venta']);
+        $this->assertContains('precio_fijo_seguro_menor', TicketSettings::TAB_FIELDS['Venta']);
+    }
+
+    public function test_sin_el_permiso_no_se_ve_la_seccion_de_precio_fijo(): void
+    {
+        $this->actingAs($this->admin);
+
+        $this->assertFalse($this->admin->can(TicketSettings::FIXED_PRICE_PERMISSION));
+
+        Livewire::test(TicketSettings::class)
+            ->assertDontSee('Precio de los boletos')
+            ->assertDontSee('Precio fijo activo');
+    }
+
+    public function test_con_el_permiso_se_prende_el_precio_fijo_con_sus_montos(): void
+    {
+        $this->actingAs($this->fixedPriceAdmin());
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.precio_fijo_activo', true)
+            ->assertSee('Seguro para menores')
+            ->assertSet('data.precio_fijo_boleto', null)
+            ->set('data.precio_fijo_boleto', '5000')
+            ->set('data.precio_fijo_seguro_menor', '800')
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertTrue(Setting::precioFijoActivo());
+        $this->assertSame(5000, Setting::precioFijoBoleto());
+        $this->assertSame(800, Setting::precioFijoSeguroMenor());
+    }
+
+    public function test_apagar_el_precio_fijo_conserva_los_montos(): void
+    {
+        Setting::set(Setting::PRECIO_FIJO_ACTIVO, '1');
+        Setting::set(Setting::PRECIO_FIJO_BOLETO, '5000');
+        Setting::set(Setting::PRECIO_FIJO_SEGURO_MENOR, '800');
+        $this->actingAs($this->fixedPriceAdmin());
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.precio_fijo_activo', false)
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertFalse(Setting::precioFijoActivo());
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.precio_fijo_activo', true)
+            ->assertSet('data.precio_fijo_boleto', 5000)
+            ->assertSet('data.precio_fijo_seguro_menor', 800);
+    }
+
+    public function test_prender_el_precio_fijo_sin_montos_no_guarda_nada(): void
+    {
+        $this->actingAs($this->fixedPriceAdmin());
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.venta_limite_horas', 8)
+            ->set('data.precio_fijo_activo', true)
+            ->call('save')
+            ->assertHasErrors([
+                'data.precio_fijo_boleto' => 'Ingresá el precio del boleto.',
+                'data.precio_fijo_seguro_menor' => 'Ingresá el seguro para menores.',
+            ]);
+
+        $this->assertFalse(Setting::precioFijoActivo());
+        $this->assertSame(Setting::VENTA_LIMITE_HORAS_DEFAULT, Setting::ventaLimiteHoras());
+    }
+
+    /**
+     * @return array<string, array{string, string, string, string}>
+     */
+    public static function invalidFixedPriceAmounts(): array
+    {
+        return [
+            'precio en cero' => ['precio_fijo_boleto', '0', '800', 'El monto tiene que ser de al menos $1.'],
+            'precio con centavos' => ['precio_fijo_boleto', '5000.50', '800', 'El monto tiene que ser un número entero, sin centavos.'],
+            'seguro fuera de rango' => ['precio_fijo_seguro_menor', '5000', '1000000', 'El monto no puede ser mayor a $999.999.'],
+            'seguro negativo' => ['precio_fijo_seguro_menor', '5000', '-1', 'El monto no puede ser negativo.'],
+        ];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('invalidFixedPriceAmounts')]
+    public function test_los_montos_invalidos_del_precio_fijo_no_se_guardan(string $field, string $price, string $insurance, string $message): void
+    {
+        $this->actingAs($this->fixedPriceAdmin());
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.precio_fijo_activo', true)
+            ->set('data.precio_fijo_boleto', $price)
+            ->set('data.precio_fijo_seguro_menor', $insurance)
+            ->call('save')
+            ->assertHasErrors(["data.{$field}" => $message]);
+
+        $this->assertFalse(Setting::precioFijoActivo());
+        $this->assertDatabaseMissing('settings', ['key' => Setting::PRECIO_FIJO_BOLETO]);
+    }
+
+    public function test_el_seguro_en_cero_se_guarda(): void
+    {
+        $this->actingAs($this->fixedPriceAdmin());
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.precio_fijo_activo', true)
+            ->set('data.precio_fijo_boleto', '5000')
+            ->set('data.precio_fijo_seguro_menor', '0')
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertTrue(Setting::precioFijoActivo());
+        $this->assertSame(0, Setting::precioFijoSeguroMenor());
+    }
+
+    public function test_sin_el_permiso_guardar_conserva_el_precio_fijo(): void
+    {
+        Setting::set(Setting::PRECIO_FIJO_ACTIVO, '1');
+        Setting::set(Setting::PRECIO_FIJO_BOLETO, '5000');
+        Setting::set(Setting::PRECIO_FIJO_SEGURO_MENOR, '800');
+        $this->actingAs($this->admin);
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.venta_limite_horas', 8)
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertSame(8, Setting::ventaLimiteHoras());
+        $this->assertTrue(Setting::precioFijoActivo());
+        $this->assertSame(5000, Setting::precioFijoBoleto());
+        $this->assertSame(800, Setting::precioFijoSeguroMenor());
+    }
+
+    public function test_sin_el_permiso_un_pedido_manipulado_no_cambia_el_precio_fijo(): void
+    {
+        $this->actingAs($this->admin);
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.precio_fijo_activo', true)
+            ->set('data.precio_fijo_boleto', '1')
+            ->set('data.require_password_ticket_delete', true)
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertTrue(Setting::getBool(Setting::REQUIRE_PASSWORD_TICKET_DELETE));
+        $this->assertFalse(Setting::precioFijoActivo());
+        $this->assertDatabaseMissing('settings', ['key' => Setting::PRECIO_FIJO_ACTIVO]);
+        $this->assertDatabaseMissing('settings', ['key' => Setting::PRECIO_FIJO_BOLETO]);
+    }
+
+    // ====================== Pasajeros por venta ======================
+
+    private function passengerLimitAdmin(string ...$extraPermissions): User
+    {
+        return $this->adminWithPermissions(TicketSettings::PASSENGER_LIMIT_PERMISSION, ...$extraPermissions);
+    }
+
+    public function test_el_limite_de_pasajeros_sin_configurar_es_4_y_se_acota_entre_1_y_8(): void
+    {
+        $this->assertSame(4, Setting::limitePasajerosVenta());
+
+        Setting::set(Setting::LIMITE_PASAJEROS_VENTA, '6');
+        $this->assertSame(6, Setting::limitePasajerosVenta());
+
+        Setting::set(Setting::LIMITE_PASAJEROS_VENTA, '0');
+        $this->assertSame(1, Setting::limitePasajerosVenta());
+
+        Setting::set(Setting::LIMITE_PASAJEROS_VENTA, '50');
+        $this->assertSame(8, Setting::limitePasajerosVenta());
+
+        Setting::set(Setting::LIMITE_PASAJEROS_VENTA, 'muchos');
+        $this->assertSame(4, Setting::limitePasajerosVenta());
+    }
+
+    public function test_con_el_permiso_se_ve_la_seccion_de_pasajeros_por_venta_con_4(): void
+    {
+        $this->actingAs($this->passengerLimitAdmin());
+
+        Livewire::test(TicketSettings::class)
+            ->assertSet('data.limite_pasajeros_venta', 4)
+            ->assertSee('Pasajeros por venta')
+            ->assertSee('Máximo de pasajeros por venta');
+
+        $this->assertContains('limite_pasajeros_venta', TicketSettings::TAB_FIELDS['Venta']);
+    }
+
+    public function test_pasajeros_por_venta_va_despues_de_venta_fuera_de_termino_y_antes_del_precio_fijo(): void
+    {
+        $this->actingAs($this->passengerLimitAdmin(TicketSettings::FIXED_PRICE_PERMISSION));
+
+        Livewire::test(TicketSettings::class)
+            ->assertSeeInOrder(['Venta fuera de término', 'Pasajeros por venta', 'Precio de los boletos']);
+    }
+
+    public function test_sin_el_permiso_no_se_ve_la_seccion_de_pasajeros_por_venta(): void
+    {
+        $this->actingAs($this->admin);
+
+        $this->assertFalse($this->admin->can(TicketSettings::PASSENGER_LIMIT_PERMISSION));
+
+        Livewire::test(TicketSettings::class)
+            ->assertDontSee('Pasajeros por venta')
+            ->assertDontSee('Máximo de pasajeros por venta');
+    }
+
+    public function test_con_el_permiso_se_cambia_el_limite_de_pasajeros(): void
+    {
+        $this->actingAs($this->passengerLimitAdmin());
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.limite_pasajeros_venta', '6')
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertSame(6, Setting::limitePasajerosVenta());
+    }
+
+    /**
+     * @return array<string, array{string, string}>
+     */
+    public static function invalidPassengerLimits(): array
+    {
+        return [
+            'cero' => ['0', 'La cantidad de pasajeros tiene que ser de al menos 1.'],
+            'mayor al tope' => ['9', 'La cantidad de pasajeros no puede ser mayor a 8.'],
+            'con decimales' => ['2.5', 'La cantidad de pasajeros tiene que ser un número entero.'],
+            'vacío' => ['', 'Ingresá la cantidad de pasajeros.'],
+        ];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('invalidPassengerLimits')]
+    public function test_un_limite_de_pasajeros_invalido_no_guarda_nada(string $value, string $message): void
+    {
+        $this->actingAs($this->passengerLimitAdmin());
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.venta_limite_horas', 8)
+            ->set('data.limite_pasajeros_venta', $value)
+            ->call('save')
+            ->assertHasErrors(['data.limite_pasajeros_venta' => $message]);
+
+        $this->assertDatabaseMissing('settings', ['key' => Setting::LIMITE_PASAJEROS_VENTA]);
+        $this->assertSame(Setting::VENTA_LIMITE_HORAS_DEFAULT, Setting::ventaLimiteHoras());
+    }
+
+    public function test_sin_el_permiso_guardar_conserva_el_limite_de_pasajeros(): void
+    {
+        Setting::set(Setting::LIMITE_PASAJEROS_VENTA, '6');
+        $this->actingAs($this->admin);
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.venta_limite_horas', 8)
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertSame(8, Setting::ventaLimiteHoras());
+        $this->assertSame(6, Setting::limitePasajerosVenta());
+    }
+
+    public function test_sin_el_permiso_un_pedido_manipulado_no_cambia_el_limite_de_pasajeros(): void
+    {
+        $this->actingAs($this->admin);
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.limite_pasajeros_venta', '8')
+            ->set('data.require_password_ticket_delete', true)
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertTrue(Setting::getBool(Setting::REQUIRE_PASSWORD_TICKET_DELETE));
+        $this->assertSame(4, Setting::limitePasajerosVenta());
+        $this->assertDatabaseMissing('settings', ['key' => Setting::LIMITE_PASAJEROS_VENTA]);
+    }
+
+    // ====================== Emisión al finalizar la venta ======================
+
+    public function test_con_el_permiso_de_emision_la_pestana_boleto_muestra_emision_y_contacto(): void
+    {
+        $this->actingAs($this->adminWithPermissions(TicketSettings::TICKET_EMISSION_PERMISSION));
+
+        Livewire::test(TicketSettings::class)
+            ->assertSee('Emisión al finalizar la venta')
+            ->assertSee('Descargar PDF automáticamente al vender')
+            ->assertSee('Líneas de contacto');
+    }
+
+    public function test_sin_el_permiso_de_emision_la_pestana_boleto_muestra_solo_contacto(): void
+    {
+        $this->actingAs($this->admin);
+
+        $this->assertFalse($this->admin->can(TicketSettings::TICKET_EMISSION_PERMISSION));
+
+        $component = Livewire::test(TicketSettings::class)
+            ->assertDontSee('Emisión al finalizar la venta')
+            ->assertDontSee('Descargar PDF automáticamente al vender')
+            ->assertDontSee('Texto del mensaje de WhatsApp')
+            ->assertSee('Líneas de contacto');
+
+        $this->assertArrayHasKey('Boleto', $this->tabBadges($component));
+    }
+
+    public function test_con_el_permiso_de_emision_se_guardan_la_descarga_y_el_mensaje(): void
+    {
+        $this->actingAs($this->adminWithPermissions(TicketSettings::TICKET_EMISSION_PERMISSION));
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.descarga_automatica_pdf', false)
+            ->set('data.whatsapp_mensaje', 'Tu pasaje: {link}')
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        Setting::flushCache();
+
+        $this->assertFalse(Setting::descargaAutomaticaPdf());
+        $this->assertSame('Tu pasaje: {link}', Setting::whatsappMensaje());
+    }
+
+    public function test_sin_el_permiso_de_emision_guardar_conserva_la_emision_por_link(): void
+    {
+        $this->actingAs($this->admin);
+
+        Setting::set(Setting::DESCARGA_AUTOMATICA_PDF, '0');
+        Setting::set(Setting::WHATSAPP_MENSAJE, 'Tu pasaje: {link}');
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.venta_limite_horas', 8)
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        Setting::flushCache();
+
+        $this->assertSame(8, Setting::ventaLimiteHoras());
+        $this->assertFalse(Setting::descargaAutomaticaPdf());
+        $this->assertSame('Tu pasaje: {link}', Setting::whatsappMensaje());
+    }
+
+    public function test_sin_el_permiso_de_emision_un_pedido_manipulado_no_cambia_la_emision(): void
+    {
+        $this->actingAs($this->admin);
+
+        Setting::set(Setting::DESCARGA_AUTOMATICA_PDF, '0');
+        Setting::set(Setting::WHATSAPP_MENSAJE, 'Tu pasaje: {link}');
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.descarga_automatica_pdf', true)
+            ->set('data.whatsapp_mensaje', 'Otro: {link}')
+            ->set('data.require_password_ticket_delete', true)
+            ->call('save')
+            ->assertHasNoErrors();
+
+        Setting::flushCache();
+
+        $this->assertTrue(Setting::getBool(Setting::REQUIRE_PASSWORD_TICKET_DELETE));
+        $this->assertFalse(Setting::descargaAutomaticaPdf());
+        $this->assertSame('Tu pasaje: {link}', Setting::whatsappMensaje());
+    }
+
     private function tabBadges(Testable $component): array
     {
         $tabs = collect($component->instance()->form->getFlatComponents())
@@ -784,7 +1368,7 @@ class TicketSettingsTest extends TestCase
 
     public function test_el_mensaje_de_whatsapp_sin_link_se_rechaza(): void
     {
-        $this->actingAs($this->admin);
+        $this->actingAs($this->adminWithPermissions(TicketSettings::TICKET_EMISSION_PERMISSION));
 
         Livewire::test(TicketSettings::class)
             ->set('data.descarga_automatica_pdf', false)
@@ -798,7 +1382,7 @@ class TicketSettingsTest extends TestCase
 
     public function test_el_mensaje_de_whatsapp_demasiado_largo_se_rechaza(): void
     {
-        $this->actingAs($this->admin);
+        $this->actingAs($this->adminWithPermissions(TicketSettings::TICKET_EMISSION_PERMISSION));
 
         Livewire::test(TicketSettings::class)
             ->set('data.descarga_automatica_pdf', false)
@@ -809,7 +1393,7 @@ class TicketSettingsTest extends TestCase
 
     public function test_el_mensaje_de_whatsapp_vacio_usa_el_texto_por_defecto(): void
     {
-        $this->actingAs($this->admin);
+        $this->actingAs($this->adminWithPermissions(TicketSettings::TICKET_EMISSION_PERMISSION));
 
         Setting::set(Setting::WHATSAPP_MENSAJE, 'Tu pasaje: {link}');
 
@@ -822,11 +1406,12 @@ class TicketSettingsTest extends TestCase
         Setting::flushCache();
 
         $this->assertSame(Setting::WHATSAPP_MENSAJE_DEFAULT, Setting::whatsappMensaje());
+        $this->assertSame('Podés acceder a tu(s) boleto(s) desde aquí: {link}', Setting::whatsappMensaje());
     }
 
     public function test_el_mensaje_de_whatsapp_oculto_no_se_pierde_al_guardar(): void
     {
-        $this->actingAs($this->admin);
+        $this->actingAs($this->adminWithPermissions(TicketSettings::TICKET_EMISSION_PERMISSION));
 
         Setting::set(Setting::DESCARGA_AUTOMATICA_PDF, '0');
         Setting::set(Setting::WHATSAPP_MENSAJE, 'Tu pasaje: {link}');
@@ -1156,5 +1741,201 @@ class TicketSettingsTest extends TestCase
 
         $component2 = Livewire::test(RescheduleTicket::class, ['record' => $ticket->id]);
         $this->assertStringNotContainsString('Tu contraseña', $component2->html());
+    }
+
+    // ====================== Permisos de Calendario y Seguridad ======================
+
+    public function test_sin_los_permisos_de_pestanas_solo_se_ven_venta_y_boleto(): void
+    {
+        $this->actingAs($this->adminWithoutTabPermissions());
+
+        $component = Livewire::test(TicketSettings::class)
+            ->assertDontSee('Confirmación de contraseña')
+            ->assertDontSee('Días de la semana con servicio');
+
+        $this->assertSame(['Venta', 'Boleto'], array_keys($this->tabBadges($component)));
+    }
+
+    public function test_con_un_solo_permiso_de_pestana_se_ve_solo_esa(): void
+    {
+        $this->actingAs($this->adminWithoutTabPermissions(TicketSettings::SECURITY_PERMISSION));
+
+        $component = Livewire::test(TicketSettings::class)
+            ->assertSee('Confirmación de contraseña')
+            ->assertDontSee('Días de la semana con servicio');
+
+        $this->assertSame(['Venta', 'Boleto', 'Seguridad'], array_keys($this->tabBadges($component)));
+    }
+
+    public function test_sin_calendario_ni_seguridad_clientes_y_apariencia_siguen_en_orden(): void
+    {
+        $this->actingAs($this->adminWithoutTabPermissions(TicketSettings::APPEARANCE_PERMISSION));
+
+        $this->assertSame(
+            ['Venta', 'Boleto', 'Apariencia'],
+            array_keys($this->tabBadges(Livewire::test(TicketSettings::class))),
+        );
+
+        $this->actingAs($this->adminWithoutTabPermissions(
+            TicketSettings::CLIENT_PANEL_PERMISSION,
+            TicketSettings::APPEARANCE_PERMISSION,
+        ));
+
+        $this->assertSame(
+            ['Venta', 'Boleto', 'Clientes', 'Apariencia'],
+            array_keys($this->tabBadges(Livewire::test(TicketSettings::class))),
+        );
+    }
+
+    public function test_con_todos_los_permisos_se_ven_todas_las_pestanas_en_orden(): void
+    {
+        $this->actingAs($this->adminWithoutTabPermissions(
+            TicketSettings::CALENDAR_PERMISSION,
+            TicketSettings::SECURITY_PERMISSION,
+            TicketSettings::CLIENT_PANEL_PERMISSION,
+            TicketSettings::APPEARANCE_PERMISSION,
+        ));
+
+        $this->assertSame(
+            ['Venta', 'Boleto', 'Calendario', 'Seguridad', 'Clientes', 'Apariencia'],
+            array_keys($this->tabBadges(Livewire::test(TicketSettings::class))),
+        );
+    }
+
+    public function test_sin_el_permiso_de_calendario_guardar_conserva_el_calendario(): void
+    {
+        Carbon::setTestNow('2026-11-04');
+        Setting::set(Setting::SERVICE_WEEKDAYS, json_encode([1, 2, 3, 4, 5]));
+        Setting::set(Setting::SERVICE_EXCEPTIONS, json_encode([
+            ['date' => '2026-12-25', 'has_service' => false, 'reason' => 'Navidad'],
+        ]));
+
+        $this->actingAs($this->adminWithoutTabPermissions());
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.venta_limite_horas', 8)
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        Setting::flushCache();
+
+        $this->assertSame(8, Setting::getInt(Setting::VENTA_LIMITE_HORAS));
+        $this->assertSame([1, 2, 3, 4, 5], Setting::serviceWeekdays());
+        $this->assertSame([
+            ['date' => '2026-12-25', 'has_service' => false, 'reason' => 'Navidad'],
+        ], Setting::serviceExceptions());
+    }
+
+    public function test_sin_el_permiso_de_calendario_un_pedido_manipulado_no_cambia_el_calendario(): void
+    {
+        Carbon::setTestNow('2026-11-04');
+        Setting::set(Setting::SERVICE_WEEKDAYS, json_encode([1, 2, 3, 4, 5]));
+        $storedExceptions = Setting::serviceExceptions();
+
+        $this->actingAs($this->adminWithoutTabPermissions());
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.venta_limite_horas', 8)
+            ->set('data.service_weekdays', ['7'])
+            ->set('data.service_exceptions', [
+                'a' => ['date' => '2026-12-25', 'has_service' => '0', 'reason' => 'Navidad'],
+            ])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        Setting::flushCache();
+
+        $this->assertSame(8, Setting::getInt(Setting::VENTA_LIMITE_HORAS));
+        $this->assertSame([1, 2, 3, 4, 5], Setting::serviceWeekdays());
+        $this->assertSame($storedExceptions, Setting::serviceExceptions());
+        $this->assertNull(\App\Support\ServiceDays::exceptionFor('2026-12-25'));
+    }
+
+    public function test_sin_el_permiso_de_calendario_las_excepciones_vencidas_no_se_quitan_ni_se_avisan(): void
+    {
+        Carbon::setTestNow('2026-11-04');
+        Setting::set(Setting::SERVICE_EXCEPTIONS, json_encode([
+            ['date' => '2026-09-13', 'has_service' => true, 'reason' => null],
+        ]));
+
+        $this->actingAs($this->adminWithoutTabPermissions());
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.venta_limite_horas', 6)
+            ->call('save')
+            ->assertHasNoFormErrors()
+            ->assertNotified(
+                \Filament\Notifications\Notification::make()
+                    ->title('Configuración guardada')
+                    ->body('Los cambios se aplicaron correctamente.')
+                    ->success(),
+            );
+
+        Setting::flushCache();
+
+        $this->assertSame([
+            ['date' => '2026-09-13', 'has_service' => true, 'reason' => null],
+        ], Setting::serviceExceptions());
+    }
+
+    public function test_sin_el_permiso_de_seguridad_guardar_conserva_la_confirmacion(): void
+    {
+        Setting::set(Setting::REQUIRE_PASSWORD_TICKET_DELETE, '1');
+
+        $this->actingAs($this->adminWithoutTabPermissions());
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.venta_limite_horas', 8)
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        Setting::flushCache();
+
+        $this->assertSame(8, Setting::getInt(Setting::VENTA_LIMITE_HORAS));
+        $this->assertTrue(Setting::getBool(Setting::REQUIRE_PASSWORD_TICKET_DELETE));
+    }
+
+    public function test_sin_el_permiso_de_seguridad_un_pedido_manipulado_no_cambia_la_confirmacion(): void
+    {
+        Setting::set(Setting::REQUIRE_PASSWORD_TICKET_DELETE, '1');
+        Setting::set(Setting::REQUIRE_PASSWORD_TICKET_RESCHEDULE, '1');
+        Setting::set(Setting::REQUIRE_PASSWORD_TICKET_EDIT, '1');
+
+        $this->actingAs($this->adminWithoutTabPermissions());
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.venta_limite_horas', 8)
+            ->set('data.require_password_ticket_delete', false)
+            ->set('data.require_password_ticket_reschedule', false)
+            ->set('data.require_password_ticket_edit', false)
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        Setting::flushCache();
+
+        $this->assertSame(8, Setting::getInt(Setting::VENTA_LIMITE_HORAS));
+        $this->assertTrue(Setting::getBool(Setting::REQUIRE_PASSWORD_TICKET_DELETE));
+        $this->assertTrue(Setting::getBool(Setting::REQUIRE_PASSWORD_TICKET_RESCHEDULE));
+        $this->assertTrue(Setting::getBool(Setting::REQUIRE_PASSWORD_TICKET_EDIT));
+    }
+
+    public function test_la_pestana_calendario_oculta_no_aporta_errores(): void
+    {
+        $this->actingAs($this->adminWithoutTabPermissions());
+
+        $component = Livewire::test(TicketSettings::class)
+            ->set('data.contact_lines', ['a' => ['name' => 'Orán', 'phone' => 'llamar al 3878']])
+            ->set('data.service_weekdays', [])
+            ->call('save')
+            ->assertHasFormErrors(['contact_lines.a.phone'])
+            ->assertHasNoFormErrors(['service_weekdays'])
+            ->assertNotified(
+                \Filament\Notifications\Notification::make()
+                    ->title('No se guardaron los cambios')
+                    ->body('Revisá los campos marcados en Boleto.')
+                    ->danger(),
+            );
+
+        $this->assertSame(['Venta' => null, 'Boleto' => 1], $this->tabBadges($component));
     }
 }

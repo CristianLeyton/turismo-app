@@ -79,7 +79,10 @@ final class Permissions
             ],
             'sales' => [
                 'label' => 'Ventas',
-                'actions' => self::standardActions(),
+                'actions' => [
+                    ...self::standardActions(),
+                    'view_own' => 'Ver mis ventas',
+                ],
             ],
             'trips' => [
                 'label' => 'Viajes',
@@ -122,6 +125,12 @@ final class Permissions
                     'client_panel' => 'Activar/desactivar panel de clientes',
                     'appearance' => 'Cambiar apariencia',
                     'sale_selectors' => 'Configurar selectores de origen y destino',
+                    'sale_observations' => 'Activar/desactivar observaciones',
+                    'ticket_emission' => 'Configurar emisión al finalizar la venta',
+                    'fixed_price' => 'Configurar precio fijo de los boletos',
+                    'passenger_limit' => 'Configurar límite de pasajeros por venta',
+                    'calendar' => 'Configurar calendario de servicio',
+                    'security' => 'Configurar confirmación de contraseña',
                 ],
             ],
             'buses' => [
@@ -173,6 +182,15 @@ final class Permissions
         ];
     }
 
+    /** Permisos CRUD estándar de un módulo, sin `force_delete`. @return list<string> */
+    private static function standardActionsWithoutForceDelete(string $module): array
+    {
+        return array_values(array_map(
+            fn (string $action): string => self::permissionName($module, $action),
+            array_diff(array_keys(self::standardActions()), ['force_delete']),
+        ));
+    }
+
     /** Lista plana de todos los nombres de permisos del catálogo. @return list<string> */
     public static function all(): array
     {
@@ -219,23 +237,14 @@ final class Permissions
                 // edición es un permiso "por bandera": nadie lo trae por
                 // defecto, se otorga a mano desde la matriz de la UI.
                 'tickets.view_any', 'tickets.view', 'tickets.create', 'tickets.reschedule',
-                'tickets.delete', 'tickets.restore', 'tickets.force_delete',
-                // Clientes: acceso completo (incluido banear).
-                'clients.view_any', 'clients.view', 'clients.create', 'clients.update',
-                'clients.ban', 'clients.reset_password',
-                'clients.delete', 'clients.restore', 'clients.force_delete',
-                // Ventas y viajes (hoy sin policy: todos accedían).
-                ...array_map(fn (string $a) => "sales.{$a}", array_keys(self::standardActions())),
-                ...array_map(fn (string $a) => "trips.{$a}", array_keys(self::standardActions())),
-                // Pagos (force_delete era exclusivo del superusuario id==1) y
-                // métodos de pago (acceso completo para admins, como antes).
-                ...array_map(
-                    fn (string $a) => "payments.{$a}",
-                    array_diff(array_keys(self::standardActions()), ['force_delete'])
-                ),
-                ...array_map(fn (string $a) => "payment_methods.{$a}", array_keys(self::standardActions())),
-                // Usuarios y roles.
-                ...array_map(fn (string $a) => "users.{$a}", array_keys(self::standardActions())),
+                'tickets.delete', 'tickets.restore',
+                // Clientes: sin acceso por defecto (se habilita desde la matriz).
+                // Nada de force_delete por defecto: sólo el Super Administrador.
+                ...self::standardActionsWithoutForceDelete('sales'),
+                ...self::standardActionsWithoutForceDelete('trips'),
+                ...self::standardActionsWithoutForceDelete('payments'),
+                ...self::standardActionsWithoutForceDelete('payment_methods'),
+                ...self::standardActionsWithoutForceDelete('users'),
                 'roles.view_any', 'roles.view', 'roles.create', 'roles.update', 'roles.delete', 'roles.assign',
                 // Historial y configuración.
                 'ticket_audit.view_any', 'ticket_audit.view',
@@ -244,11 +253,11 @@ final class Permissions
             self::ROLE_SELLER => [
                 // Boletos: ver y vender (no reprogramar ni eliminar).
                 'tickets.view_any', 'tickets.view', 'tickets.create',
-                // Clientes: ver, crear y editar (no eliminar ni banear).
-                'clients.view_any', 'clients.view', 'clients.create', 'clients.update',
-                // Ventas y viajes (hoy sin policy: todos accedían).
-                ...array_map(fn (string $a) => "sales.{$a}", array_keys(self::standardActions())),
-                ...array_map(fn (string $a) => "trips.{$a}", array_keys(self::standardActions())),
+                // Ventas: solo las propias (página "Mis ventas"). El Administrador
+                // no lo trae, así que solo el Super puede asignarlo a otros roles.
+                'sales.view_own',
+                // Clientes y el resto de ventas: sin acceso por defecto (se habilita desde la matriz).
+                ...self::standardActionsWithoutForceDelete('trips'),
             ],
             default => [],
         };

@@ -184,8 +184,7 @@ class TicketDeleteReasonTest extends TestCase
 
         $response->assertOk();
         $response->assertSee('Eliminado');
-        $response->assertSee('Motivo:');
-        $response->assertSee('Doble carga de la venta 42');
+        $response->assertSeeInOrder(['Motivo', 'Doble carga de la venta 42']);
     }
 
     public function test_un_boleto_eliminado_sin_motivo_historico_muestra_guion(): void
@@ -201,7 +200,7 @@ class TicketDeleteReasonTest extends TestCase
         $response = $this->get(TicketAuditResource::getUrl('view', ['record' => $ticket->id]));
 
         $response->assertOk();
-        $response->assertSee('Motivo:');
+        $response->assertSeeInOrder(['Motivo', '—']);
         $response->assertDontSee('Venta duplicada');
     }
 

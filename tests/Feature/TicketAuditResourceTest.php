@@ -3,9 +3,11 @@
 namespace Tests\Feature;
 
 use App\Filament\Resources\TicketAudit\Classes\TicketAuditTable;
+use App\Filament\Resources\TicketAudit\Schemas\TicketAuditDetailSchema;
 use App\Filament\Resources\TicketAudit\TicketAuditResource;
 use App\Filament\Resources\Tickets\TicketResource;
 use App\Models\Bus;
+use App\Models\Clients;
 use App\Models\Location;
 use App\Models\Passenger;
 use App\Models\PaymentMethod;
@@ -14,11 +16,13 @@ use App\Models\RouteStop;
 use App\Models\Sale;
 use App\Models\Schedule;
 use App\Models\Seat;
+use App\Models\Setting;
 use App\Models\Ticket;
 use App\Models\TicketDateChange;
 use App\Models\TicketEdit;
 use App\Models\Trip;
 use App\Models\User;
+use Filament\Actions\ActionGroup;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Livewire\Livewire;
@@ -345,6 +349,310 @@ class TicketAuditResourceTest extends TestCase
         $this->assertEqualsCanonicalizing([$rescheduled->id], $visibleIds());
     }
 
+    /** Reprogramación del boleto hecha por el usuario del panel `$userId`. */
+    private function rescheduleTicket(Ticket $ticket, int $userId, string $date): void
+    {
+        $this->recordDateChange($ticket, $date, [
+            'user_id' => $userId,
+            'actor_type' => TicketDateChange::ACTOR_USER,
+        ]);
+    }
+
+    /**
+     * Reprogramación hecha por un cliente desde su panel (sin usuario), con el
+     * cliente del padrón enlazado salvo que `$linked` sea false.
+     */
+    private function rescheduleTicketAsClient(Ticket $ticket, string $date, bool $linked = true): void
+    {
+        $client = $linked
+            ? Clients::firstOrCreate(
+                ['dni' => $ticket->passenger->dni],
+                ['nombre' => 'Ana', 'apellido' => 'García', 'password' => 'clave-prueba', 'must_change_password' => false],
+            )
+            : null;
+
+        $this->recordDateChange($ticket, $date, [
+            'user_id' => null,
+            'actor_type' => TicketDateChange::ACTOR_CLIENT,
+            'client_id' => $client?->id,
+        ]);
+    }
+
+    /** @param  array<string, mixed>  $actor */
+    private function recordDateChange(Ticket $ticket, string $date, array $actor): void
+    {
+        $fromTripId = $ticket->trip_id;
+        $ticket->update(['trip_id' => $this->createAnotherTripFor($ticket, $date)->id]);
+
+        TicketDateChange::create([
+            'ticket_id' => $ticket->id,
+            'leg' => TicketDateChange::LEG_OUTBOUND,
+            'from_trip_id' => $fromTripId,
+            'to_trip_id' => $ticket->trip_id,
+        ] + $actor);
+    }
+
+    public function test_un_cambio_de_fecha_hecho_por_un_cliente_aparece_en_el_historial(): void
+    {
+        $this->actingAs($this->admin);
+
+        $ticket = $this->createOneWayTicket('2026-10-02');
+        $this->rescheduleTicketAsClient($ticket, '2026-10-06');
+
+        $component = Livewire::test(TicketAuditResource::getPages()['index']->getPage());
+
+        $this->assertSame(
+            [$ticket->id],
+            $component->instance()->getFilteredTableQuery()->pluck('tickets.id')->all(),
+        );
+        $this->assertSame('Reprogramado', TicketAuditDetailSchema::estado($ticket->fresh()->load('dateChanges')));
+    }
+
+    public function test_filtro_realizado_por_separa_clientes_y_vendedores(): void
+    {
+        $this->actingAs($this->admin);
+        Setting::set(Setting::PANEL_CLIENTES_ACTIVO, '1');
+
+        $porCliente = $this->createOneWayTicket('2026-10-02');
+        $this->rescheduleTicketAsClient($porCliente, '2026-10-06');
+
+        $porVendedor = $this->createOneWayTicket('2026-10-03');
+        $this->rescheduleTicket($porVendedor, $this->admin->id, '2026-10-07');
+
+        $editado = $this->createOneWayTicket('2026-10-04');
+        $this->editTicket($editado);
+
+        $eliminado = $this->createOneWayTicket('2026-10-05');
+        $eliminado->delete();
+
+        $component = Livewire::test(TicketAuditResource::getPages()['index']->getPage());
+
+        $visibleIds = fn (): array => $component->instance()
+            ->getFilteredTableQuery()
+            ->pluck('tickets.id')
+            ->all();
+
+        // Sin elegir nada: todo el historial.
+        $this->assertEqualsCanonicalizing(
+            [$porCliente->id, $porVendedor->id, $editado->id, $eliminado->id],
+            $visibleIds(),
+        );
+
+        // "Clientes": sólo lo que asignaron ellos desde su panel.
+        $component->set('tableFilters.actor.value', 'clients');
+        $this->assertSame([$porCliente->id], $visibleIds());
+
+        // "Vendedores": los cambios del personal, de cualquier rol.
+        $component->set('tableFilters.actor.value', 'sellers');
+        $this->assertEqualsCanonicalizing(
+            [$porVendedor->id, $editado->id, $eliminado->id],
+            $visibleIds(),
+        );
+
+        // Volver a "Todos".
+        $component->set('tableFilters.actor.value', null);
+        $this->assertCount(4, $visibleIds());
+    }
+
+    public function test_el_filtro_realizado_por_cuenta_vendedores_de_cualquier_rol(): void
+    {
+        $this->actingAs($this->admin);
+        Setting::set(Setting::PANEL_CLIENTES_ACTIVO, '1');
+
+        $vendedor = User::factory()->vendedor()->create();
+
+        $porVendedor = $this->createOneWayTicket('2026-10-03');
+        $this->rescheduleTicket($porVendedor, $vendedor->id, '2026-10-07');
+
+        $porAdmin = $this->createOneWayTicket('2026-10-04');
+        $this->rescheduleTicket($porAdmin, $this->admin->id, '2026-10-08');
+
+        $component = Livewire::test(TicketAuditResource::getPages()['index']->getPage())
+            ->set('tableFilters.actor.value', 'sellers');
+
+        $this->assertEqualsCanonicalizing(
+            [$porVendedor->id, $porAdmin->id],
+            $component->instance()->getFilteredTableQuery()->pluck('tickets.id')->all(),
+        );
+    }
+
+    public function test_un_boleto_cambiado_por_cliente_y_por_vendedor_sale_en_los_dos_filtros(): void
+    {
+        $this->actingAs($this->admin);
+        Setting::set(Setting::PANEL_CLIENTES_ACTIVO, '1');
+
+        $ticket = $this->createOneWayTicket('2026-10-02');
+        $this->rescheduleTicketAsClient($ticket, '2026-10-06');
+        $this->rescheduleTicket($ticket->fresh(), $this->admin->id, '2026-10-09');
+
+        $component = Livewire::test(TicketAuditResource::getPages()['index']->getPage());
+
+        foreach (['clients', 'sellers'] as $actor) {
+            $component->set('tableFilters.actor.value', $actor);
+
+            $this->assertSame(
+                [$ticket->id],
+                $component->instance()->getFilteredTableQuery()->pluck('tickets.id')->all(),
+                "Filtro {$actor}",
+            );
+        }
+    }
+
+    public function test_un_usuario_borrado_del_todo_cuenta_como_vendedor_y_no_como_cliente(): void
+    {
+        $this->actingAs($this->admin);
+        Setting::set(Setting::PANEL_CLIENTES_ACTIVO, '1');
+
+        $vendedor = User::factory()->vendedor()->create();
+        $ticket = $this->createOneWayTicket('2026-10-02');
+        $this->rescheduleTicket($ticket, $vendedor->id, '2026-10-06');
+
+        $vendedor->forceDelete();
+
+        $component = Livewire::test(TicketAuditResource::getPages()['index']->getPage());
+        $visibleIds = fn (): array => $component->instance()->getFilteredTableQuery()->pluck('tickets.id')->all();
+
+        $component->set('tableFilters.actor.value', 'clients');
+        $this->assertSame([], $visibleIds());
+
+        $component->set('tableFilters.actor.value', 'sellers');
+        $this->assertSame([$ticket->id], $visibleIds());
+    }
+
+    public function test_el_filtro_realizado_por_muestra_su_indicador(): void
+    {
+        $this->actingAs($this->admin);
+        Setting::set(Setting::PANEL_CLIENTES_ACTIVO, '1');
+
+        $component = Livewire::test(TicketAuditResource::getPages()['index']->getPage())
+            ->set('tableFilters.actor.value', 'sellers');
+
+        $labels = array_map(
+            fn ($indicator) => $indicator->getLabel(),
+            $component->instance()->getTable()->getFilter('actor')->getIndicators(),
+        );
+
+        $this->assertSame(['Realizado por: Vendedores'], $labels);
+    }
+
+    public function test_el_filtro_realizado_por_solo_esta_con_el_panel_de_clientes_activo(): void
+    {
+        $this->actingAs($this->admin);
+        $page = TicketAuditResource::getPages()['index']->getPage();
+
+        // Sin configurar: apagado.
+        Livewire::test($page)->assertTableFilterHidden('actor');
+
+        Setting::set(Setting::PANEL_CLIENTES_ACTIVO, '0');
+        Livewire::test($page)->assertTableFilterHidden('actor');
+
+        Setting::set(Setting::PANEL_CLIENTES_ACTIVO, '1');
+        Livewire::test($page)->assertTableFilterVisible('actor');
+    }
+
+    public function test_un_valor_guardado_con_el_panel_apagado_no_filtra_ni_se_anuncia(): void
+    {
+        $this->actingAs($this->admin);
+        $page = TicketAuditResource::getPages()['index']->getPage();
+
+        $porCliente = $this->createOneWayTicket('2026-10-02');
+        $this->rescheduleTicketAsClient($porCliente, '2026-10-06');
+        $porVendedor = $this->createOneWayTicket('2026-10-03');
+        $this->rescheduleTicket($porVendedor, $this->admin->id, '2026-10-07');
+
+        // Elige "Clientes" con el panel encendido: el filtro queda guardado en la sesión.
+        Setting::set(Setting::PANEL_CLIENTES_ACTIVO, '1');
+        $encendido = Livewire::test($page)->set('tableFilters.actor.value', 'clients');
+        $this->assertSame([$porCliente->id], $encendido->instance()->getFilteredTableQuery()->pluck('tickets.id')->all());
+
+        // Se apaga el panel: vuelve al Historial y ve todo, sin ese filtro.
+        Setting::set(Setting::PANEL_CLIENTES_ACTIVO, '0');
+        $apagado = Livewire::test($page);
+
+        $this->assertEqualsCanonicalizing(
+            [$porCliente->id, $porVendedor->id],
+            $apagado->instance()->getFilteredTableQuery()->pluck('tickets.id')->all(),
+        );
+        $this->assertNull($apagado->instance()->getTable()->getFilter('actor'), 'Con el panel apagado el filtro no existe, ni su indicador.');
+
+        // Al encenderlo de nuevo, vuelve a filtrar.
+        Setting::set(Setting::PANEL_CLIENTES_ACTIVO, '1');
+        $this->assertSame(
+            [$porCliente->id],
+            Livewire::test($page)->set('tableFilters.actor.value', 'clients')->instance()->getFilteredTableQuery()->pluck('tickets.id')->all(),
+        );
+    }
+
+    public function test_el_detalle_dice_cliente_con_su_nombre_cuando_lo_hizo_un_cliente(): void
+    {
+        $this->actingAs($this->admin);
+
+        $ticket = $this->createOneWayTicket('2026-10-02');
+        $this->rescheduleTicketAsClient($ticket, '2026-10-06');
+
+        $html = $this->mountedViewHtml($ticket);
+
+        $this->assertStringContainsString('Realizado por:', $html);
+        $this->assertStringContainsString('Cliente Ana García', $html);
+        $this->assertStringNotContainsString('Usuario eliminado del sistema', $html);
+    }
+
+    public function test_el_detalle_dice_solo_cliente_si_no_se_lo_puede_identificar(): void
+    {
+        $this->actingAs($this->admin);
+
+        $ticket = $this->createOneWayTicket('2026-10-02');
+        $this->rescheduleTicketAsClient($ticket, '2026-10-06', linked: false);
+
+        $html = $this->mountedViewHtml($ticket);
+
+        $this->assertStringContainsString('Cliente', $html);
+        $this->assertStringNotContainsString('Cliente Ana', $html);
+        $this->assertStringNotContainsString('Usuario eliminado del sistema', $html);
+    }
+
+    public function test_el_detalle_muestra_el_nombre_de_un_cliente_dado_de_baja(): void
+    {
+        $this->actingAs($this->admin);
+
+        $ticket = $this->createOneWayTicket('2026-10-02');
+        $this->rescheduleTicketAsClient($ticket, '2026-10-06');
+        Clients::query()->where('dni', $ticket->passenger->dni)->firstOrFail()->delete();
+
+        $this->assertStringContainsString('Cliente Ana García', $this->mountedViewHtml($ticket));
+    }
+
+    public function test_el_detalle_dice_usuario_eliminado_solo_si_lo_hizo_un_usuario_que_ya_no_existe(): void
+    {
+        $this->actingAs($this->admin);
+
+        $vendedor = User::factory()->vendedor()->create(['name' => 'Carolina Pérez', 'username' => 'carolina']);
+        $ticket = $this->createOneWayTicket('2026-10-02');
+        $this->rescheduleTicket($ticket, $vendedor->id, '2026-10-06');
+
+        $this->assertStringContainsString('Carolina Pérez (carolina)', $this->mountedViewHtml($ticket));
+
+        $vendedor->forceDelete();
+
+        $html = $this->mountedViewHtml($ticket->fresh());
+        $this->assertStringContainsString('Usuario eliminado del sistema', $html);
+        $this->assertStringNotContainsString('Cliente', explode('Realizado por:', $html)[1] ?? '');
+    }
+
+    public function test_el_filtro_realizado_por_se_llama_asi_y_ofrece_clientes_y_vendedores(): void
+    {
+        $this->actingAs($this->admin);
+        Setting::set(Setting::PANEL_CLIENTES_ACTIVO, '1');
+
+        $filter = Livewire::test(TicketAuditResource::getPages()['index']->getPage())
+            ->instance()
+            ->getTable()
+            ->getFilter('actor');
+
+        $this->assertSame('Realizado por', $filter->getLabel());
+        $this->assertSame(['clients' => 'Clientes', 'sellers' => 'Vendedores'], $filter->getOptions());
+    }
+
     public function test_la_vista_de_un_boleto_eliminado_muestra_quien_y_cuando_lo_borro(): void
     {
         $this->actingAs($this->admin);
@@ -577,9 +885,22 @@ class TicketAuditResourceTest extends TestCase
 
         $html = $this->mountedActionHtml($component->instance());
 
-        $this->assertStringContainsString('fue ELIMINADO', $html);
-        $this->assertStringContainsString('por Admin (admin-audit)', $html, 'Debe identificar quién eliminó el boleto.');
+        $this->assertStringContainsString('Boleto eliminado', $html);
+        $this->assertMatchesRegularExpression('/Eliminado por<\/div> <div[^>]*> Admin <\/div> <div[^>]*>admin-audit<\/div>/', $html, 'Debe identificar quién eliminó el boleto.');
         $this->assertStringContainsString('no pueden restaurarse ni editarse', $html);
+
+        // La eliminación va antes que los datos del boleto, para que no pase desapercibida.
+        $this->assertLessThan(strpos($html, 'Salida actual'), strpos($html, 'Boleto eliminado'));
+    }
+
+    public function test_el_modal_muestra_el_colectivo_una_sola_vez(): void
+    {
+        $this->actingAs($this->admin);
+
+        $ticket = $this->createOneWayTicket();
+        $this->editTicket($ticket);
+
+        $this->assertSame(1, substr_count($this->mountedViewHtml($ticket), 'Colectivo Linea P'));
     }
 
     /**
@@ -594,7 +915,81 @@ class TicketAuditResourceTest extends TestCase
         $schema = $getSchema->invoke($instance);
         $this->assertNotNull($schema, 'La acción montada debe resolver un schema.');
 
-        return $schema->toHtml();
+        // Se compara el texto como lo ve el usuario: el navegador colapsa los
+        // espacios y saltos de línea, así que el formato del Blade no importa.
+        return (string) preg_replace('/\s+/', ' ', $schema->toHtml());
+    }
+
+    private function mountedViewHtml(Ticket $ticket): string
+    {
+        $component = Livewire::test(TicketAuditResource::getPages()['index']->getPage());
+        $component->mountTableAction('ver', $ticket->id);
+
+        return $this->mountedActionHtml($component->instance());
+    }
+
+    public function test_la_accion_ver_tiene_menu_para_celular_y_boton_de_escritorio(): void
+    {
+        $this->actingAs($this->admin);
+
+        $recordActions = collect(
+            Livewire::test(TicketAuditResource::getPages()['index']->getPage())
+                ->instance()
+                ->getTable()
+                ->getRecordActions(),
+        );
+
+        $mobileMenu = $recordActions->first(fn ($action): bool => $action instanceof ActionGroup
+            && str_contains($action->getExtraAttributes()['class'] ?? '', 'md:hidden'));
+
+        $this->assertNotNull($mobileMenu, 'Falta el menú de tres puntitos para celular.');
+        $this->assertSame(['ver'], collect($mobileMenu->getActions())->map(fn ($action): string => $action->getName())->values()->all());
+        $this->assertSame('Ver detalles', collect($mobileMenu->getActions())->first()->getLabel());
+
+        $desktop = $recordActions->first(fn ($action): bool => ! $action instanceof ActionGroup
+            && str_contains($action->getExtraAttributes()['class'] ?? '', 'hidden md:inline-flex'));
+
+        $this->assertNotNull($desktop, 'Falta el botón de escritorio.');
+        $this->assertSame('Ver detalles', $desktop->getExtraAttributes()['title'] ?? null);
+    }
+
+    public function test_el_modal_de_un_boleto_sin_fecha_muestra_fecha_a_confirmar(): void
+    {
+        $this->actingAs($this->admin);
+
+        $ticket = $this->createOneWayTicket();
+        $ticket->update(['trip_id' => null, 'seat_id' => null]);
+        $this->editTicket($ticket);
+
+        $html = $this->mountedViewHtml($ticket);
+
+        $this->assertStringContainsString('Salida actual:</strong> <span class="font-semibold text-amber-600 dark:text-amber-400">Fecha y horario a confirmar</span>', $html);
+    }
+
+    public function test_el_modal_de_un_tramo_de_vuelta_aclara_que_el_precio_es_el_de_la_ida(): void
+    {
+        $this->actingAs($this->admin);
+
+        $ida = $this->createOneWayTicket();
+        $ida->update(['is_round_trip' => true, 'price' => 15000]);
+
+        $vuelta = $ida->replicate(['share_token', 'active_seat_guard']);
+        $vuelta->fill([
+            'is_return_leg' => true,
+            'price' => 0,
+            'origin_location_id' => $ida->destination_location_id,
+            'destination_location_id' => $ida->origin_location_id,
+            'trip_id' => null,
+            'seat_id' => null,
+        ])->save();
+        $this->editTicket($vuelta);
+
+        $html = $this->mountedViewHtml($vuelta);
+
+        $this->assertStringContainsString('$15.000', $html);
+        $this->assertStringContainsString('Precio del boleto de ida', $html);
+
+        $this->assertStringNotContainsString('Precio del boleto de ida', $this->mountedViewHtml(tap($ida, fn (Ticket $t) => $this->editTicket($t))));
     }
 
     public function test_la_tabla_es_compacta_sin_columnas_de_detalle(): void
@@ -626,5 +1021,108 @@ class TicketAuditResourceTest extends TestCase
             'bus_id' => $ticket->trip->bus_id,
             'trip_date' => $date,
         ]);
+    }
+
+    // ============ Fecha abierta ============
+
+    /**
+     * Lo que deja TicketRescheduleService::openDate(): el boleto sin viaje ni
+     * asiento y un cambio de tipo "fecha abierta" hecho por un usuario.
+     */
+    private function openDateAs(Ticket $ticket, User $user, ?string $reason = null): void
+    {
+        TicketDateChange::create([
+            'ticket_id' => $ticket->id,
+            'leg' => TicketDateChange::LEG_OUTBOUND,
+            'kind' => TicketDateChange::KIND_OPEN_DATE,
+            'reason' => $reason,
+            'from_trip_id' => $ticket->trip_id,
+            'from_schedule_id' => $ticket->trip->schedule_id,
+            'from_seat_id' => $ticket->seat_id,
+            'user_id' => $user->id,
+            'actor_type' => TicketDateChange::ACTOR_USER,
+        ]);
+
+        $ticket->update(['trip_id' => null, 'seat_id' => null]);
+    }
+
+    public function test_el_detalle_muestra_la_fecha_abierta_con_su_motivo(): void
+    {
+        $this->actingAs($this->admin);
+
+        $ticket = $this->createOneWayTicket('2026-10-03');
+        $this->openDateAs($ticket, $this->admin, 'No sabe cuándo vuelve');
+
+        $response = $this->get(TicketAuditResource::getUrl('view', ['record' => $ticket->id]));
+
+        $response->assertOk();
+        $response->assertSee('Dejó el boleto con fecha abierta');
+        $response->assertSee('03/10/2026');   // viaje de origen
+        $response->assertSee('Asiento 1');
+        $response->assertSee('Fecha abierta');
+        $response->assertSee('Admin');
+        $response->assertSee('Motivo');
+        $response->assertSee('No sabe cuándo vuelve');
+    }
+
+    public function test_el_detalle_sin_motivo_no_muestra_el_renglon_de_motivo(): void
+    {
+        $this->actingAs($this->admin);
+
+        $ticket = $this->createOneWayTicket('2026-10-03');
+        $this->openDateAs($ticket, $this->admin);
+
+        $response = $this->get(TicketAuditResource::getUrl('view', ['record' => $ticket->id]));
+
+        $response->assertOk();
+        $response->assertSee('Dejó el boleto con fecha abierta');
+        $response->assertDontSee('Motivo');
+    }
+
+    public function test_una_reprogramacion_con_el_viaje_destino_borrado_no_se_muestra_como_fecha_abierta(): void
+    {
+        $this->actingAs($this->admin);
+
+        $ticket = $this->createOneWayTicket('2026-10-03');
+        $this->rescheduleTicket($ticket, $this->admin->id, '2026-10-05');
+
+        // Lo que deja el nullOnDelete al borrar el viaje destino.
+        TicketDateChange::query()->where('ticket_id', $ticket->id)->update(['to_trip_id' => null]);
+
+        $response = $this->get(TicketAuditResource::getUrl('view', ['record' => $ticket->id]));
+
+        $response->assertOk();
+        $response->assertSee('Historial de reprogramaciones');
+        $response->assertDontSee('Dejó el boleto con fecha abierta');
+        $response->assertDontSee('Fecha abierta');
+    }
+
+    public function test_la_fecha_abierta_cuenta_como_reprogramado_y_como_vendedor(): void
+    {
+        $this->actingAs($this->admin);
+        Setting::set(Setting::PANEL_CLIENTES_ACTIVO, '1');
+
+        $abierto = $this->createOneWayTicket('2026-10-03');
+        $this->openDateAs($abierto, $this->admin);
+
+        $editado = $this->createOneWayTicket('2026-10-04');
+        $this->editTicket($editado);
+
+        $component = Livewire::test(TicketAuditResource::getPages()['index']->getPage());
+
+        $visibleIds = fn (): array => $component->instance()
+            ->getFilteredTableQuery()
+            ->pluck('tickets.id')
+            ->all();
+
+        $component->set('tableFilters.audit_state.value', 'rescheduled');
+        $this->assertSame([$abierto->id], $visibleIds());
+
+        $component->set('tableFilters.audit_state.value', null);
+        $component->set('tableFilters.actor.value', 'sellers');
+        $this->assertContains($abierto->id, $visibleIds());
+
+        $component->set('tableFilters.actor.value', 'clients');
+        $this->assertNotContains($abierto->id, $visibleIds());
     }
 }

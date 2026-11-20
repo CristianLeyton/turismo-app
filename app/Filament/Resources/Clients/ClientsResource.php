@@ -4,6 +4,7 @@ namespace App\Filament\Resources\Clients;
 
 use App\Filament\Resources\Clients\Pages\ManageClients;
 use App\Models\Clients;
+use App\Models\Setting;
 use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
@@ -24,12 +25,12 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
 use Illuminate\Support\Facades\Auth;
-use Filament\Tables\Enums\FiltersLayout;
 
 class ClientsResource extends Resource
 {
@@ -132,8 +133,8 @@ class ClientsResource extends Resource
                 TextEntry::make('telefono'),
                 TextEntry::make('can_buy')
                     ->label('¿Puede comprar?')
-                    ->icon(fn(Clients $record): Heroicon => $record->can_buy ? Heroicon::CheckCircle : Heroicon::NoSymbol)
-                    ->color(fn(Clients $record): string => $record->can_buy ? 'success' : 'danger'),
+                    ->icon(fn (Clients $record): Heroicon => $record->can_buy ? Heroicon::CheckCircle : Heroicon::NoSymbol)
+                    ->color(fn (Clients $record): string => $record->can_buy ? 'success' : 'danger'),
                 TextEntry::make('comments')
                     ->label('Motivo / Comentarios')
                     ->placeholder('—'),
@@ -144,7 +145,7 @@ class ClientsResource extends Resource
     {
         return $table
             ->recordTitleAttribute('dni')
-            ->recordClasses(fn(Clients $record): array => $record->can_buy ? [] : [
+            ->recordClasses(fn (Clients $record): array => $record->can_buy ? [] : [
                 '!bg-red-100',
                 'hover:!bg-red-200',
             ])
@@ -152,18 +153,18 @@ class ClientsResource extends Resource
                 TextColumn::make('dni')
                     ->label('DNI')
                     ->sortable()
-                    ->tooltip(fn($state, $record) => $record->apellido . " " . $record->nombre)
+                    ->tooltip(fn ($state, $record) => $record->apellido.' '.$record->nombre)
                     ->searchable(),
                 TextColumn::make('apellido')
                     ->label('Apellido')
                     ->limit(22)
                     ->sortable()
                     ->visibleFrom('md')
-                    ->tooltip(fn($state, $record) => $record->apellido)
+                    ->tooltip(fn ($state, $record) => $record->apellido)
                     ->searchable(),
                 TextColumn::make('nombre')
                     ->limit(22)
-                    ->tooltip(fn($state, $record) => $record->nombre)
+                    ->tooltip(fn ($state, $record) => $record->nombre)
                     ->label('Nombre')
                     ->visibleFrom('md')
                     ->searchable(),
@@ -174,15 +175,15 @@ class ClientsResource extends Resource
                 TextColumn::make('can_buy')
                     ->label('Estado')
                     ->badge()
-                    ->state(fn(Clients $record): string => $record->can_buy ? 'Habilitado' : 'Baneado')
-                    ->color(fn(Clients $record): string => $record->can_buy ? 'success' : 'danger'),
+                    ->state(fn (Clients $record): string => $record->can_buy ? 'Habilitado' : 'Baneado')
+                    ->color(fn (Clients $record): string => $record->can_buy ? 'success' : 'danger'),
                 TextColumn::make('boletos_historicos')
                     ->alignCenter()
                     ->badge()
                     ->color('info')
                     ->label('Boletos')
                     ->tooltip('Total de boletos vendidos')
-                    ->state(fn(Clients $record): int => $record->tickets()->count())
+                    ->state(fn (Clients $record): int => $record->tickets()->count())
                     ->sortable(query: function (Builder $query, string $direction): Builder {
                         return $query
                             ->withCount('tickets')
@@ -201,9 +202,9 @@ class ClientsResource extends Resource
                     ->trueLabel('Baneados')
                     ->falseLabel('Habilitados')
                     ->queries(
-                        true: fn(Builder $query): Builder => $query->where('can_buy', false),
-                        false: fn(Builder $query): Builder => $query->where('can_buy', true),
-                        blank: fn(Builder $query): Builder => $query,
+                        true: fn (Builder $query): Builder => $query->where('can_buy', false),
+                        false: fn (Builder $query): Builder => $query->where('can_buy', true),
+                        blank: fn (Builder $query): Builder => $query,
                     ),
             ])->filtersLayout(FiltersLayout::AboveContent)
             ->deferFilters(false)
@@ -214,7 +215,7 @@ class ClientsResource extends Resource
                     static::toggleBanAction()->button(),
                     static::resetPasswordAction()->button(),
                     EditAction::make()->button(),
-                    DeleteAction::make()->button()->visible(fn() => (bool) Auth::user()?->can('clients.delete')),
+                    DeleteAction::make()->button()->visible(fn () => (bool) Auth::user()?->can('clients.delete')),
                     ForceDeleteAction::make()->button(),
                     RestoreAction::make()->button(),
                 ])->icon('heroicon-m-ellipsis-vertical')
@@ -222,59 +223,13 @@ class ClientsResource extends Resource
                     ->size('sm')
                     ->extraAttributes(['class' => 'md:hidden']),
 
-                Action::make('toggleBan')
-                    ->visible(fn() => (bool) Auth::user()?->can('clients.ban'))
-                    ->label(fn(Clients $record): string => $record->can_buy ? 'Banear' : 'Habilitar')
-                    ->icon(fn(Clients $record): Heroicon => $record->can_buy ? Heroicon::NoSymbol : Heroicon::CheckCircle)
-                    ->color(fn(Clients $record): string => $record->can_buy ? 'danger' : 'success')
-                    ->requiresConfirmation()
-                    ->modalHeading(fn(Clients $record): string => $record->can_buy ? 'Banear cliente' : 'Habilitar cliente')
-                    ->modalDescription(fn(Clients $record): string => $record->can_buy
-                        ? "¿Confirmás banear a {$record->nombre} {$record->apellido}? No se le podrán vender más boletos."
-                        : "¿Confirmás habilitar a {$record->nombre} {$record->apellido}? Volverá a poder comprar boletos.")
-                    ->modalSubmitActionLabel(fn(Clients $record): string => $record->can_buy ? 'Banear' : 'Habilitar')
-                    ->action(function (Clients $record): void {
-                        $record->update(['can_buy' => ! $record->can_buy]);
-
-                        Notification::make()
-                            ->title($record->can_buy ? 'Cliente habilitado' : 'Cliente baneado')
-                            ->body("{$record->nombre} {$record->apellido} " . ($record->can_buy ? 'puede volver a comprar boletos.' : 'no podrá comprar boletos.'))
-                            ->success()
-                            ->send();
-                    })
+                // Botones de escritorio: mismos builders que el menú de celular,
+                // así las reglas (motivo, visibilidad) no se desincronizan.
+                static::toggleBanAction()
                     ->button()
                     ->hiddenLabel()
                     ->extraAttributes(['title' => 'Banear / Habilitar', 'class' => 'hidden md:inline-flex']),
-                // Contraseña inicial del cliente = su DNI. Si ya se la cambió
-                // y la olvidó, se resetea: vuelve a ser el DNI (sin hash) y al
-                // próximo ingreso se le obliga a elegir otra.
-                Action::make('resetPassword')
-                    ->visible(fn() => (bool) Auth::user()?->can('clients.reset_password'))
-                    ->label('Resetear contraseña')
-                    ->icon('heroicon-o-key')
-                    ->color('warning')
-                    ->requiresConfirmation()
-                    ->modalHeading('Resetear contraseña')
-                    ->modalDescription(fn(Clients $record): string => $record->hasPersonalPassword()
-                        ? "\u00bfResetear la contrase\u00f1a de {$record->nombre} {$record->apellido}? Entrar\u00e1 con su DNI (como contrase\u00f1a inicial) y tendr\u00e1 que elegir una nueva al pr\u00f3ximo ingreso."
-                        : "{$record->nombre} {$record->apellido} todav\u00eda no eligi\u00f3 su propia contrase\u00f1a: entra con su DNI.")
-                    ->modalSubmitActionLabel('Resetear')
-                    ->action(function (Clients $record): void {
-                        // Vuelve al estado inicial: contraseña = su DNI (el
-                        // cast 'hashed' la guarda bcrypt) y bandera de primer
-                        // ingreso en true, para que el panel lo obligue a
-                        // elegir una nueva.
-                        $record->update([
-                            'password' => $record->dni,
-                            'must_change_password' => true,
-                        ]);
-
-                        Notification::make()
-                            ->title('Contraseña reseteada')
-                            ->body($record->nombre . ' ' . $record->apellido . ' entra con su DNI y elige una contrase\u00f1a nueva al pr\u00f3ximo ingreso.')
-                            ->success()
-                            ->send();
-                    })
+                static::resetPasswordAction()
                     ->button()
                     ->hiddenLabel()
                     ->extraAttributes(['title' => 'Resetear contraseña', 'class' => 'hidden md:inline-flex']),
@@ -285,7 +240,7 @@ class ClientsResource extends Resource
                 DeleteAction::make()->button()->hiddenLabel()->extraAttributes([
                     'title' => 'Eliminar',
                     'class' => 'hidden md:inline-flex',
-                ])->visible(fn() => (bool) Auth::user()?->can('clients.delete')),
+                ])->visible(fn () => (bool) Auth::user()?->can('clients.delete')),
                 ForceDeleteAction::make()->button()->hiddenLabel()->extraAttributes([
                     'title' => 'Eliminar permanentemente',
                     'class' => 'hidden md:inline-flex',
@@ -296,7 +251,7 @@ class ClientsResource extends Resource
                 ]),
             ])
             ->toolbarActions([
-                /* BulkActionGroup::make([
+            /* BulkActionGroup::make([
                     DeleteBulkAction::make(),
                                          ForceDeleteBulkAction::make(),
                     RestoreBulkAction::make(),
@@ -307,50 +262,79 @@ class ClientsResource extends Resource
      * Banear / habilitar cliente: se instancia dos veces (copia en el menú de
      * tres puntitos para mobile y botón directo para desktop), así que el
      * cuerpo vive acá y cada copia agrega sus atributos de visibilidad.
+     *
+     * Banear pide el motivo (obligatorio, precargado con el comentario que ya
+     * tenga) y lo guarda en `comments`, que es lo que ve el vendedor al
+     * intentar venderle. Habilitar solo confirma y no toca el motivo.
      */
     private static function toggleBanAction(): Action
     {
         return Action::make('toggleBan')
-            ->visible(fn() => (bool) Auth::user()?->can('clients.ban'))
-            ->label(fn(Clients $record): string => $record->can_buy ? 'Banear' : 'Habilitar')
-            ->icon(fn(Clients $record): Heroicon => $record->can_buy ? Heroicon::NoSymbol : Heroicon::CheckCircle)
-            ->color(fn(Clients $record): string => $record->can_buy ? 'danger' : 'success')
-            ->requiresConfirmation()
-            ->modalHeading(fn(Clients $record): string => $record->can_buy ? 'Banear cliente' : 'Habilitar cliente')
-            ->modalDescription(fn(Clients $record): string => $record->can_buy
+            ->visible(fn () => (bool) Auth::user()?->can('clients.ban'))
+            ->label(fn (Clients $record): string => $record->can_buy ? 'Banear' : 'Habilitar')
+            ->icon(fn (Clients $record): Heroicon => $record->can_buy ? Heroicon::NoSymbol : Heroicon::CheckCircle)
+            ->color(fn (Clients $record): string => $record->can_buy ? 'danger' : 'success')
+            ->requiresConfirmation(fn (Clients $record): bool => ! $record->can_buy)
+            ->modalHeading(fn (Clients $record): string => $record->can_buy ? 'Banear cliente' : 'Habilitar cliente')
+            ->modalDescription(fn (Clients $record): string => $record->can_buy
                 ? "¿Confirmás banear a {$record->nombre} {$record->apellido}? No se le podrán vender más boletos."
                 : "¿Confirmás habilitar a {$record->nombre} {$record->apellido}? Volverá a poder comprar boletos.")
-            ->modalSubmitActionLabel(fn(Clients $record): string => $record->can_buy ? 'Banear' : 'Habilitar')
-            ->action(function (Clients $record): void {
-                $record->update(['can_buy' => ! $record->can_buy]);
+            ->schema(fn (Clients $record): array => $record->can_buy
+                ? [
+                    Textarea::make('comments')
+                        ->label('Motivo del baneo')
+                        ->helperText('Se muestra al vendedor cuando intenta venderle.')
+                        ->required()
+                        ->maxLength(255)
+                        ->rows(3)
+                        ->validationMessages([
+                            'required' => 'Ingresá el motivo del baneo.',
+                            'max' => 'El motivo no puede superar los :max caracteres.',
+                        ]),
+                ]
+                : [])
+            ->fillForm(fn (Clients $record): array => ['comments' => $record->comments])
+            ->modalSubmitActionLabel(fn (Clients $record): string => $record->can_buy ? 'Banear' : 'Habilitar')
+            ->action(function (Clients $record, array $data): void {
+                if ($record->can_buy) {
+                    $record->update([
+                        'can_buy' => false,
+                        'comments' => trim((string) ($data['comments'] ?? '')),
+                    ]);
+                } else {
+                    $record->update(['can_buy' => true]);
+                }
 
                 Notification::make()
                     ->title($record->can_buy ? 'Cliente habilitado' : 'Cliente baneado')
-                    ->body("{$record->nombre} {$record->apellido} " . ($record->can_buy ? 'puede volver a comprar boletos.' : 'no podrá comprar boletos.'))
+                    ->body("{$record->nombre} {$record->apellido} ".($record->can_buy ? 'puede volver a comprar boletos.' : 'no podrá comprar boletos.'))
                     ->success()
                     ->send();
             });
     }
 
-    /** Resetear contraseña a su DNI (misma lógica en las dos copias). */
+    /**
+     * Resetear la contraseña a su DNI (misma lógica en las dos copias). Solo
+     * tiene sentido con el panel de clientes activo: apagado, la acción no se
+     * muestra y Filament tampoco la ejecuta.
+     */
     private static function resetPasswordAction(): Action
     {
         return Action::make('resetPassword')
-            ->visible(fn() => (bool) Auth::user()?->can('clients.reset_password'))
+            ->visible(fn (): bool => Setting::panelClientesActivo() && (bool) Auth::user()?->can('clients.reset_password'))
             ->label('Resetear contraseña')
             ->icon('heroicon-o-key')
             ->color('warning')
             ->requiresConfirmation()
             ->modalHeading('Resetear contraseña')
-            ->modalDescription(fn(Clients $record): string => $record->hasPersonalPassword()
-                ? "\u00bfResetear la contrase\u00f1a de {$record->nombre} {$record->apellido}? Entrar\u00e1 con su DNI (como contrase\u00f1a inicial) y tendr\u00e1 que elegir una nueva al pr\u00f3ximo ingreso."
-                : "{$record->nombre} {$record->apellido} todav\u00eda no eligió su propia contrase\u00f1a: entra con su DNI.")
+            ->modalDescription(fn (Clients $record): string => $record->hasPersonalPassword()
+                ? "¿Querés resetear la contraseña de {$record->nombre} {$record->apellido}? Va a entrar con su DNI como contraseña y, al ingresar, va a tener que elegir una nueva."
+                : "{$record->nombre} {$record->apellido} todavía no eligió su propia contraseña: ya entra con su DNI.")
             ->modalSubmitActionLabel('Resetear')
             ->action(function (Clients $record): void {
-                // Vuelve al estado inicial: contraseña = su DNI (el
-                // cast 'hashed' la guarda bcrypt) y bandera de primer
-                // ingreso en true, para que el panel lo obligue a
-                // elegir una nueva.
+                // Vuelve al estado inicial: contraseña = su DNI (el cast
+                // 'hashed' la guarda bcrypt) y bandera de primer ingreso en
+                // true, para que el panel lo obligue a elegir una nueva.
                 $record->update([
                     'password' => $record->dni,
                     'must_change_password' => true,
@@ -358,7 +342,7 @@ class ClientsResource extends Resource
 
                 Notification::make()
                     ->title('Contraseña reseteada')
-                    ->body($record->nombre . ' ' . $record->apellido . ' entra con su DNI y elige una contrase\u00f1a nueva al pr\u00f3ximo ingreso.')
+                    ->body("{$record->nombre} {$record->apellido} entra con su DNI y elige una contraseña nueva en el próximo ingreso.")
                     ->success()
                     ->send();
             });

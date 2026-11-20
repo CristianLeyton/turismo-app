@@ -1,3 +1,10 @@
+## 2026-11-05 — Permisos por defecto más restrictivos
+
+- El rol **Administrador** ya no trae por defecto el módulo **Clientes** ni ningún **«Eliminar definitivamente»**. El resto de su acceso no cambia.
+- El rol **Vendedor** ya no trae por defecto **Clientes** ni **Ventas**, ni el borrado definitivo de viajes. Sigue vendiendo boletos y viendo viajes.
+- Esos permisos se habilitan a mano desde la matriz de Roles. Como cada uno solo puede asignar lo que tiene, Clientes lo habilita el Super Administrador.
+- **Instalaciones existentes:** no cambian solas. `permissions:sync` solo agrega permisos, así que los roles conservan lo que ya tenían hasta que se desmarque desde la matriz.
+
 ## 2026-11-04 — Editor de rutas: datos, recorrido y horarios en una sola pantalla
 
 - Cada ruta se edita en una pantalla con pestañas **Datos**, **Recorrido** y **Horarios**. Al crear una ruta se pasa directo a esa pantalla. Los menús sueltos «Paradas» y «Horarios» salen del cluster Destinos; cada pestaña respeta los permisos de su módulo.

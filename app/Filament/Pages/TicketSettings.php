@@ -52,7 +52,7 @@ class TicketSettings extends Page
      * @var array<string, list<string>>
      */
     public const TAB_FIELDS = [
-        'Venta' => ['permitir_acompanantes', 'venta_limite_horas', 'limite_pasajeros_venta', 'selectores_detallados', 'observaciones_activas', 'precio_fijo_activo', 'precio_fijo_boleto', 'precio_fijo_seguro_menor'],
+        'Venta' => ['permitir_acompanantes', 'venta_limite_horas', 'limite_pasajeros_venta', 'selectores_detallados', 'observaciones_activas', 'precio_fijo_activo', 'precio_fijo_periodos'],
         'Boleto' => ['descarga_automatica_pdf', 'whatsapp_mensaje', 'contact_lines'],
         'Calendario' => ['service_weekdays', 'service_exceptions'],
         'Seguridad' => ['require_password_ticket_delete', 'require_password_ticket_reschedule', 'require_password_ticket_edit'],
@@ -89,6 +89,9 @@ class TicketSettings extends Page
 
     /** Tope de los montos del precio fijo (mismo máximo que el precio a mano). */
     private const FIXED_PRICE_MAX = 999999;
+
+    /** Mensaje de la grilla cuando ningún período rige hoy (vacía o solo futuros). */
+    private const FIXED_PRICE_NO_CURRENT_PERIOD_MESSAGE = 'Tiene que haber un precio vigente para hoy: cargá un período que empiece hoy o antes.';
 
     private const PRIMARY_COLOR_INVALID_MESSAGE = 'Elegí un color válido en formato #RRGGBB (por ejemplo, #10288c).';
 
@@ -164,8 +167,11 @@ class TicketSettings extends Page
             'selectores_detallados' => Setting::selectoresDetallados(),
             'observaciones_activas' => Setting::observacionesActivas(),
             'precio_fijo_activo' => Setting::precioFijoActivo(),
-            'precio_fijo_boleto' => $this->storedAmount(Setting::PRECIO_FIJO_BOLETO),
-            'precio_fijo_seguro_menor' => $this->storedAmount(Setting::PRECIO_FIJO_SEGURO_MENOR),
+            'precio_fijo_periodos' => array_map(fn (array $period): array => [
+                'desde' => $period['desde'],
+                'boleto' => $period['boleto'],
+                'seguro' => $period['seguro'],
+            ], Setting::precioFijoPeriodos()),
             'primary_color' => Setting::primaryColor(),
         ];
     }
@@ -203,14 +209,70 @@ class TicketSettings extends Page
     }
 
     /**
-     * Monto guardado del precio fijo, o null si nunca se cargó: así el campo
-     * aparece vacío (y no en $0) la primera vez que se prende.
+     * Períodos de la grilla con fecha `Y-m-d` y montos enteros, ordenados por
+     * "Desde". Las filas sin fecha se descartan.
+     *
+     * @param  array<array-key, mixed>  $periods
+     * @return list<array{desde: string, boleto: int, seguro: int}>
      */
-    protected function storedAmount(string $key): ?int
+    protected static function normalizedPeriods(array $periods): array
     {
-        $value = Setting::getInt($key, -1);
+        return collect($periods)
+            ->filter(fn (mixed $period): bool => is_array($period) && filled($period['desde'] ?? null))
+            ->map(fn (array $period): array => [
+                'desde' => Carbon::parse($period['desde'])->format('Y-m-d'),
+                'boleto' => (int) ($period['boleto'] ?? 0),
+                'seguro' => (int) ($period['seguro'] ?? 0),
+            ])
+            ->sortBy('desde')
+            ->values()
+            ->all();
+    }
 
-        return $value < 0 ? null : $value;
+    /**
+     * ¿Algún período de la grilla empieza hoy o antes?
+     *
+     * @param  array<array-key, mixed>  $periods
+     */
+    protected static function periodsCoverToday(array $periods): bool
+    {
+        $today = today()->format('Y-m-d');
+
+        return collect(self::normalizedPeriods($periods))
+            ->contains(fn (array $period): bool => $period['desde'] <= $today);
+    }
+
+    /**
+     * Encabezado de una fila de la grilla: "Hasta dd/mm/aaaa" (el día anterior
+     * al período siguiente) o "en adelante", y "Vigente" si rige hoy. Se
+     * calcula sobre lo cargado en el formulario, aunque todavía no se guardó.
+     *
+     * @param  array<array-key, mixed>  $items
+     */
+    protected function fixedPricePeriodLabel(array $items, string $key): string
+    {
+        $from = $items[$key]['desde'] ?? null;
+
+        if (blank($from)) {
+            return 'Período nuevo';
+        }
+
+        $from = Carbon::parse($from)->format('Y-m-d');
+        $starts = collect($items)
+            ->map(fn (mixed $item): ?string => is_array($item) && filled($item['desde'] ?? null) ? Carbon::parse($item['desde'])->format('Y-m-d') : null)
+            ->filter()
+            ->unique()
+            ->sort()
+            ->values();
+
+        $next = $starts->first(fn (string $start): bool => $start > $from);
+        $current = $starts->last(fn (string $start): bool => $start <= today()->format('Y-m-d'));
+
+        $label = 'Desde '.Carbon::parse($from)->format('d/m/Y').' · '.($next === null
+            ? 'en adelante'
+            : 'Hasta '.Carbon::parse($next)->subDay()->format('d/m/Y'));
+
+        return $from === $current ? "{$label} · Vigente" : $label;
     }
 
     /**
@@ -374,27 +436,57 @@ class TicketSettings extends Page
             Section::make('Precio de los boletos')
                 ->columnSpanFull()
                 ->visible(fn (): bool => $this->canManageFixedPrice())
-                ->columns(['default' => 1, 'sm' => 2])
                 ->schema([
                     Toggle::make('precio_fijo_activo')
                         ->label('Precio fijo activo')
                         ->helperText('Prendido, el precio se calcula solo y nadie lo puede cambiar al vender ni al editar un boleto.')
                         ->hintIcon(Heroicon::OutlinedInformationCircle, tooltip: 'Precio = precio del boleto + seguro si viaja con un menor, por 2 si es ida y vuelta. Los boletos ya vendidos no cambian. Apagado, el precio se carga a mano como siempre.')
                         ->live()
-                        ->default(false)
-                        ->columnSpanFull(),
+                        ->default(false),
 
-                    $this->fixedPriceAmountInput('precio_fijo_boleto', 'Precio del boleto', 'el precio del boleto', 1),
+                    Repeater::make('precio_fijo_periodos')
+                        ->label('Períodos de precio')
+                        ->helperText('Cada período rige desde su fecha hasta el día anterior al siguiente. El precio lo decide el día de la venta, no el del viaje.')
+                        ->hintIcon(Heroicon::OutlinedInformationCircle, tooltip: 'Ej.: un período desde el 20/11 a $70.000 y otro desde el 02/12 a $160.000: el sistema cambia solo el 02/12. Los períodos pasados se conservan porque se usan al editar el menor de boletos ya vendidos.')
+                        ->addActionLabel('Agregar período')
+                        ->defaultItems(0)
+                        ->reorderable(false)
+                        ->columns(['default' => 1, 'sm' => 3])
+                        ->itemLabel(fn (Repeater $component, string $key): string => $this->fixedPricePeriodLabel($component->getRawState() ?? [], $key))
+                        ->visible(fn (Get $get): bool => (bool) $get('precio_fijo_activo'))
+                        ->required(fn (Get $get): bool => (bool) $get('precio_fijo_activo'))
+                        ->rule(static fn (): Closure => static function (string $attribute, mixed $value, Closure $fail): void {
+                            if (! self::periodsCoverToday(is_array($value) ? $value : [])) {
+                                $fail(self::FIXED_PRICE_NO_CURRENT_PERIOD_MESSAGE);
+                            }
+                        })
+                        ->validationMessages([
+                            'required' => self::FIXED_PRICE_NO_CURRENT_PERIOD_MESSAGE,
+                        ])
+                        ->schema([
+                            DatePicker::make('desde')
+                                ->label('Desde')
+                                ->displayFormat('d/m/Y')
+                                ->live()
+                                ->required()
+                                ->distinct()
+                                ->validationMessages([
+                                    'required' => 'Ingresá la fecha desde la que rige el período.',
+                                    'distinct' => 'Hay más de un período que empieza el mismo día.',
+                                ]),
 
-                    $this->fixedPriceAmountInput('precio_fijo_seguro_menor', 'Seguro para menores', 'el seguro para menores', 0)
-                        ->hintIcon(Heroicon::OutlinedInformationCircle, tooltip: 'Se suma por cada tramo en que el pasajero viaja con un menor. 0 = no se cobra seguro.'),
+                            $this->fixedPriceAmountInput('boleto', 'Precio del boleto', 'el precio del boleto', 1),
+
+                            $this->fixedPriceAmountInput('seguro', 'Seguro para menores', 'el seguro para menores', 0)
+                                ->hintIcon(Heroicon::OutlinedInformationCircle, tooltip: 'Se suma por cada tramo en que el pasajero viaja con un menor. 0 = no se cobra seguro.'),
+                        ]),
                 ]),
         ];
     }
 
     /**
-     * Monto del precio fijo: obligatorio y en pesos enteros solo mientras el
-     * precio fijo está prendido (oculto, no se valida ni se pisa al guardar).
+     * Monto de un período de precio, en pesos enteros. La grilla entera se
+     * oculta con el precio fijo apagado: así no se valida ni se pisa al guardar.
      */
     protected function fixedPriceAmountInput(string $name, string $label, string $article, int $min): TextInput
     {
@@ -404,8 +496,7 @@ class TicketSettings extends Page
             ->integer()
             ->minValue($min)
             ->maxValue(self::FIXED_PRICE_MAX)
-            ->required(fn (Get $get): bool => (bool) $get('precio_fijo_activo'))
-            ->visible(fn (Get $get): bool => (bool) $get('precio_fijo_activo'))
+            ->required()
             ->validationMessages([
                 'required' => "Ingresá {$article}.",
                 'numeric' => 'El monto tiene que ser un número.',
@@ -909,10 +1000,10 @@ class TicketSettings extends Page
                 $data['precio_fijo_activo'] ? '1' : '0',
             );
 
-            foreach ([Setting::PRECIO_FIJO_BOLETO => 'precio_fijo_boleto', Setting::PRECIO_FIJO_SEGURO_MENOR => 'precio_fijo_seguro_menor'] as $key => $field) {
-                if ($data['precio_fijo_activo'] && array_key_exists($field, $data)) {
-                    Setting::set($key, (string) (int) $data[$field]);
-                }
+            // Los períodos pasados no se depuran: la edición del menor de un
+            // boleto ya vendido usa el seguro del período de su venta.
+            if ($data['precio_fijo_activo'] && array_key_exists('precio_fijo_periodos', $data)) {
+                Setting::set(Setting::PRECIO_FIJO_PERIODOS, json_encode(self::normalizedPeriods($data['precio_fijo_periodos'] ?? [])));
             }
         }
 

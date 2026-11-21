@@ -130,16 +130,17 @@ class Setting extends Model
 
     /**
      * Precio fijo de los boletos. Apagado (default): el vendedor carga el
-     * precio a mano. Prendido: el precio sale de los dos montos de abajo
+     * precio a mano. Prendido: el precio sale del período de precio vigente
      * (ver App\Support\FixedTicketPrice) y nadie lo puede editar.
      */
     public const PRECIO_FIJO_ACTIVO = 'sales.precio_fijo_activo';
 
-    /** Precio del boleto por tramo, en pesos enteros. */
-    public const PRECIO_FIJO_BOLETO = 'sales.precio_fijo_boleto';
-
-    /** Seguro para menores por tramo, en pesos enteros (0 = no se cobra). */
-    public const PRECIO_FIJO_SEGURO_MENOR = 'sales.precio_fijo_seguro_menor';
+    /**
+     * Períodos de precio del boleto (JSON con una lista de
+     * {desde: Y-m-d, boleto: int, seguro: int}, en pesos enteros por tramo).
+     * Rige el período más reciente cuyo "desde" es la fecha de venta o anterior.
+     */
+    public const PRECIO_FIJO_PERIODOS = 'sales.precio_fijo_periodos';
 
     /**
      * Máximo de pasajeros por venta. Sin configurar, 4 (el límite histórico
@@ -299,19 +300,49 @@ class Setting extends Model
     }
 
     /**
-     * Precio del boleto por tramo. Sin configurar (o corrupto), 0.
+     * Períodos de precio guardados, ordenados por "desde". Sin configurar,
+     * lista vacía. Se descartan las filas sin fecha válida o con montos que
+     * no sean números enteros no negativos.
+     *
+     * @return list<array{desde: string, boleto: int, seguro: int}>
      */
-    public static function precioFijoBoleto(): int
+    public static function precioFijoPeriodos(): array
     {
-        return max(0, self::getInt(self::PRECIO_FIJO_BOLETO, 0));
+        $periods = [];
+
+        foreach (self::decodeJson(self::PRECIO_FIJO_PERIODOS) ?? [] as $period) {
+            if (! is_array($period)) {
+                continue;
+            }
+
+            $from = $period['desde'] ?? null;
+            $base = $period['boleto'] ?? null;
+            $insurance = $period['seguro'] ?? null;
+
+            if (! is_string($from) || ! self::isValidDate($from) || ! self::isAmount($base) || ! self::isAmount($insurance)) {
+                continue;
+            }
+
+            $periods[] = ['desde' => $from, 'boleto' => (int) $base, 'seguro' => (int) $insurance];
+        }
+
+        usort($periods, fn (array $a, array $b): int => strcmp($a['desde'], $b['desde']));
+
+        return $periods;
     }
 
-    /**
-     * Seguro para menores por tramo. Sin configurar (o corrupto), 0.
-     */
-    public static function precioFijoSeguroMenor(): int
+    /** ¿Es una fecha `Y-m-d` real (no 2026-02-30)? */
+    private static function isValidDate(string $date): bool
     {
-        return max(0, self::getInt(self::PRECIO_FIJO_SEGURO_MENOR, 0));
+        $parsed = \DateTimeImmutable::createFromFormat('!Y-m-d', $date);
+
+        return $parsed !== false && $parsed->format('Y-m-d') === $date;
+    }
+
+    /** ¿Es un monto en pesos enteros, no negativo? */
+    private static function isAmount(mixed $value): bool
+    {
+        return (is_int($value) || (is_string($value) && ctype_digit($value))) && (int) $value >= 0;
     }
 
     /**

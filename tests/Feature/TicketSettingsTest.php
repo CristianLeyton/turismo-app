@@ -17,6 +17,7 @@ use App\Models\Setting;
 use App\Models\Ticket;
 use App\Models\Trip;
 use App\Models\User;
+use App\Support\FixedTicketPrice;
 use App\Support\Permissions;
 use App\Support\ServiceDays;
 use Filament\Schemas\Components\Tabs;
@@ -29,6 +30,7 @@ use Tests\TestCase;
 
 class TicketSettingsTest extends TestCase
 {
+    use ConfiguresFixedPrice;
     use RefreshDatabase;
 
     private User $admin;
@@ -866,14 +868,40 @@ class TicketSettingsTest extends TestCase
         return $this->adminWithPermissions(TicketSettings::FIXED_PRICE_PERMISSION);
     }
 
-    public function test_con_el_permiso_se_ve_la_seccion_de_precio_fijo_apagada_y_sin_montos(): void
+    /**
+     * Fila de la grilla de períodos como la manda el formulario.
+     *
+     * @return array{desde: ?string, boleto: mixed, seguro: mixed}
+     */
+    private function period(?string $from, mixed $base = '5000', mixed $insurance = '800'): array
+    {
+        return ['desde' => $from, 'boleto' => $base, 'seguro' => $insurance];
+    }
+
+    /**
+     * La grilla muestra el aviso de cobertura de hoy. Se compara el texto en
+     * el error bag: `assertHasErrors` corta el mensaje en los dos puntos.
+     */
+    private function assertNoCurrentPeriodError(Testable $component): void
+    {
+        $component->assertHasErrors(['data.precio_fijo_periodos']);
+
+        $this->assertContains(
+            'Tiene que haber un precio vigente para hoy: cargá un período que empiece hoy o antes.',
+            $component->errors()->get('data.precio_fijo_periodos'),
+        );
+    }
+
+    public function test_con_el_permiso_se_ve_la_seccion_de_precio_fijo_apagada_y_sin_periodos(): void
     {
         $this->actingAs($this->fixedPriceAdmin());
 
         $component = Livewire::test(TicketSettings::class)
             ->assertSet('data.precio_fijo_activo', false)
+            ->assertSet('data.precio_fijo_periodos', [])
             ->assertSee('Precio de los boletos')
             ->assertSee('Precio fijo activo')
+            ->assertDontSee('Períodos de precio')
             ->assertDontSee('Seguro para menores');
 
         $this->assertSame(
@@ -881,8 +909,9 @@ class TicketSettingsTest extends TestCase
             array_keys($this->tabBadges($component)),
         );
         $this->assertContains('precio_fijo_activo', TicketSettings::TAB_FIELDS['Venta']);
-        $this->assertContains('precio_fijo_boleto', TicketSettings::TAB_FIELDS['Venta']);
-        $this->assertContains('precio_fijo_seguro_menor', TicketSettings::TAB_FIELDS['Venta']);
+        $this->assertContains('precio_fijo_periodos', TicketSettings::TAB_FIELDS['Venta']);
+        $this->assertNotContains('precio_fijo_boleto', TicketSettings::TAB_FIELDS['Venta']);
+        $this->assertNotContains('precio_fijo_seguro_menor', TicketSettings::TAB_FIELDS['Venta']);
     }
 
     public function test_sin_el_permiso_no_se_ve_la_seccion_de_precio_fijo(): void
@@ -893,32 +922,114 @@ class TicketSettingsTest extends TestCase
 
         Livewire::test(TicketSettings::class)
             ->assertDontSee('Precio de los boletos')
-            ->assertDontSee('Precio fijo activo');
+            ->assertDontSee('Precio fijo activo')
+            ->assertDontSee('Períodos de precio');
     }
 
-    public function test_con_el_permiso_se_prende_el_precio_fijo_con_sus_montos(): void
+    public function test_con_el_permiso_se_prende_el_precio_fijo_con_un_periodo(): void
     {
+        Carbon::setTestNow('2026-11-21 10:00');
         $this->actingAs($this->fixedPriceAdmin());
 
         Livewire::test(TicketSettings::class)
             ->set('data.precio_fijo_activo', true)
-            ->assertSee('Seguro para menores')
-            ->assertSet('data.precio_fijo_boleto', null)
-            ->set('data.precio_fijo_boleto', '5000')
-            ->set('data.precio_fijo_seguro_menor', '800')
+            ->assertSee('Períodos de precio')
+            ->set('data.precio_fijo_periodos', ['a' => $this->period('2026-11-21')])
             ->call('save')
             ->assertHasNoErrors();
 
         $this->assertTrue(Setting::precioFijoActivo());
-        $this->assertSame(5000, Setting::precioFijoBoleto());
-        $this->assertSame(800, Setting::precioFijoSeguroMenor());
+        $this->assertSame([['desde' => '2026-11-21', 'boleto' => 5000, 'seguro' => 800]], Setting::precioFijoPeriodos());
+        $this->assertSame(5800, FixedTicketPrice::forPassenger(withChild: true, isRoundTrip: false));
     }
 
-    public function test_apagar_el_precio_fijo_conserva_los_montos(): void
+    public function test_la_grilla_muestra_el_hasta_calculado(): void
     {
+        Carbon::setTestNow('2026-11-21 10:00');
         Setting::set(Setting::PRECIO_FIJO_ACTIVO, '1');
-        Setting::set(Setting::PRECIO_FIJO_BOLETO, '5000');
-        Setting::set(Setting::PRECIO_FIJO_SEGURO_MENOR, '800');
+        $this->setFixedPricePeriods([
+            ['desde' => '2026-11-20', 'boleto' => 70000, 'seguro' => 5000],
+            ['desde' => '2026-12-02', 'boleto' => 160000, 'seguro' => 8000],
+        ]);
+        $this->actingAs($this->fixedPriceAdmin());
+
+        Livewire::test(TicketSettings::class)
+            ->assertSeeInOrder([
+                'Desde 20/11/2026 · Hasta 01/12/2026',
+                'Desde 02/12/2026 · en adelante',
+            ]);
+    }
+
+    public function test_la_grilla_marca_solo_el_periodo_vigente(): void
+    {
+        Carbon::setTestNow('2026-11-25 10:00');
+        Setting::set(Setting::PRECIO_FIJO_ACTIVO, '1');
+        $this->setFixedPricePeriods([
+            ['desde' => '2026-11-01', 'boleto' => 60000, 'seguro' => 4000],
+            ['desde' => '2026-11-20', 'boleto' => 70000, 'seguro' => 5000],
+            ['desde' => '2026-12-02', 'boleto' => 160000, 'seguro' => 8000],
+        ]);
+        $this->actingAs($this->fixedPriceAdmin());
+
+        $html = Livewire::test(TicketSettings::class)->html();
+
+        $this->assertSame(1, substr_count($html, '· Vigente'));
+        $this->assertStringContainsString('Desde 20/11/2026 · Hasta 01/12/2026 · Vigente', $html);
+    }
+
+    public function test_el_hasta_refleja_la_grilla_sin_guardar(): void
+    {
+        Carbon::setTestNow('2026-11-21 10:00');
+        $this->actingAs($this->fixedPriceAdmin());
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.precio_fijo_activo', true)
+            ->set('data.precio_fijo_periodos', [
+                'a' => $this->period('2026-12-02'),
+                'b' => $this->period('2026-11-20'),
+            ])
+            ->assertSee('Desde 20/11/2026 · Hasta 01/12/2026 · Vigente')
+            ->assertSee('Desde 02/12/2026 · en adelante');
+    }
+
+    public function test_los_periodos_se_guardan_ordenados_y_se_conservan_los_pasados(): void
+    {
+        Carbon::setTestNow('2026-11-21 10:00');
+        $this->actingAs($this->fixedPriceAdmin());
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.precio_fijo_activo', true)
+            ->set('data.precio_fijo_periodos', [
+                'a' => $this->period('2026-12-02', '160000', '8000'),
+                'b' => $this->period('2026-11-20', '70000', '5000'),
+                'c' => $this->period('2026-10-01', '50000', '3000'),
+            ])
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertSame(
+            ['2026-10-01', '2026-11-20', '2026-12-02'],
+            array_column(Setting::precioFijoPeriodos(), 'desde'),
+        );
+        $this->assertSame(
+            ['2026-10-01', '2026-11-20', '2026-12-02'],
+            array_column(json_decode(Setting::query()->where('key', Setting::PRECIO_FIJO_PERIODOS)->value('value'), true), 'desde'),
+        );
+
+        // Al recargar, la grilla muestra primero el período más antiguo.
+        Livewire::test(TicketSettings::class)
+            ->assertSeeInOrder(['Desde 01/10/2026', 'Desde 20/11/2026', 'Desde 02/12/2026']);
+    }
+
+    public function test_apagar_el_precio_fijo_conserva_los_periodos(): void
+    {
+        Carbon::setTestNow('2026-11-21 10:00');
+        Setting::set(Setting::PRECIO_FIJO_ACTIVO, '1');
+        $periods = [
+            ['desde' => '2026-11-20', 'boleto' => 70000, 'seguro' => 5000],
+            ['desde' => '2026-12-02', 'boleto' => 160000, 'seguro' => 8000],
+        ];
+        $this->setFixedPricePeriods($periods);
         $this->actingAs($this->fixedPriceAdmin());
 
         Livewire::test(TicketSettings::class)
@@ -927,28 +1038,98 @@ class TicketSettingsTest extends TestCase
             ->assertHasNoErrors();
 
         $this->assertFalse(Setting::precioFijoActivo());
+        $this->assertSame($periods, Setting::precioFijoPeriodos());
 
         Livewire::test(TicketSettings::class)
             ->set('data.precio_fijo_activo', true)
-            ->assertSet('data.precio_fijo_boleto', 5000)
-            ->assertSet('data.precio_fijo_seguro_menor', 800);
+            ->assertSee('Desde 20/11/2026 · Hasta 01/12/2026')
+            ->assertSee('Desde 02/12/2026 · en adelante');
     }
 
-    public function test_prender_el_precio_fijo_sin_montos_no_guarda_nada(): void
+    public function test_apagado_no_valida_los_periodos(): void
     {
+        Carbon::setTestNow('2026-11-21 10:00');
+        Setting::set(Setting::PRECIO_FIJO_ACTIVO, '1');
+        $this->setFixedPricePeriods([['desde' => '2026-11-20', 'boleto' => 5000, 'seguro' => 800]]);
+        $this->actingAs($this->fixedPriceAdmin());
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.precio_fijo_activo', false)
+            ->set('data.precio_fijo_periodos', ['a' => $this->period('2026-12-02', '0', '-1')])
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertFalse(Setting::precioFijoActivo());
+        $this->assertSame([['desde' => '2026-11-20', 'boleto' => 5000, 'seguro' => 800]], Setting::precioFijoPeriodos());
+    }
+
+    public function test_prender_el_precio_fijo_sin_periodos_no_guarda_nada(): void
+    {
+        Carbon::setTestNow('2026-11-21 10:00');
         $this->actingAs($this->fixedPriceAdmin());
 
         Livewire::test(TicketSettings::class)
             ->set('data.venta_limite_horas', 8)
             ->set('data.precio_fijo_activo', true)
             ->call('save')
-            ->assertHasErrors([
-                'data.precio_fijo_boleto' => 'Ingresá el precio del boleto.',
-                'data.precio_fijo_seguro_menor' => 'Ingresá el seguro para menores.',
-            ]);
+            ->tap(fn (Testable $component) => $this->assertNoCurrentPeriodError($component));
 
         $this->assertFalse(Setting::precioFijoActivo());
         $this->assertSame(Setting::VENTA_LIMITE_HORAS_DEFAULT, Setting::ventaLimiteHoras());
+    }
+
+    public function test_prender_sin_el_precio_del_boleto_no_guarda_nada(): void
+    {
+        Carbon::setTestNow('2026-11-21 10:00');
+        $this->actingAs($this->fixedPriceAdmin());
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.venta_limite_horas', 8)
+            ->set('data.precio_fijo_activo', true)
+            ->set('data.precio_fijo_periodos', ['a' => $this->period('2026-11-21', '', '800')])
+            ->call('save')
+            ->assertHasErrors(['data.precio_fijo_periodos.a.boleto' => 'Ingresá el precio del boleto.']);
+
+        $this->assertFalse(Setting::precioFijoActivo());
+        $this->assertSame([], Setting::precioFijoPeriodos());
+        $this->assertSame(Setting::VENTA_LIMITE_HORAS_DEFAULT, Setting::ventaLimiteHoras());
+    }
+
+    public function test_un_periodo_sin_fecha_no_guarda_nada(): void
+    {
+        Carbon::setTestNow('2026-11-21 10:00');
+        $this->actingAs($this->fixedPriceAdmin());
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.precio_fijo_activo', true)
+            ->set('data.precio_fijo_periodos', [
+                'a' => $this->period('2026-11-21'),
+                'b' => $this->period(null),
+            ])
+            ->call('save')
+            ->assertHasErrors(['data.precio_fijo_periodos.b.desde' => 'Ingresá la fecha desde la que rige el período.']);
+
+        $this->assertFalse(Setting::precioFijoActivo());
+        $this->assertSame([], Setting::precioFijoPeriodos());
+    }
+
+    public function test_dos_periodos_con_el_mismo_desde_no_se_guardan(): void
+    {
+        Carbon::setTestNow('2026-11-21 10:00');
+        $this->actingAs($this->fixedPriceAdmin());
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.precio_fijo_activo', true)
+            ->set('data.precio_fijo_periodos', [
+                'a' => $this->period('2026-11-21'),
+                'b' => $this->period('2026-12-02'),
+                'c' => $this->period('2026-12-02', '9000'),
+            ])
+            ->call('save')
+            ->assertHasErrors(['data.precio_fijo_periodos.b.desde' => 'Hay más de un período que empieza el mismo día.']);
+
+        $this->assertFalse(Setting::precioFijoActivo());
+        $this->assertSame([], Setting::precioFijoPeriodos());
     }
 
     /**
@@ -957,49 +1138,143 @@ class TicketSettingsTest extends TestCase
     public static function invalidFixedPriceAmounts(): array
     {
         return [
-            'precio en cero' => ['precio_fijo_boleto', '0', '800', 'El monto tiene que ser de al menos $1.'],
-            'precio con centavos' => ['precio_fijo_boleto', '5000.50', '800', 'El monto tiene que ser un número entero, sin centavos.'],
-            'seguro fuera de rango' => ['precio_fijo_seguro_menor', '5000', '1000000', 'El monto no puede ser mayor a $999.999.'],
-            'seguro negativo' => ['precio_fijo_seguro_menor', '5000', '-1', 'El monto no puede ser negativo.'],
+            'precio en cero' => ['boleto', '0', '800', 'El monto tiene que ser de al menos $1.'],
+            'precio con centavos' => ['boleto', '5000.50', '800', 'El monto tiene que ser un número entero, sin centavos.'],
+            'seguro fuera de rango' => ['seguro', '5000', '1000000', 'El monto no puede ser mayor a $999.999.'],
+            'seguro negativo' => ['seguro', '5000', '-1', 'El monto no puede ser negativo.'],
         ];
     }
 
     #[\PHPUnit\Framework\Attributes\DataProvider('invalidFixedPriceAmounts')]
     public function test_los_montos_invalidos_del_precio_fijo_no_se_guardan(string $field, string $price, string $insurance, string $message): void
     {
+        Carbon::setTestNow('2026-11-21 10:00');
         $this->actingAs($this->fixedPriceAdmin());
 
         Livewire::test(TicketSettings::class)
             ->set('data.precio_fijo_activo', true)
-            ->set('data.precio_fijo_boleto', $price)
-            ->set('data.precio_fijo_seguro_menor', $insurance)
+            ->set('data.precio_fijo_periodos', ['a' => $this->period('2026-11-21', $price, $insurance)])
             ->call('save')
-            ->assertHasErrors(["data.{$field}" => $message]);
+            ->assertHasErrors(["data.precio_fijo_periodos.a.{$field}" => $message]);
 
         $this->assertFalse(Setting::precioFijoActivo());
-        $this->assertDatabaseMissing('settings', ['key' => Setting::PRECIO_FIJO_BOLETO]);
+        $this->assertDatabaseMissing('settings', ['key' => Setting::PRECIO_FIJO_PERIODOS]);
     }
 
     public function test_el_seguro_en_cero_se_guarda(): void
     {
+        Carbon::setTestNow('2026-11-21 10:00');
         $this->actingAs($this->fixedPriceAdmin());
 
         Livewire::test(TicketSettings::class)
             ->set('data.precio_fijo_activo', true)
-            ->set('data.precio_fijo_boleto', '5000')
-            ->set('data.precio_fijo_seguro_menor', '0')
+            ->set('data.precio_fijo_periodos', ['a' => $this->period('2026-11-21', '5000', '0')])
             ->call('save')
             ->assertHasNoErrors();
 
         $this->assertTrue(Setting::precioFijoActivo());
-        $this->assertSame(0, Setting::precioFijoSeguroMenor());
+        $this->assertSame(5000, FixedTicketPrice::forPassenger(withChild: true, isRoundTrip: false));
     }
+
+    // ---------------------- Cobertura del día de hoy ----------------------
+
+    public function test_prender_solo_con_periodos_futuros_no_guarda_nada(): void
+    {
+        Carbon::setTestNow('2026-11-21 10:00');
+        $this->actingAs($this->fixedPriceAdmin());
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.venta_limite_horas', 8)
+            ->set('data.precio_fijo_activo', true)
+            ->set('data.precio_fijo_periodos', ['a' => $this->period('2026-12-02')])
+            ->call('save')
+            ->tap(fn (Testable $component) => $this->assertNoCurrentPeriodError($component))
+            ->assertNotified('No se guardaron los cambios');
+
+        $this->assertFalse(Setting::precioFijoActivo());
+        $this->assertSame([], Setting::precioFijoPeriodos());
+        $this->assertSame(Setting::VENTA_LIMITE_HORAS_DEFAULT, Setting::ventaLimiteHoras());
+    }
+
+    public function test_borrar_el_periodo_vigente_sin_otro_anterior_no_guarda(): void
+    {
+        Carbon::setTestNow('2026-11-21 10:00');
+        Setting::set(Setting::PRECIO_FIJO_ACTIVO, '1');
+        $periods = [
+            ['desde' => '2026-11-20', 'boleto' => 70000, 'seguro' => 5000],
+            ['desde' => '2026-12-02', 'boleto' => 160000, 'seguro' => 8000],
+        ];
+        $this->setFixedPricePeriods($periods);
+        $this->actingAs($this->fixedPriceAdmin());
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.precio_fijo_periodos', ['b' => $this->period('2026-12-02', '160000', '8000')])
+            ->call('save')
+            ->tap(fn (Testable $component) => $this->assertNoCurrentPeriodError($component));
+
+        $this->assertSame($periods, Setting::precioFijoPeriodos());
+    }
+
+    public function test_mover_el_desde_del_periodo_vigente_hacia_adelante_no_guarda(): void
+    {
+        Carbon::setTestNow('2026-11-21 10:00');
+        Setting::set(Setting::PRECIO_FIJO_ACTIVO, '1');
+        $this->setFixedPricePeriods([['desde' => '2026-11-20', 'boleto' => 70000, 'seguro' => 5000]]);
+        $this->actingAs($this->fixedPriceAdmin());
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.precio_fijo_periodos', ['a' => $this->period('2026-11-22', '70000', '5000')])
+            ->call('save')
+            ->assertHasErrors(['data.precio_fijo_periodos']);
+
+        $this->assertSame('2026-11-20', Setting::precioFijoPeriodos()[0]['desde']);
+    }
+
+    public function test_borrar_el_periodo_vigente_con_uno_anterior_se_guarda(): void
+    {
+        Carbon::setTestNow('2026-11-21 10:00');
+        Setting::set(Setting::PRECIO_FIJO_ACTIVO, '1');
+        $this->setFixedPricePeriods([
+            ['desde' => '2026-11-01', 'boleto' => 60000, 'seguro' => 4000],
+            ['desde' => '2026-11-20', 'boleto' => 70000, 'seguro' => 5000],
+            ['desde' => '2026-12-02', 'boleto' => 160000, 'seguro' => 8000],
+        ]);
+        $this->actingAs($this->fixedPriceAdmin());
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.precio_fijo_periodos', [
+                'a' => $this->period('2026-11-01', '60000', '4000'),
+                'c' => $this->period('2026-12-02', '160000', '8000'),
+            ])
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertSame(['2026-11-01', '2026-12-02'], array_column(Setting::precioFijoPeriodos(), 'desde'));
+        $this->assertSame(60000, FixedTicketPrice::basePrice());
+    }
+
+    public function test_un_periodo_que_empieza_hoy_se_guarda(): void
+    {
+        Carbon::setTestNow('2026-11-21 00:00');
+        $this->actingAs($this->fixedPriceAdmin());
+
+        Livewire::test(TicketSettings::class)
+            ->set('data.precio_fijo_activo', true)
+            ->set('data.precio_fijo_periodos', ['a' => $this->period('2026-11-21')])
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertTrue(Setting::precioFijoActivo());
+        $this->assertTrue(FixedTicketPrice::hasCurrentPeriod());
+    }
+
+    // ---------------------- Permiso ----------------------
 
     public function test_sin_el_permiso_guardar_conserva_el_precio_fijo(): void
     {
+        Carbon::setTestNow('2026-11-21 10:00');
         Setting::set(Setting::PRECIO_FIJO_ACTIVO, '1');
-        Setting::set(Setting::PRECIO_FIJO_BOLETO, '5000');
-        Setting::set(Setting::PRECIO_FIJO_SEGURO_MENOR, '800');
+        $this->setFixedPricePeriods([['desde' => '2026-11-20', 'boleto' => 5000, 'seguro' => 800]]);
         $this->actingAs($this->admin);
 
         Livewire::test(TicketSettings::class)
@@ -1009,17 +1284,17 @@ class TicketSettingsTest extends TestCase
 
         $this->assertSame(8, Setting::ventaLimiteHoras());
         $this->assertTrue(Setting::precioFijoActivo());
-        $this->assertSame(5000, Setting::precioFijoBoleto());
-        $this->assertSame(800, Setting::precioFijoSeguroMenor());
+        $this->assertSame([['desde' => '2026-11-20', 'boleto' => 5000, 'seguro' => 800]], Setting::precioFijoPeriodos());
     }
 
     public function test_sin_el_permiso_un_pedido_manipulado_no_cambia_el_precio_fijo(): void
     {
+        Carbon::setTestNow('2026-11-21 10:00');
         $this->actingAs($this->admin);
 
         Livewire::test(TicketSettings::class)
             ->set('data.precio_fijo_activo', true)
-            ->set('data.precio_fijo_boleto', '1')
+            ->set('data.precio_fijo_periodos', ['a' => $this->period('2026-11-21', '1', '0')])
             ->set('data.require_password_ticket_delete', true)
             ->call('save')
             ->assertHasNoErrors();
@@ -1027,7 +1302,7 @@ class TicketSettingsTest extends TestCase
         $this->assertTrue(Setting::getBool(Setting::REQUIRE_PASSWORD_TICKET_DELETE));
         $this->assertFalse(Setting::precioFijoActivo());
         $this->assertDatabaseMissing('settings', ['key' => Setting::PRECIO_FIJO_ACTIVO]);
-        $this->assertDatabaseMissing('settings', ['key' => Setting::PRECIO_FIJO_BOLETO]);
+        $this->assertDatabaseMissing('settings', ['key' => Setting::PRECIO_FIJO_PERIODOS]);
     }
 
     // ====================== Pasajeros por venta ======================

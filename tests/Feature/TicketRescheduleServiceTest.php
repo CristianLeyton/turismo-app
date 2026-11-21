@@ -25,6 +25,7 @@ use Tests\TestCase;
 
 class TicketRescheduleServiceTest extends TestCase
 {
+    use ConfiguresFixedPrice;
     use RefreshDatabase;
 
     protected TicketRescheduleService $service;
@@ -183,6 +184,35 @@ class TicketRescheduleServiceTest extends TestCase
         ]);
 
         return $ticketIda;
+    }
+
+    public function test_reprogramar_a_una_fecha_de_otro_periodo_de_precio_no_cambia_el_precio(): void
+    {
+        $this->travelTo(\Carbon\Carbon::parse('2026-11-25 10:00'));
+        \App\Models\Setting::set(\App\Models\Setting::PRECIO_FIJO_ACTIVO, '1');
+        $this->setFixedPricePeriods([
+            ['desde' => '2026-11-20', 'boleto' => 70000, 'seguro' => 5000],
+            ['desde' => '2026-12-02', 'boleto' => 160000, 'seguro' => 8000],
+        ]);
+
+        $ticket = $this->createRoundTripSale('2026-11-28', '2027-01-11');
+        $ticket->update(['price' => 70000]);
+        $ticket->sale->recalculateTotal();
+
+        $this->service->reschedule($ticket, [
+            'scope' => 'outbound',
+            'date' => '2026-12-21',
+            'schedule_id' => $this->scheduleIda->id,
+            'seat_id' => Seat::where('bus_id', $this->bus1->id)->where('seat_number', '1')->first()->id,
+        ]);
+
+        $ticket->refresh();
+
+        $this->assertSame('2026-12-21', $ticket->trip->trip_date->format('Y-m-d'));
+        $this->assertEquals(70000, $ticket->price);
+        $this->assertEquals(70000, $ticket->sale->fresh()->total_amount);
+
+        \App\Models\Setting::flushCache();
     }
 
     public function test_mueve_solo_la_ida_a_otra_fecha_y_horario(): void

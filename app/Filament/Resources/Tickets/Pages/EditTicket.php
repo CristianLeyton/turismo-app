@@ -333,7 +333,13 @@ class EditTicket extends ResourcePage
             return null;
         }
 
-        $delta = FixedTicketPrice::insuranceDelta((bool) $ticket->travels_with_child, $childFlagNew);
+        // El seguro es el del período vigente cuando se vendió el boleto. La ida
+        // y la vuelta comparten la venta.
+        $delta = FixedTicketPrice::insuranceDelta(
+            (bool) $ticket->travels_with_child,
+            $childFlagNew,
+            $ticket->sale?->created_at ?? $ticket->created_at,
+        );
 
         if ($delta === 0) {
             return null;

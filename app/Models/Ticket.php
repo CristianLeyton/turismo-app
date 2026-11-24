@@ -39,6 +39,8 @@ class Ticket extends Model
         'pet_count',
         'observation',
         'price',
+        'price_mode',
+        'child_insurance',
         'payment_method',
         'origin_location_id',
         'destination_location_id',
@@ -52,7 +54,14 @@ class Ticket extends Model
         'is_return_leg' => 'boolean',
         'travels_with_child' => 'boolean',
         'travels_with_pets' => 'boolean',
+        'child_insurance' => 'integer',
     ];
+
+    /** Boleto de ida vendido con el precio fijo: guarda el seguro de ese día. */
+    public const PRICE_MODE_FIXED = 'fixed';
+
+    /** Boleto de ida vendido con el precio cargado a mano. */
+    public const PRICE_MODE_MANUAL = 'manual';
 
     /** Largo máximo de la observación interna del boleto (como un tweet). */
     public const MAX_OBSERVATION_LENGTH = 280;
@@ -357,6 +366,25 @@ class Ticket extends Model
         $outbound = $this->outboundLeg();
 
         return $outbound ? (float) $outbound->price : 0;
+    }
+
+    /**
+     * Boleto que lleva el precio del pasaje: el propio boleto si es ida, o su
+     * ida vigente si es una vuelta (null si esa ida no existe).
+     */
+    public function pricedLeg(): ?self
+    {
+        return $this->isReturnLeg() ? $this->outboundLeg() : $this;
+    }
+
+    /**
+     * ¿El pasaje se vendió con el precio cargado a mano? Se lee siempre de la
+     * ida: la vuelta no guarda modo de precio propio. Los boletos vendidos
+     * antes de registrar el modo responden false.
+     */
+    public function isPricedManually(): bool
+    {
+        return $this->pricedLeg()?->price_mode === self::PRICE_MODE_MANUAL;
     }
 
     /**

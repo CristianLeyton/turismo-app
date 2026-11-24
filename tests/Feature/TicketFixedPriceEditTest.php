@@ -95,6 +95,54 @@ class TicketFixedPriceEditTest extends TestCase
         $this->assertDatabaseMissing('ticket_edits', ['ticket_id' => $ticket->id, 'field' => 'price']);
     }
 
+    public function test_fijo_y_sin_modo_siguen_bloqueados(): void
+    {
+        $fixed = $this->oneWayTicket(5000, pricing: $this->fixed(800));
+
+        $this->editor($fixed)->assertFormFieldDisabled('price');
+
+        $this->editor($fixed)
+            ->set('data.price', '1')
+            ->set('data.first_name', 'Juan')
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertEquals(5000, $fixed->fresh()->price);
+    }
+
+    public function test_con_precio_fijo_un_boleto_vendido_a_mano_se_edita_a_mano(): void
+    {
+        $ticket = $this->oneWayTicket(4500, pricing: ['price_mode' => Ticket::PRICE_MODE_MANUAL]);
+
+        $this->editor($ticket)
+            ->assertFormFieldEnabled('price')
+            ->set('data.price', '5000')
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertEquals(5000, $ticket->fresh()->price);
+        $this->assertEquals(5000, $this->sale->fresh()->total_amount);
+
+        $edit = TicketEdit::where('ticket_id', $ticket->id)->where('field', 'price')->sole();
+        $this->assertEquals(4500, (float) $edit->old_value);
+        $this->assertEquals(5000, (float) $edit->new_value);
+    }
+
+    public function test_la_vuelta_de_un_boleto_vendido_a_mano_sigue_sin_precio_propio(): void
+    {
+        [$ida, $vuelta] = $this->roundTrip(9000, withChild: false, pricing: ['price_mode' => Ticket::PRICE_MODE_MANUAL]);
+
+        $this->editor($vuelta)
+            ->assertFormFieldDisabled('price')
+            ->set('data.price', '7000')
+            ->set('data.first_name', 'Juan')
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertEquals(0, $vuelta->fresh()->price);
+        $this->assertEquals(9000, $ida->fresh()->price);
+    }
+
     // ====================== Ajuste del seguro ======================
 
     public function test_agregar_el_menor_en_la_ida_suma_el_seguro(): void
@@ -241,6 +289,96 @@ class TicketFixedPriceEditTest extends TestCase
         $this->assertStringContainsString('Precio del boleto de ida: $10.000 → $10.800', $summary);
     }
 
+    // ====================== Ajuste según el modo registrado ======================
+
+    public function test_fijo_agregar_el_menor_en_la_ida_suma_el_seguro_registrado(): void
+    {
+        $this->configureFixedPrice(true, 5000, 3000);
+        $ticket = $this->oneWayTicket(5000, pricing: $this->fixed(800));
+
+        $this->addChild($this->editor($ticket))->call('save')->assertHasNoErrors();
+
+        $this->assertEquals(5800, $ticket->fresh()->price);
+    }
+
+    public function test_fijo_agregar_el_menor_en_la_vuelta_ajusta_la_ida_con_su_seguro(): void
+    {
+        $this->configureFixedPrice(true, 5000, 3000);
+        [$ida, $vuelta] = $this->roundTrip(10000, withChild: false, pricing: $this->fixed(800));
+
+        $this->addChild($this->editor($vuelta))
+            ->set('data.edit_reason', 'Avisó por teléfono')
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertEquals(10800, $ida->fresh()->price);
+        $this->assertEquals(0, $vuelta->fresh()->price);
+    }
+
+    public function test_fijo_quitar_el_menor_en_la_ida_resta_el_seguro_registrado(): void
+    {
+        [$ida] = $this->roundTrip(11600, withChild: true, pricing: $this->fixed(800));
+
+        $this->editor($ida)
+            ->set('data.travels_with_child', false)
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertEquals(10800, $ida->fresh()->price);
+    }
+
+    public function test_fijo_ignora_el_seguro_cambiado_en_la_grilla(): void
+    {
+        $ticket = $this->oneWayTicket(5800, withChild: true, pricing: $this->fixed(800));
+        $this->configureFixedPrice(true, 5000, 1000);
+
+        $this->editor($ticket)
+            ->set('data.travels_with_child', false)
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertEquals(5000, $ticket->fresh()->price);
+    }
+
+    public function test_fijo_con_el_periodo_de_la_venta_borrado_usa_su_seguro(): void
+    {
+        $this->travelTo(Carbon::parse('2026-11-25 10:00'));
+        $this->seasonPeriods();
+        $this->sale = Sale::create(['user_id' => $this->seller->id, 'sale_date' => now()]);
+        $ticket = $this->oneWayTicket(70000, pricing: $this->fixed(5000));
+
+        $this->travelTo(Carbon::parse('2026-12-05 10:00'));
+        $this->setFixedPricePeriods([['desde' => '2026-12-02', 'boleto' => 160000, 'seguro' => 8000]]);
+
+        $this->addChild($this->editor($ticket))->call('save')->assertHasNoErrors();
+
+        $this->assertEquals(75000, $ticket->fresh()->price);
+    }
+
+    public function test_manual_agregar_el_menor_no_cambia_el_precio(): void
+    {
+        $ticket = $this->oneWayTicket(4500, pricing: ['price_mode' => Ticket::PRICE_MODE_MANUAL]);
+
+        $this->addChild($this->editor($ticket))->call('save')->assertHasNoErrors();
+
+        $this->assertEquals(4500, $ticket->fresh()->price);
+        $this->assertTrue((bool) $ticket->fresh()->travels_with_child);
+        $this->assertDatabaseMissing('ticket_edits', ['ticket_id' => $ticket->id, 'field' => 'price']);
+    }
+
+    public function test_manual_desde_la_vuelta_no_cambia_el_precio_de_la_ida(): void
+    {
+        [$ida, $vuelta] = $this->roundTrip(9000, withChild: false, pricing: ['price_mode' => Ticket::PRICE_MODE_MANUAL]);
+
+        $this->addChild($this->editor($vuelta))
+            ->set('data.edit_reason', 'Avisó por teléfono')
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertEquals(9000, $ida->fresh()->price);
+        $this->assertTrue((bool) $vuelta->fresh()->travels_with_child);
+    }
+
     // ====================== Precio fijo apagado ======================
 
     public function test_con_precio_fijo_apagado_el_menor_no_cambia_el_precio_y_se_edita_a_mano(): void
@@ -275,6 +413,14 @@ class TicketFixedPriceEditTest extends TestCase
         ]);
     }
 
+    /**
+     * @return array{price_mode: string, child_insurance: int}
+     */
+    private function fixed(int $insurance): array
+    {
+        return ['price_mode' => Ticket::PRICE_MODE_FIXED, 'child_insurance' => $insurance];
+    }
+
     private function editor(Ticket $ticket): Testable
     {
         return Livewire::actingAs($this->seller)->test(EditTicket::class, ['record' => $ticket->getKey()]);
@@ -304,7 +450,10 @@ class TicketFixedPriceEditTest extends TestCase
         ]);
     }
 
-    private function oneWayTicket(int $price, bool $withChild = false): Ticket
+    /**
+     * @param  array<string, mixed>  $pricing  Modo y seguro registrados en la venta.
+     */
+    private function oneWayTicket(int $price, bool $withChild = false, array $pricing = []): Ticket
     {
         if ($withChild) {
             $this->addExistingChild();
@@ -320,16 +469,17 @@ class TicketFixedPriceEditTest extends TestCase
             'travels_with_child' => $withChild,
             'origin_location_id' => $this->oran->id,
             'destination_location_id' => $this->salta->id,
-        ]);
+        ] + $pricing);
         $this->sale->recalculateTotal();
 
         return $ticket;
     }
 
     /**
+     * @param  array<string, mixed>  $pricing  Modo y seguro registrados en la ida.
      * @return array{Ticket, Ticket}
      */
-    private function roundTrip(int $price, bool $withChild): array
+    private function roundTrip(int $price, bool $withChild, array $pricing = []): array
     {
         if ($withChild) {
             $this->addExistingChild();
@@ -348,7 +498,7 @@ class TicketFixedPriceEditTest extends TestCase
             'is_return_leg' => false,
             'origin_location_id' => $this->oran->id,
             'destination_location_id' => $this->salta->id,
-        ]);
+        ] + $pricing);
         $vuelta = Ticket::create($base + [
             'price' => 0,
             'is_return_leg' => true,

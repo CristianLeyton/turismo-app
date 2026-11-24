@@ -223,6 +223,96 @@ class TicketFixedPriceSaleTest extends TestCase
         $this->assertEquals(1500, Ticket::sole()->price);
     }
 
+    // ====================== Modo de precio registrado en la ida ======================
+
+    public function test_solo_ida_registra_modo_fijo_y_el_seguro_aunque_no_viaje_un_menor(): void
+    {
+        $this->emit($this->oneWayPayload());
+
+        $this->assertOutboundPricing(Ticket::PRICE_MODE_FIXED, 800);
+    }
+
+    public function test_ida_y_vuelta_registra_solo_en_la_ida(): void
+    {
+        $this->emit($this->roundTripPayload(withChild: true));
+
+        $this->assertOutboundPricing(Ticket::PRICE_MODE_FIXED, 800);
+        $this->assertReturnLegHasNoPricing();
+    }
+
+    public function test_vuelta_sin_fecha_registra_solo_en_la_ida(): void
+    {
+        $this->emit($this->roundTripPayload(overrides: [
+            'sell_without_date_vuelta' => true,
+            'return_trip_id' => null,
+            'return_seat_ids' => [],
+        ]));
+
+        $this->assertOutboundPricing(Ticket::PRICE_MODE_FIXED, 800);
+        $this->assertReturnLegHasNoPricing();
+    }
+
+    public function test_ida_sin_fecha_con_vuelta_con_fecha_registra_solo_en_la_ida(): void
+    {
+        $this->emit($this->roundTripPayload(overrides: [
+            'sell_without_date_ida' => true,
+            'trip_id' => null,
+            'seat_ids' => [],
+        ]));
+
+        $this->assertOutboundPricing(Ticket::PRICE_MODE_FIXED, 800);
+        $this->assertReturnLegHasNoPricing();
+    }
+
+    public function test_ambos_tramos_sin_fecha_registra_solo_en_la_ida(): void
+    {
+        $this->emit($this->roundTripPayload(overrides: [
+            'sell_without_date_ida' => true,
+            'sell_without_date_vuelta' => true,
+            'trip_id' => null,
+            'seat_ids' => [],
+            'return_trip_id' => null,
+            'return_seat_ids' => [],
+        ]));
+
+        $this->assertOutboundPricing(Ticket::PRICE_MODE_FIXED, 800);
+        $this->assertReturnLegHasNoPricing();
+    }
+
+    public function test_solo_ida_sin_fecha_registra_modo_fijo(): void
+    {
+        $this->emit(array_merge($this->oneWayPayload(), [
+            'sell_without_date_ida' => true,
+            'trip_id' => null,
+            'seat_ids' => [],
+        ]));
+
+        $this->assertOutboundPricing(Ticket::PRICE_MODE_FIXED, 800);
+    }
+
+    public function test_con_precio_a_mano_la_ida_registra_modo_manual_sin_seguro(): void
+    {
+        $this->configureFixedPrice(false, 5000, 800);
+        $payload = $this->roundTripPayload();
+        $payload['passengers'][0]['price'] = 1500;
+
+        $this->emit($payload);
+
+        $this->assertOutboundPricing(Ticket::PRICE_MODE_MANUAL, null);
+        $this->assertReturnLegHasNoPricing();
+    }
+
+    public function test_cambiar_o_borrar_el_periodo_no_cambia_el_seguro_registrado(): void
+    {
+        $this->emit($this->oneWayPayload());
+
+        $this->configureFixedPrice(true, 5000, 1000);
+        $this->assertSame(800, Ticket::sole()->fresh()->child_insurance);
+
+        $this->setFixedPricePeriods([]);
+        $this->assertSame(800, Ticket::sole()->fresh()->child_insurance);
+    }
+
     // ====================== Cambio de configuración con la venta abierta ======================
 
     public function test_si_cambio_el_precio_la_venta_se_rechaza_y_muestra_el_nuevo(): void
@@ -394,6 +484,22 @@ class TicketFixedPriceSaleTest extends TestCase
 
         $bodies = collect(session('filament.notifications', []))->pluck('body')->implode(' ');
         $this->assertStringContainsString($message, $bodies);
+    }
+
+    private function assertOutboundPricing(string $mode, ?int $insurance): void
+    {
+        $ida = Ticket::where('is_return_leg', false)->sole();
+
+        $this->assertSame($mode, $ida->price_mode);
+        $this->assertSame($insurance, $ida->child_insurance);
+    }
+
+    private function assertReturnLegHasNoPricing(): void
+    {
+        $vuelta = Ticket::where('is_return_leg', true)->sole();
+
+        $this->assertNull($vuelta->price_mode);
+        $this->assertNull($vuelta->child_insurance);
     }
 
     private function emit(array $data, ?CreateTicket $page = null): Ticket

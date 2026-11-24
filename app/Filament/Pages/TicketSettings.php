@@ -4,6 +4,7 @@ namespace App\Filament\Pages;
 
 use App\Models\Setting;
 use App\Support\BrandPalette;
+use App\Support\FixedTicketPrice;
 use BackedEnum;
 use Carbon\Carbon;
 use Closure;
@@ -276,6 +277,49 @@ class TicketSettings extends Page
     }
 
     /**
+     * Texto de la confirmación al borrar un período de la grilla, con el rango
+     * que muestra la grilla aunque no esté guardada. Si hay boletos vendidos
+     * antes de que el boleto guardara su seguro que dependen de ese período y
+     * todavía no viajaron, avisa cuántos son.
+     *
+     * @param  array<array-key, mixed>  $items
+     */
+    protected static function fixedPricePeriodDeleteDescription(array $items, string $key): string
+    {
+        $from = $items[$key]['desde'] ?? null;
+
+        if (blank($from)) {
+            return 'Vas a borrar este período. El cambio se aplica al guardar.';
+        }
+
+        $from = Carbon::parse($from)->format('Y-m-d');
+        $starts = collect($items)
+            ->map(fn (mixed $item): ?string => is_array($item) && filled($item['desde'] ?? null) ? Carbon::parse($item['desde'])->format('Y-m-d') : null)
+            ->filter()
+            ->unique()
+            ->sort()
+            ->values();
+
+        $simple = 'Vas a borrar el período desde el '.Carbon::parse($from)->format('d/m/Y').'. El cambio se aplica al guardar.';
+
+        // El período más antiguo también cubre las ventas anteriores a él.
+        $count = FixedTicketPrice::legacyTicketsDependingOn(
+            $from === $starts->first() ? null : $from,
+            $starts->first(fn (string $start): bool => $start > $from),
+        );
+
+        if ($count === 0) {
+            return $simple;
+        }
+
+        $tickets = $count === 1
+            ? '1 boleto vendido en este período todavía no viajó y toma de acá el seguro para menores'
+            : "{$count} boletos vendidos en este período todavía no viajaron y toman de acá el seguro para menores";
+
+        return "{$simple} {$tickets}: si lo borrás, al agregarles o quitarles un menor van a usar el seguro de otro período.";
+    }
+
+    /**
      * ¿Quien usa la página puede prender o apagar el precio fijo y cambiar sus montos?
      */
     protected function canManageFixedPrice(): bool
@@ -447,12 +491,23 @@ class TicketSettings extends Page
                     Repeater::make('precio_fijo_periodos')
                         ->label('Períodos de precio')
                         ->helperText('Cada período rige desde su fecha hasta el día anterior al siguiente. El precio lo decide el día de la venta, no el del viaje.')
-                        ->hintIcon(Heroicon::OutlinedInformationCircle, tooltip: 'Ej.: un período desde el 20/11 a $70.000 y otro desde el 02/12 a $160.000: el sistema cambia solo el 02/12. Los períodos pasados se conservan porque se usan al editar el menor de boletos ya vendidos.')
+                        ->hintIcon(Heroicon::OutlinedInformationCircle, tooltip: 'Ej.: un período desde el 20/11 a $70.000 y otro desde el 02/12 a $160.000: el sistema cambia solo el 02/12. Los boletos guardan el seguro con que se vendieron. Los más viejos lo toman de esta grilla al editar el menor: por eso, al borrar un período, se avisa si alguno depende de él.')
                         ->addActionLabel('Agregar período')
                         ->defaultItems(0)
                         ->reorderable(false)
                         ->columns(['default' => 1, 'sm' => 3])
                         ->itemLabel(fn (Repeater $component, string $key): string => $this->fixedPricePeriodLabel($component->getRawState() ?? [], $key))
+                        // Borrar un período cambia el seguro que toman los boletos
+                        // vendidos antes de que el boleto guardara el suyo: siempre
+                        // se confirma, y se avisa cuántos dependen de él.
+                        ->deleteAction(fn (Action $action): Action => $action
+                            ->requiresConfirmation()
+                            ->modalHeading('Borrar período')
+                            ->modalDescription(fn (array $arguments, Repeater $component): string => self::fixedPricePeriodDeleteDescription(
+                                $component->getRawState() ?? [],
+                                (string) ($arguments['item'] ?? ''),
+                            ))
+                            ->modalSubmitActionLabel('Borrar'))
                         ->visible(fn (Get $get): bool => (bool) $get('precio_fijo_activo'))
                         ->required(fn (Get $get): bool => (bool) $get('precio_fijo_activo'))
                         ->rule(static fn (): Closure => static function (string $attribute, mixed $value, Closure $fail): void {

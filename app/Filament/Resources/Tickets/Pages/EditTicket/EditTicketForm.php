@@ -204,14 +204,14 @@ class EditTicketForm
                                 ->numeric()
                                 ->minValue(0)
                                 ->maxValue(999999)
-                                // Con precio fijo nadie lo edita: el seguro del menor
-                                // se ajusta solo al guardar (ver EditTicket).
-                                ->disabled(fn (): bool => self::isSharedPriceReturnLeg() || FixedTicketPrice::isActive())
-                                ->dehydrated(fn (): bool => ! self::isSharedPriceReturnLeg() && ! FixedTicketPrice::isActive())
+                                // Con precio fijo nadie lo edita (salvo un pasaje vendido a
+                                // mano): el seguro del menor se ajusta solo al guardar.
+                                ->disabled(fn (mixed $livewire): bool => self::isSharedPriceReturnLeg($livewire) || self::isPriceLockedByFixedPrice($livewire))
+                                ->dehydrated(fn (mixed $livewire): bool => ! self::isSharedPriceReturnLeg($livewire) && ! self::isPriceLockedByFixedPrice($livewire))
                                 ->hint(
-                                    fn () => match (true) {
-                                        self::isSharedPriceReturnLeg() => 'El precio viaja en el boleto de ida',
-                                        FixedTicketPrice::isActive() => 'Lo calcula el precio fijo',
+                                    fn (mixed $livewire) => match (true) {
+                                        self::isSharedPriceReturnLeg($livewire) => 'El precio viaja en el boleto de ida',
+                                        self::isPriceLockedByFixedPrice($livewire) => 'Lo calcula el precio fijo',
                                         default => null,
                                     }
                                 )
@@ -275,15 +275,30 @@ class EditTicketForm
     }
 
     /**
+     * ¿El precio fijo bloquea el precio de este boleto? Los vendidos a mano
+     * siguen editándose a mano aunque el precio fijo esté prendido. Recibe el
+     * componente que Filament inyecta en el closure (Livewire::current() no
+     * existe fuera de un request, como en los tests).
+     */
+    private static function isPriceLockedByFixedPrice(mixed $livewire): bool
+    {
+        $record = $livewire instanceof EditTicket ? $livewire->getRecord() : self::livewireRecord();
+
+        return $record instanceof Ticket
+            ? EditTicket::isPriceLockedByFixedPrice($record)
+            : FixedTicketPrice::isActive();
+    }
+
+    /**
      * Tramo de vuelta con precio compartido: no se edita acá.
      *
      * Ojo: en esta página los closures del schema NO reciben `$record`
      * (el schema no está atado al modelo y resuelve null), así que el boleto
      * se lee del componente Livewire con livewireRecord().
      */
-    private static function isSharedPriceReturnLeg(): bool
+    private static function isSharedPriceReturnLeg(mixed $livewire = null): bool
     {
-        $record = self::livewireRecord();
+        $record = $livewire instanceof EditTicket ? $livewire->getRecord() : self::livewireRecord();
 
         return $record instanceof Ticket && EditTicket::isReturnLegWithSharedPrice($record);
     }

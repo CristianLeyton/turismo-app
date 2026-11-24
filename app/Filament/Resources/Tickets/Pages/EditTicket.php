@@ -289,7 +289,7 @@ class EditTicket extends ResourcePage
         // Venta (no en tramo de vuelta con precio compartido)
         if (! self::isReturnLegWithSharedPrice($ticket)) {
             $old = (float) $ticket->price;
-            $new = FixedTicketPrice::isActive() ? $old : (float) ($data['price'] ?? $old);
+            $new = self::isPriceLockedByFixedPrice($ticket) ? $old : (float) ($data['price'] ?? $old);
             if ($old !== $new) {
                 $details[] = 'Precio: $'.number_format($old, 0, ',', '.').' → $'.number_format($new, 0, ',', '.');
             }
@@ -320,7 +320,9 @@ class EditTicket extends ResourcePage
      * Ajuste del seguro del menor con el precio fijo prendido: un seguro por
      * tramo, sumado o restado siempre en el boleto de ida del pasajero (la
      * vuelta vale 0). Se compara con la marca del propio boleto, que es la
-     * que dice si ese tramo viaja con menor.
+     * que dice si ese tramo viaja con menor. El monto depende de cómo se
+     * vendió la ida: el seguro guardado en ella, ninguno si fue a mano, o el
+     * de la grilla si se vendió antes de registrar el modo.
      *
      * Devuelve null si no hay nada que ajustar y false si es una vuelta sin
      * boleto de ida vigente donde cargar el seguro.
@@ -333,23 +335,34 @@ class EditTicket extends ResourcePage
             return null;
         }
 
-        // El seguro es el del período vigente cuando se vendió el boleto. La ida
-        // y la vuelta comparten la venta.
-        $delta = FixedTicketPrice::insuranceDelta(
-            (bool) $ticket->travels_with_child,
-            $childFlagNew,
-            $ticket->sale?->created_at ?? $ticket->created_at,
-        );
+        $childFlagOld = (bool) $ticket->travels_with_child;
 
-        if ($delta === 0) {
+        if ($childFlagOld === $childFlagNew) {
             return null;
         }
 
         $fromReturnLeg = $ticket->isReturnLeg();
-        $target = $fromReturnLeg ? $ticket->outboundLeg() : $ticket;
+        $target = $ticket->pricedLeg();
 
         if (! $target instanceof Ticket) {
             return false;
+        }
+
+        // El modo y el seguro se leen siempre de la ida. Vendida a mano, el
+        // precio lo maneja una persona. Sin modo (vendida antes de registrarlo),
+        // el seguro sale del período vigente cuando se vendió.
+        $delta = match ($target->price_mode) {
+            Ticket::PRICE_MODE_MANUAL => 0,
+            Ticket::PRICE_MODE_FIXED => ($childFlagNew ? 1 : -1) * (int) $target->child_insurance,
+            default => FixedTicketPrice::insuranceDelta(
+                $childFlagOld,
+                $childFlagNew,
+                $ticket->sale?->created_at ?? $ticket->created_at,
+            ),
+        };
+
+        if ($delta === 0) {
+            return null;
         }
 
         $old = (float) $target->price;
@@ -360,6 +373,16 @@ class EditTicket extends ResourcePage
             'new' => max(0, $old + $delta),
             'from_return_leg' => $fromReturnLeg,
         ];
+    }
+
+    /**
+     * ¿El precio fijo impide cambiar a mano el precio de este boleto? Sí,
+     * salvo que el pasaje se haya vendido a mano: ese precio lo puso una
+     * persona y lo sigue manejando una persona.
+     */
+    public static function isPriceLockedByFixedPrice(Ticket $ticket): bool
+    {
+        return FixedTicketPrice::isActive() && ! $ticket->isPricedManually();
     }
 
     /**
@@ -536,7 +559,7 @@ class EditTicket extends ResourcePage
         // ---- 4. Datos económicos (no en tramos de vuelta con precio compartido) ----
         if (! $isReturnLegWithSharedPrice) {
             // Con precio fijo el precio no se edita a mano, aunque el pedido lo traiga.
-            $priceNew = FixedTicketPrice::isActive() ? null : ($data['price'] ?? null);
+            $priceNew = self::isPriceLockedByFixedPrice($ticket) ? null : ($data['price'] ?? null);
 
             if ($priceNew !== null && (float) $priceNew !== (float) $ticket->price) {
                 $changes[] = ['price', $ticket->price, $priceNew];

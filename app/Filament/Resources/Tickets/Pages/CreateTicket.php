@@ -535,6 +535,10 @@ class CreateTicket extends CreateRecord
         // distinto del que se le informó al pasajero.
         $data = $this->applyFixedPrice($data);
 
+        // Cómo se vendió la ida (precio fijo con su seguro, o a mano): queda
+        // en el boleto para que editar el menor no dependa de la grilla.
+        $outboundPricing = FixedTicketPrice::outboundPricingAttributes();
+
         // 0.f Una persona por venta y por viaje: sin DNI repetidos dentro de
         // la venta (adultos y menores) y sin DNI que ya tengan boleto en el
         // viaje de ida o de vuelta. Sin excepciones por permiso. Se repite
@@ -547,7 +551,7 @@ class CreateTicket extends CreateRecord
             // tramos se confirman juntos o no se crea nada. Los viajes quedan
             // bloqueados hasta el commit (las verificaciones con bloqueo de
             // Trip corren como savepoints de esta transacción).
-            $firstTicket = DB::transaction(function () use ($data): Model {
+            $firstTicket = DB::transaction(function () use ($data, $outboundPricing): Model {
                 $this->lockSaleTrips($data);
 
                 $conflicts = TripPassengerConflicts::find(
@@ -603,7 +607,7 @@ class CreateTicket extends CreateRecord
                 $sellWithoutDateVuelta = (bool) ($data['sell_without_date_vuelta'] ?? false);
 
                 if ($sellWithoutDateIda || $sellWithoutDateVuelta) {
-                    return $this->createPendingTickets($sale, $data, $adultPassengers, $sellWithoutDateIda, $sellWithoutDateVuelta);
+                    return $this->createPendingTickets($sale, $data, $adultPassengers, $sellWithoutDateIda, $sellWithoutDateVuelta, $outboundPricing);
                 }
 
                 // 3. Preparar datos de tickets con validación de asientos
@@ -668,7 +672,7 @@ class CreateTicket extends CreateRecord
                         'destination_location_id' => $data['destination_location_id'],
                         'price' => $passengerData['price'] ?? 0,
                         'payment_method' => $passengerData['payment_method'] ?? null,
-                    ];
+                    ] + $outboundPricing;
                 }
 
                 $result = $trip->createTicketsWithLock($ticketsData);
@@ -973,8 +977,10 @@ class CreateTicket extends CreateRecord
      *  - Sólo ida sin fecha: tickets sin viaje, is_round_trip=false.
      *  - Mixto (ida con fecha + vuelta sin fecha): ida normal (con viaje y
      *    asiento via createTicketsWithLock) + vuelta pendiente is_return_leg=true.
+     *
+     * @param  array{price_mode: string, child_insurance: int|null}  $outboundPricing  Cómo se vendió la ida; la vuelta no lo lleva.
      */
-    private function createPendingTickets(Sale $sale, array $data, Collection $adultPassengers, bool $idaSinFecha, bool $vueltaSinFecha): Model
+    private function createPendingTickets(Sale $sale, array $data, Collection $adultPassengers, bool $idaSinFecha, bool $vueltaSinFecha, array $outboundPricing): Model
     {
         $isRoundTrip = (bool) ($data['is_round_trip'] ?? false);
 
@@ -1008,7 +1014,7 @@ class CreateTicket extends CreateRecord
                     'destination_location_id' => $data['destination_location_id'],
                     'price' => $passengerData['price'] ?? 0,
                     'payment_method' => $passengerData['payment_method'] ?? null,
-                ]);
+                ] + $outboundPricing);
             }
         } else {
             // Ida CON fecha (modo mixto: sólo la vuelta va sin fecha) →
@@ -1062,7 +1068,7 @@ class CreateTicket extends CreateRecord
                     'destination_location_id' => $data['destination_location_id'],
                     'price' => $passengerData['price'] ?? 0,
                     'payment_method' => $passengerData['payment_method'] ?? null,
-                ];
+                ] + $outboundPricing;
             }
 
             $result = $trip->createTicketsWithLock($ticketsData);

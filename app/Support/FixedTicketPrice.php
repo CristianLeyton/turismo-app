@@ -3,7 +3,11 @@
 namespace App\Support;
 
 use App\Models\Setting;
+use App\Models\Ticket;
+use Carbon\Carbon;
 use Carbon\CarbonInterface;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Query\Builder as QueryBuilder;
 
 /**
  * Precio fijo de los boletos: única fuente del cálculo para la vista previa
@@ -113,6 +117,72 @@ final class FixedTicketPrice
         $insurance = $period['seguro'] ?? 0;
 
         return $hasChild ? $insurance : -$insurance;
+    }
+
+    /**
+     * Cómo se vendió el boleto de ida, para guardarlo en él: con el precio
+     * fijo, el modo "fijo" y el seguro por tramo de hoy (aunque no viaje un
+     * menor, por si se agrega después); a mano, el modo "manual" sin seguro.
+     * La vuelta no lleva estos datos: los lee de su ida.
+     *
+     * @return array{price_mode: string, child_insurance: int|null}
+     */
+    public static function outboundPricingAttributes(): array
+    {
+        if (! self::isActive()) {
+            return ['price_mode' => Ticket::PRICE_MODE_MANUAL, 'child_insurance' => null];
+        }
+
+        return ['price_mode' => Ticket::PRICE_MODE_FIXED, 'child_insurance' => self::childInsurance()];
+    }
+
+    /**
+     * Cuántos pasajes vendidos antes de registrar el modo de precio dependen
+     * del período que va de `$from` (null = sin límite, el período más
+     * antiguo también cubre las ventas anteriores) hasta el día anterior a
+     * `$until` (null = en adelante). Son los que tomarían el seguro de otro
+     * período si se borra este. Solo cuentan las idas vigentes cuya ida o
+     * vuelta todavía no viajó o no tiene fecha: editar el menor de un viaje
+     * ya hecho es raro, y así el aviso deja de salir solo.
+     */
+    public static function legacyTicketsDependingOn(?string $from, ?string $until): int
+    {
+        $timezone = config('app.timezone');
+        $start = $from === null ? null : Carbon::parse($from, $timezone)->startOfDay();
+        $end = $until === null ? null : Carbon::parse($until, $timezone)->startOfDay();
+        $today = today()->format('Y-m-d');
+
+        $inRange = function (Builder $query, string $column) use ($start, $end): void {
+            $query
+                ->when($start, fn (Builder $q) => $q->where($column, '>=', $start))
+                ->when($end, fn (Builder $q) => $q->where($column, '<', $end));
+        };
+
+        return Ticket::query()
+            ->whereNull('price_mode')
+            ->where('is_return_leg', false)
+            // Mismo criterio que la edición: la fecha de la venta, o la del
+            // boleto si su venta fue eliminada.
+            ->where(fn (Builder $query) => $query
+                ->whereHas('sale', fn (Builder $sale) => $inRange($sale, 'created_at'))
+                ->orWhere(fn (Builder $orphan) => $orphan
+                    ->whereDoesntHave('sale')
+                    ->where(fn (Builder $q) => $inRange($q, 'tickets.created_at'))))
+            ->where(fn (Builder $query) => $query
+                ->whereNull('trip_id')
+                ->orWhereHas('trip', fn (Builder $trip) => $trip->whereDate('trip_date', '>=', $today))
+                ->orWhereExists(fn (QueryBuilder $returnLeg) => $returnLeg
+                    ->selectRaw('1')
+                    ->from('tickets as return_legs')
+                    ->leftJoin('trips as return_trips', 'return_trips.id', '=', 'return_legs.trip_id')
+                    ->whereColumn('return_legs.sale_id', 'tickets.sale_id')
+                    ->whereColumn('return_legs.passenger_id', 'tickets.passenger_id')
+                    ->where('return_legs.is_return_leg', true)
+                    ->whereNull('return_legs.deleted_at')
+                    ->where(fn (QueryBuilder $q) => $q
+                        ->whereNull('return_legs.trip_id')
+                        ->orWhereDate('return_trips.trip_date', '>=', $today))))
+            ->count();
     }
 
     /**

@@ -20,6 +20,7 @@ use App\Models\User;
 use App\Support\FixedTicketPrice;
 use App\Support\Permissions;
 use App\Support\ServiceDays;
+use Filament\Actions\Testing\TestAction;
 use Filament\Schemas\Components\Tabs;
 use Filament\Schemas\Components\Tabs\Tab;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -2212,5 +2213,140 @@ class TicketSettingsTest extends TestCase
             );
 
         $this->assertSame(['Venta' => null, 'Boleto' => 1], $this->tabBadges($component));
+    }
+
+    // ====================== Borrar un período de precio ======================
+
+    private function deletePeriod(string $item): TestAction
+    {
+        return TestAction::make('delete')->schemaComponent('precio_fijo_periodos')->arguments(['item' => $item]);
+    }
+
+    /** Dos períodos guardados, del 01/11 y del 20/11, con hoy en el segundo. */
+    private function twoPeriodsPage(): Testable
+    {
+        Carbon::setTestNow('2026-11-25 10:00');
+        Setting::set(Setting::PRECIO_FIJO_ACTIVO, '1');
+        $this->setFixedPricePeriods([
+            ['desde' => '2026-11-01', 'boleto' => 60000, 'seguro' => 4000],
+            ['desde' => '2026-11-20', 'boleto' => 70000, 'seguro' => 5000],
+        ]);
+        $this->actingAs($this->fixedPriceAdmin());
+
+        return Livewire::test(TicketSettings::class);
+    }
+
+    /** Clave de la fila de la grilla cuyo "Desde" es la fecha dada. */
+    private function periodKey(Testable $component, string $from): string
+    {
+        foreach ($component->get('data.precio_fijo_periodos') as $key => $item) {
+            if (Carbon::parse($item['desde'])->format('Y-m-d') === $from) {
+                return (string) $key;
+            }
+        }
+
+        $this->fail("No hay un período desde {$from}.");
+    }
+
+    /** Boleto de ida sin modo de precio ni fecha (por viajar), vendido en la fecha dada. */
+    private function legacyTicketSoldAt(string $soldAt, ?string $priceMode = null): Ticket
+    {
+        $sale = Sale::create(['user_id' => $this->admin->id, 'sale_date' => $soldAt]);
+        $sale->forceFill(['created_at' => $soldAt])->saveQuietly();
+        $oran = Location::firstOrCreate(['name' => 'Orán S'], ['is_active' => true]);
+        $salta = Location::firstOrCreate(['name' => 'Salta S'], ['is_active' => true]);
+
+        return Ticket::create([
+            'sale_id' => $sale->id,
+            'passenger_id' => Passenger::create([
+                'first_name' => 'Pasajero',
+                'last_name' => 'Viejo',
+                'dni' => (string) random_int(30000000, 39999999),
+                'passenger_type' => 'adult',
+            ])->id,
+            'is_round_trip' => false,
+            'is_return_leg' => false,
+            'origin_location_id' => $oran->id,
+            'destination_location_id' => $salta->id,
+            'price' => 60000,
+            'price_mode' => $priceMode,
+        ]);
+    }
+
+    public function test_borrar_un_periodo_pide_confirmacion_y_al_confirmar_lo_quita(): void
+    {
+        $component = $this->twoPeriodsPage();
+        $key = $this->periodKey($component, '2026-11-01');
+
+        $component
+            ->mountAction($this->deletePeriod($key))
+            ->assertMountedActionModalSee('Borrar período')
+            ->assertMountedActionModalSee('Vas a borrar el período desde el 01/11/2026. El cambio se aplica al guardar.')
+            ->callMountedAction();
+
+        $this->assertCount(1, $component->get('data.precio_fijo_periodos'));
+
+        $component->call('save')->assertHasNoErrors();
+
+        $this->assertSame([['desde' => '2026-11-20', 'boleto' => 70000, 'seguro' => 5000]], Setting::precioFijoPeriodos());
+    }
+
+    public function test_cancelar_el_borrado_deja_la_grilla_como_estaba(): void
+    {
+        $component = $this->twoPeriodsPage();
+
+        $component
+            ->mountAction($this->deletePeriod($this->periodKey($component, '2026-11-01')))
+            ->unmountAction();
+
+        $this->assertCount(2, $component->get('data.precio_fijo_periodos'));
+    }
+
+    public function test_el_aviso_cuenta_los_boletos_anteriores_que_dependen_del_periodo(): void
+    {
+        $component = $this->twoPeriodsPage();
+        $this->legacyTicketSoldAt('2026-11-10 09:00');
+        $this->legacyTicketSoldAt('2026-11-12 09:00');
+
+        $component
+            ->mountAction($this->deletePeriod($this->periodKey($component, '2026-11-01')))
+            ->assertMountedActionModalSee('2 boletos vendidos en este período todavía no viajaron y toman de acá el seguro para menores: si lo borrás, al agregarles o quitarles un menor van a usar el seguro de otro período.');
+    }
+
+    public function test_el_aviso_en_singular_con_un_solo_boleto(): void
+    {
+        $component = $this->twoPeriodsPage();
+        $this->legacyTicketSoldAt('2026-11-10 09:00');
+
+        $component
+            ->mountAction($this->deletePeriod($this->periodKey($component, '2026-11-01')))
+            ->assertMountedActionModalSee('1 boleto vendido en este período todavía no viajó');
+    }
+
+    public function test_sin_boletos_anteriores_la_confirmacion_es_simple(): void
+    {
+        $component = $this->twoPeriodsPage();
+        $this->legacyTicketSoldAt('2026-11-10 09:00', Ticket::PRICE_MODE_FIXED);
+        $this->legacyTicketSoldAt('2026-11-22 09:00');
+
+        $component
+            ->mountAction($this->deletePeriod($this->periodKey($component, '2026-11-01')))
+            ->assertMountedActionModalDontSee('todavía no viaj');
+    }
+
+    public function test_el_periodo_mas_antiguo_cuenta_las_ventas_anteriores(): void
+    {
+        $component = $this->twoPeriodsPage();
+        $this->legacyTicketSoldAt('2026-10-10 09:00');
+
+        $component
+            ->mountAction($this->deletePeriod($this->periodKey($component, '2026-11-01')))
+            ->assertMountedActionModalSee('1 boleto vendido en este período todavía no viajó');
+    }
+
+    public function test_la_grilla_explica_que_los_boletos_guardan_su_seguro(): void
+    {
+        $this->twoPeriodsPage()
+            ->assertSee('Los boletos guardan el seguro con que se vendieron', false);
     }
 }

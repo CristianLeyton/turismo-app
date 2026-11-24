@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Setting;
+use App\Models\Ticket;
 use App\Support\FixedTicketPrice;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -235,5 +236,35 @@ class FixedTicketPriceTest extends TestCase
         $this->travelTo(Carbon::parse('2026-11-26 00:05'));
 
         $this->assertSame($before, FixedTicketPrice::snapshot());
+    }
+
+    // ====================== Datos de precio de la ida ======================
+
+    public function test_con_precio_fijo_la_ida_registra_modo_fijo_y_el_seguro_de_hoy(): void
+    {
+        $this->configureFixedPrice(true, 5000, 800);
+
+        $this->assertSame(
+            ['price_mode' => Ticket::PRICE_MODE_FIXED, 'child_insurance' => 800],
+            FixedTicketPrice::outboundPricingAttributes(),
+        );
+    }
+
+    public function test_el_seguro_registrado_es_el_del_periodo_de_hoy(): void
+    {
+        $this->travelTo(Carbon::parse('2026-12-05 10:00'));
+        $this->seasonPeriods();
+
+        $this->assertSame(8000, FixedTicketPrice::outboundPricingAttributes()['child_insurance']);
+    }
+
+    public function test_con_precio_a_mano_la_ida_registra_modo_manual_sin_seguro(): void
+    {
+        $this->configureFixedPrice(false, 5000, 800);
+
+        $this->assertSame(
+            ['price_mode' => Ticket::PRICE_MODE_MANUAL, 'child_insurance' => null],
+            FixedTicketPrice::outboundPricingAttributes(),
+        );
     }
 }

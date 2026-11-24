@@ -263,34 +263,55 @@ class DesignBusLayout extends ResourcePage
         }
     }
 
-    /** Mueve un asiento a otra celda (por explicación del usuario o drag). */
+    /**
+     * Modo "Mover": reubica un asiento del piso actual. Si en el destino hay
+     * otro asiento, intercambian lugar. Solo cambian fila y columna: número,
+     * estado y boletos quedan igual, por eso vale también para los vendidos.
+     */
     public function moveSeat(int $row, int $col, int $toRow, int $toCol): void
     {
-        $seat = $this->seatAt($row, $col);
+        $from = $this->seatIndexAt($row, $col);
 
-        if (! $seat) {
+        if ($from === null || ($row === $toRow && $col === $toCol)) {
             return;
         }
 
-        if ($this->areaAt($toRow, $toCol) || $this->seatAt($toRow, $toCol)) {
+        if ($area = $this->areaAt($toRow, $toCol)) {
+            // Hay zonas guardadas sin etiqueta (por ejemplo, pasillos): se nombran por su tipo.
+            $areaName = filled($area['label']) ? $area['label'] : $this->defaultAreaLabel($area['type']);
+
             Notification::make()
-                ->title('Celda ocupada')
-                ->body('Hay un área o asiento en la celda de destino; primero mové el asiento o quitá el área.')
+                ->title('No se puede mover el asiento')
+                ->body("La celda de destino es parte de la zona \"{$areaName}\". Elegí una celda libre u otro asiento.")
                 ->warning()
                 ->send();
 
             return;
         }
 
-        foreach ($this->seats as $i => $s) {
-            if ($s === $seat) {
-                $this->seats[$i]['row'] = $toRow;
-                $this->seats[$i]['column'] = $toCol;
-                break;
+        $to = $this->seatIndexAt($toRow, $toCol);
+
+        if ($to !== null) {
+            $this->seats[$to]['row'] = $row;
+            $this->seats[$to]['column'] = $col;
+        }
+
+        $this->seats[$from]['row'] = $toRow;
+        $this->seats[$from]['column'] = $toCol;
+
+        $this->refreshGridSize();
+    }
+
+    /** Índice en $seats del asiento de una celda del piso actual, o null. */
+    private function seatIndexAt(int $row, int $col): ?int
+    {
+        foreach ($this->seats as $i => $seat) {
+            if ((int) $seat['floor'] === $this->floor && (int) $seat['row'] === $row && (int) $seat['column'] === $col) {
+                return $i;
             }
         }
 
-        $this->refreshGridSize();
+        return null;
     }
 
     // ─────────────────────────── Áreas ───────────────────────────

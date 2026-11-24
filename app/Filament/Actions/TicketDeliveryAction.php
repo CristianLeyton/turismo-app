@@ -77,7 +77,7 @@ final class TicketDeliveryAction
      */
     private static function isSale(array $arguments): bool
     {
-        return ($arguments['kind'] ?? null) !== TicketDelivery::KIND_RESCHEDULE;
+        return ! in_array($arguments['kind'] ?? null, TicketDelivery::RESCHEDULE_KINDS, true);
     }
 
     /**
@@ -88,7 +88,9 @@ final class TicketDeliveryAction
         if (! self::isSale($arguments)) {
             $ticketId = (int) (($arguments['ticket_ids'] ?? [])[0] ?? 0);
 
-            return "Boleto N°{$ticketId} reprogramado correctamente";
+            return ($arguments['kind'] ?? null) === TicketDelivery::KIND_OPEN_DATE
+                ? "Boleto N°{$ticketId} quedó con fecha abierta"
+                : "Boleto N°{$ticketId} reprogramado correctamente";
         }
 
         return 'Venta N°'.(int) ($arguments['sale_id'] ?? 0).' realizada correctamente';

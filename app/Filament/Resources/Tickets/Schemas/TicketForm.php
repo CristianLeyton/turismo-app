@@ -370,17 +370,17 @@ class TicketForm
                                     ->required()
                                     ->default(1)
                                     ->live()
-                                    ->options([
-                                        '1' => '1',
-                                        '2' => '2',
-                                        '3' => '3',
-                                        '4' => '4',
-                                    ])
+                                    // Límite de Parámetros > Venta: se lee en cada render y en
+                                    // cada validación, así la emisión rechaza una cantidad que
+                                    // superó un límite bajado con la venta abierta.
+                                    ->options(fn (): array => collect(range(1, Setting::limitePasajerosVenta()))
+                                        ->mapWithKeys(fn (int $count): array => [(string) $count => (string) $count])
+                                        ->all())
                                     ->selectablePlaceholder(false)
-                                    ->rule('in:1,2,3,4')
+                                    ->rule(fn (): string => 'in:'.implode(',', range(1, Setting::limitePasajerosVenta())))
                                     ->validationMessages([
                                         'required' => 'Ingrese la cantidad de pasajeros',
-                                        'in' => 'La cantidad de pasajeros debe ser entre 1 y 4',
+                                        'in' => fn (): string => 'La cantidad de pasajeros debe ser entre 1 y '.Setting::limitePasajerosVenta(),
                                     ])
                                     ->afterStateUpdated(function ($state, callable $set, Get $get) {
 

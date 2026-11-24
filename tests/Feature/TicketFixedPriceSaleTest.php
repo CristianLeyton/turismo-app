@@ -31,6 +31,7 @@ use Tests\TestCase;
  */
 class TicketFixedPriceSaleTest extends TestCase
 {
+    use ConfiguresFixedPrice;
     use RefreshDatabase;
 
     private Location $oran;
@@ -55,9 +56,10 @@ class TicketFixedPriceSaleTest extends TestCase
         parent::setUp();
 
         Setting::flushCache();
-        $this->configureFixedPrice(true, 5000, 800);
 
+        // Primero el día de la venta: el período del helper rige desde "hoy".
         $this->travelTo(Carbon::parse('2026-10-01 07:00:00'));
+        $this->configureFixedPrice(true, 5000, 800);
 
         PaymentMethod::create(['code' => 'efectivo', 'label' => 'Efectivo', 'is_active' => true]);
         Cache::forget('payment_methods.options');
@@ -228,7 +230,7 @@ class TicketFixedPriceSaleTest extends TestCase
         $page = app(CreateTicket::class);
         $page->data = ['fixed_price_snapshot' => '1|5000|800'];
 
-        Setting::set(Setting::PRECIO_FIJO_BOLETO, '6000');
+        $this->configureFixedPrice(true, 6000, 800);
 
         $this->assertEmissionRejected($this->oneWayPayload(snapshot: '1|5000|800'), $page);
 
@@ -261,13 +263,128 @@ class TicketFixedPriceSaleTest extends TestCase
         $this->assertEquals(1500, Ticket::sole()->price);
     }
 
+    // ====================== Precio vigente según la fecha de venta ======================
+
+    public function test_venta_dentro_de_un_periodo(): void
+    {
+        $this->sellOn('2026-11-25 07:00', tripDate: '2026-11-25');
+
+        $this->assertEquals(70000, Ticket::sole()->price);
+    }
+
+    public function test_el_primer_dia_del_periodo_siguiente_rige_el_nuevo(): void
+    {
+        $this->sellOn('2026-12-02 07:00', tripDate: '2026-12-02', withChild: true);
+
+        $this->assertEquals(168000, Ticket::sole()->price);
+    }
+
+    public function test_despues_del_ultimo_periodo_sigue_rigiendo_su_monto(): void
+    {
+        $this->sellOn('2027-03-15 07:00', tripDate: '2027-03-15');
+
+        $this->assertEquals(160000, Ticket::sole()->price);
+    }
+
+    public function test_un_viaje_en_otro_periodo_cobra_el_de_la_fecha_de_venta(): void
+    {
+        $this->sellOn('2026-11-25 07:00', tripDate: '2026-12-21');
+
+        $this->assertEquals(70000, Ticket::sole()->price);
+    }
+
+    public function test_ida_y_vuelta_con_vuelta_sin_fecha_cobra_el_periodo_de_la_venta(): void
+    {
+        $this->travelTo(Carbon::parse('2026-11-25 07:00'));
+        $this->seasonPeriods();
+        $this->outboundTrip = $this->makeTrip($this->oran, $this->salta, '08:00', '2026-11-25');
+
+        $this->emit($this->roundTripPayload(overrides: [
+            'trip_id' => $this->outboundTrip->id,
+            'sell_without_date_vuelta' => true,
+            'return_trip_id' => null,
+            'return_seat_ids' => [],
+        ]));
+
+        $this->assertEquals(140000, Ticket::where('is_return_leg', false)->sole()->price);
+        $this->assertEquals(0, Ticket::where('is_return_leg', true)->sole()->price);
+    }
+
+    // ====================== Venta sin período vigente ======================
+
+    public function test_sin_periodo_vigente_la_venta_se_rechaza(): void
+    {
+        $this->travelTo(Carbon::parse('2026-11-25 07:00'));
+        // Guardado por fuera de la página: un único período que todavía no empezó.
+        $this->setFixedPricePeriods([['desde' => '2026-12-01', 'boleto' => 70000, 'seguro' => 5000]]);
+        $this->outboundTrip = $this->makeTrip($this->oran, $this->salta, '08:00', '2026-11-25');
+
+        $this->assertEmissionRejected(
+            $this->oneWayPayload(),
+            message: 'No hay un precio vigente para hoy. Pedile a un administrador que cargue los precios.',
+        );
+    }
+
+    // ====================== Cruce de medianoche ======================
+
+    public function test_si_la_venta_cruzo_a_otro_periodo_se_rechaza_y_muestra_el_nuevo(): void
+    {
+        $this->travelTo(Carbon::parse('2026-12-01 23:55'));
+        $this->seasonPeriods();
+        $snapshot = FixedTicketPrice::snapshot();
+        $page = app(CreateTicket::class);
+        $page->data = ['fixed_price_snapshot' => $snapshot];
+
+        $this->travelTo(Carbon::parse('2026-12-02 00:05'));
+        $this->outboundTrip = $this->makeTrip($this->oran, $this->salta, '08:00', '2026-12-02');
+
+        $this->assertEmissionRejected($this->oneWayPayload(snapshot: $snapshot), $page);
+
+        $this->assertSame(160000, FixedTicketPrice::fromSnapshot($page->data['fixed_price_snapshot'], false, false));
+    }
+
+    public function test_si_la_venta_cruzo_el_dia_sin_cambiar_de_periodo_se_emite(): void
+    {
+        $this->travelTo(Carbon::parse('2026-11-25 23:55'));
+        Setting::set(Setting::PRECIO_FIJO_ACTIVO, '1');
+        $this->setFixedPricePeriods([['desde' => '2026-11-20', 'boleto' => 70000, 'seguro' => 5000]]);
+        $snapshot = FixedTicketPrice::snapshot();
+
+        $this->travelTo(Carbon::parse('2026-11-26 00:05'));
+        $this->outboundTrip = $this->makeTrip($this->oran, $this->salta, '08:00', '2026-11-26');
+
+        $this->emit($this->oneWayPayload(snapshot: $snapshot));
+
+        $this->assertEquals(70000, Ticket::sole()->price);
+    }
+
     // ====================== Helpers ======================
 
-    private function assertEmissionRejected(array $payload, ?CreateTicket $page = null): void
+    /** Períodos de temporada: 70.000 desde el 20/11 y 160.000 desde el 02/12. */
+    private function seasonPeriods(): void
+    {
+        Setting::set(Setting::PRECIO_FIJO_ACTIVO, '1');
+        $this->setFixedPricePeriods([
+            ['desde' => '2026-11-20', 'boleto' => 70000, 'seguro' => 5000],
+            ['desde' => '2026-12-02', 'boleto' => 160000, 'seguro' => 8000],
+        ]);
+    }
+
+    /** Vende solo ida en `$at` (día y hora de la emisión) para un viaje de `$tripDate`. */
+    private function sellOn(string $at, string $tripDate, bool $withChild = false): void
+    {
+        $this->travelTo(Carbon::parse($at));
+        $this->seasonPeriods();
+        $this->outboundTrip = $this->makeTrip($this->oran, $this->salta, '08:00', $tripDate);
+
+        $this->emit($this->oneWayPayload(withChild: $withChild));
+    }
+
+    private function assertEmissionRejected(array $payload, ?CreateTicket $page = null, string $message = 'Cambió la configuración de precios. Revisá los precios de la venta y volvé a emitir.'): void
     {
         try {
             $this->emit($payload, $page);
-            $this->fail('La venta debió rechazarse por el cambio de precios.');
+            $this->fail('La venta debió rechazarse.');
         } catch (Halt) {
             // OK: se frena antes de crear nada.
         }
@@ -276,14 +393,7 @@ class TicketFixedPriceSaleTest extends TestCase
         $this->assertSame(0, Ticket::count());
 
         $bodies = collect(session('filament.notifications', []))->pluck('body')->implode(' ');
-        $this->assertStringContainsString('Cambió la configuración de precios. Revisá los precios de la venta y volvé a emitir.', $bodies);
-    }
-
-    private function configureFixedPrice(bool $active, int $base, int $insurance): void
-    {
-        Setting::set(Setting::PRECIO_FIJO_ACTIVO, $active ? '1' : '0');
-        Setting::set(Setting::PRECIO_FIJO_BOLETO, (string) $base);
-        Setting::set(Setting::PRECIO_FIJO_SEGURO_MENOR, (string) $insurance);
+        $this->assertStringContainsString($message, $bodies);
     }
 
     private function emit(array $data, ?CreateTicket $page = null): Ticket

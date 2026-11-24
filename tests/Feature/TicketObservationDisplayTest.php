@@ -160,10 +160,10 @@ class TicketObservationDisplayTest extends TestCase
         $this->actingAs($client, 'client');
         Filament::setCurrentPanel('clientes');
 
-        // "Mis boletos" muestra por defecto solo los pendientes: se piden también los fechados.
+        // El boleto tiene fecha futura: está en la pestaña "Próximos".
         Livewire::test(MyTickets::class)
             ->assertSuccessful()
-            ->set('mostrarFechados', true)
+            ->set('activeTab', MyTickets::TAB_UPCOMING)
             ->assertCanSeeTableRecords([$ticket])
             ->assertDontSee(self::OBSERVATION);
 

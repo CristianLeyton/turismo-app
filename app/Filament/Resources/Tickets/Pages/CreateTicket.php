@@ -792,6 +792,20 @@ class CreateTicket extends CreateRecord
      */
     private function applyFixedPrice(array $data): array
     {
+        // Defensivo: Parámetros no deja guardar el precio fijo sin un período
+        // que rija hoy, pero un dato cargado por fuera de la página sí podría.
+        if (FixedTicketPrice::isActive() && ! FixedTicketPrice::hasCurrentPeriod()) {
+            Notification::make()
+                ->title('No se puede completar la venta')
+                ->icon('heroicon-m-currency-dollar')
+                ->body('No hay un precio vigente para hoy. Pedile a un administrador que cargue los precios.')
+                ->danger()
+                ->persistent()
+                ->send();
+
+            $this->halt();
+        }
+
         $current = FixedTicketPrice::snapshot();
 
         if (($data['fixed_price_snapshot'] ?? null) !== $current

@@ -3,6 +3,7 @@
 namespace App\Support;
 
 use App\Models\Setting;
+use Carbon\CarbonInterface;
 
 /**
  * Precio fijo de los boletos: única fuente del cálculo para la vista previa
@@ -11,6 +12,9 @@ use App\Models\Setting;
  * Precio de un pasajero = (precio del boleto + seguro si viaja con menor),
  * por 2 si la venta es de ida y vuelta. El monto completo va en el boleto
  * de ida; la vuelta vale 0.
+ *
+ * Los montos salen del período de precio vigente en la fecha de venta: el
+ * más reciente cuyo "desde" es ese día o anterior.
  */
 final class FixedTicketPrice
 {
@@ -20,16 +24,43 @@ final class FixedTicketPrice
         return Setting::precioFijoActivo();
     }
 
-    /** Precio del boleto por tramo. */
-    public static function basePrice(): int
+    /**
+     * Período de precio vigente en una fecha, o null si todos empiezan después.
+     *
+     * @return array{desde: string, boleto: int, seguro: int}|null
+     */
+    public static function periodFor(CarbonInterface $date): ?array
     {
-        return Setting::precioFijoBoleto();
+        $day = $date->copy()->timezone(config('app.timezone'))->format('Y-m-d');
+        $current = null;
+
+        foreach (Setting::precioFijoPeriodos() as $period) {
+            if ($period['desde'] > $day) {
+                break;
+            }
+
+            $current = $period;
+        }
+
+        return $current;
     }
 
-    /** Seguro para menores por tramo. */
+    /** ¿Hay un período de precio que rige hoy? */
+    public static function hasCurrentPeriod(): bool
+    {
+        return self::periodFor(today()) !== null;
+    }
+
+    /** Precio del boleto por tramo, del período de hoy (0 si no hay). */
+    public static function basePrice(): int
+    {
+        return self::periodFor(today())['boleto'] ?? 0;
+    }
+
+    /** Seguro para menores por tramo, del período de hoy (0 si no hay). */
     public static function childInsurance(): int
     {
-        return Setting::precioFijoSeguroMenor();
+        return self::periodFor(today())['seguro'] ?? 0;
     }
 
     /** Precio que lleva el boleto de ida de un pasajero. */
@@ -68,15 +99,20 @@ final class FixedTicketPrice
 
     /**
      * Cuánto cambia el precio de la ida al agregar (+seguro) o quitar
-     * (−seguro) el menor en un tramo, con el seguro vigente.
+     * (−seguro) el menor en un tramo, con el seguro del período vigente en
+     * la fecha de la venta. Una venta anterior al primer período usa el más
+     * antiguo.
      */
-    public static function insuranceDelta(bool $hadChild, bool $hasChild): int
+    public static function insuranceDelta(bool $hadChild, bool $hasChild, CarbonInterface $saleDate): int
     {
         if ($hadChild === $hasChild) {
             return 0;
         }
 
-        return $hasChild ? self::childInsurance() : -self::childInsurance();
+        $period = self::periodFor($saleDate) ?? (Setting::precioFijoPeriodos()[0] ?? null);
+        $insurance = $period['seguro'] ?? 0;
+
+        return $hasChild ? $insurance : -$insurance;
     }
 
     /**

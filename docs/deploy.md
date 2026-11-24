@@ -57,6 +57,7 @@ npm ci && npm run build
 
 # 3.6 Cachés
 php artisan optimize:clear && php artisan optimize
+/opt/alt/php84/usr/bin/php artisan optimize:clear && /opt/alt/php84/usr/bin/php artisan optimize
 ```
 
 El cron de `app:cleanup-expired-reservations` ya está configurado en el

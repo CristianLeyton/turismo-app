@@ -43,6 +43,7 @@ class RescheduleTicket extends ResourcePage
         $this->authorizeAccess();
 
         $this->form->fill([
+            'mode' => TicketRescheduleForm::MODE_RESCHEDULE,
             'scope' => 'outbound',
         ]);
     }
@@ -123,11 +124,19 @@ class RescheduleTicket extends ResourcePage
     {
         return [
             Action::make('confirm_reschedule')
-                ->label('Confirmar reprogramación')
-                ->color('success')
+                ->label(fn (): string => $this->isOpenDateMode() ? 'Dejar con fecha abierta' : 'Confirmar reprogramación')
+                ->color(fn (): string => $this->isOpenDateMode() ? 'warning' : 'success')
                 ->icon('heroicon-m-check-circle')
                 ->requiresConfirmation()
+                ->modalDescription(fn (): ?string => $this->isOpenDateMode()
+                    ? 'El boleto queda sin fecha ni asiento y el asiento se libera en el viaje actual.'
+                    : null)
                 ->disabled(function () {
+                    // Fecha abierta: no hay fecha, horario ni asiento que elegir.
+                    if ($this->isOpenDateMode()) {
+                        return false;
+                    }
+
                     // getRawState() lee el estado sin validar: getState() lanzaría
                     // ValidationException al renderizar con el formulario aún vacío.
                     $state = $this->form->getRawState();
@@ -151,6 +160,16 @@ class RescheduleTicket extends ResourcePage
         ];
     }
 
+    /**
+     * ¿El formulario está en "Dejar con fecha abierta"? Solo si la opción se
+     * le ofrece a este usuario y boleto: un estado manipulado no alcanza.
+     */
+    public function isOpenDateMode(): bool
+    {
+        return ($this->form->getRawState()['mode'] ?? null) === TicketRescheduleForm::MODE_OPEN_DATE
+            && TicketRescheduleForm::canOpenDate($this->targetTicket());
+    }
+
     public function getFormActionsContentComponent(): \Filament\Schemas\Components\Component
     {
         return Actions::make($this->getFormActions())
@@ -166,6 +185,8 @@ class RescheduleTicket extends ResourcePage
         if (! $ticket) {
             abort(404, 'Boleto no encontrado.');
         }
+
+        $isOpenDate = $this->isOpenDateMode();
 
         $data = $this->form->getState();
 
@@ -194,7 +215,15 @@ class RescheduleTicket extends ResourcePage
         $payload['confirm_password'] = $data['confirm_password'] ?? null;
 
         try {
-            app(TicketRescheduleService::class)->reschedule($ticket, $payload);
+            if ($isOpenDate) {
+                app(TicketRescheduleService::class)->openDate($ticket, [
+                    'scope' => $payload['scope'],
+                    'reason' => $data['reason'] ?? null,
+                    'confirm_password' => $payload['confirm_password'],
+                ]);
+            } else {
+                app(TicketRescheduleService::class)->reschedule($ticket, $payload);
+            }
         } catch (\App\Exceptions\DuplicatePassengerOnTripException $e) {
             \App\Support\DuplicateTicketNotification::send($e->conflicts(), 'Volver');
 
@@ -203,7 +232,7 @@ class RescheduleTicket extends ResourcePage
             foreach ($e->errors() as $messages) {
                 foreach ((array) $messages as $message) {
                     Notification::make()
-                        ->title('No se pudo reprogramar')
+                        ->title($isOpenDate ? 'No se pudo dejar con fecha abierta' : 'No se pudo reprogramar')
                         ->body($message)
                         ->danger()
                         ->persistent()
@@ -220,7 +249,7 @@ class RescheduleTicket extends ResourcePage
         // Flujo "emisión por link": sin PDF en sesión ni descarga; el detalle
         // del boleto abre el modal de entrega (pedido en la sesión flash).
         if (! Setting::descargaAutomaticaPdf()) {
-            TicketDelivery::flashForReschedule($freshTicket);
+            TicketDelivery::flashForReschedule($freshTicket, $isOpenDate);
 
             $this->redirect(TicketResource::getUrl('view', ['record' => $freshTicket->id]));
 
@@ -237,8 +266,10 @@ class RescheduleTicket extends ResourcePage
         $downloadUrl = route('tickets.download');
 
         Notification::make()
-            ->title('Boleto reprogramado')
-            ->body("El boleto N°{$freshTicket->id} fue reprogramado correctamente.")
+            ->title($isOpenDate ? 'Boleto con fecha abierta' : 'Boleto reprogramado')
+            ->body($isOpenDate
+                ? "El boleto N°{$freshTicket->id} quedó sin fecha.".(Setting::panelClientesActivo() ? ' El pasajero puede elegirla desde su panel.' : '')
+                : "El boleto N°{$freshTicket->id} fue reprogramado correctamente.")
             ->success()
             ->actions([
                 Action::make('download')

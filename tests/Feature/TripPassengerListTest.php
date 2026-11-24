@@ -379,6 +379,30 @@ class TripPassengerListTest extends TestCase
         $this->assertStringNotContainsString('Mascota de:', $html);
     }
 
+    public function test_los_acompanantes_no_muestran_origen_ni_destino(): void
+    {
+        $html = $this->renderModal();
+
+        foreach (['Menor' => 'Gómez Tomás', 'Mascota' => 'Firulais, Toby'] as $badge => $companion) {
+            $this->assertSame(1, preg_match('/<tr(?:(?!<\/tr>).)*?>'.$badge.'<\/span>(?:(?!<\/tr>).)*?'.preg_quote($companion, '/').'(?:(?!<\/tr>).)*<\/tr>/su', $html, $row));
+            $this->assertStringNotContainsString('Orán P', $row[0]);
+            $this->assertStringNotContainsString('Salta P', $row[0]);
+        }
+
+        $this->assertSame(1, preg_match('/<tr(?:(?!<\/tr>).)*?Gómez Ana<\/span>(?:(?!<\/tr>).)*<\/tr>/su', $html, $titular));
+        $this->assertStringContainsString('Orán P', $titular[0]);
+        $this->assertStringContainsString('Salta P', $titular[0]);
+    }
+
+    public function test_el_excel_deja_vacios_origen_y_destino_de_los_acompanantes(): void
+    {
+        $html = app(TripExcelService::class)->generateTripDetailsExcel($this->trip)->view()->render();
+
+        $this->assertSame(1, preg_match('/<tr>(?:(?!<\/tr>).)*Gómez Tomás(?:(?!<\/tr>).)*<\/tr>/su', $html, $row));
+        $this->assertStringNotContainsString('Orán P', $row[0]);
+        $this->assertStringNotContainsString('Salta P', $row[0]);
+    }
+
     // ====================== Modal: teléfono ======================
 
     public function test_el_telefono_se_puede_llamar_y_escribir_por_whatsapp(): void

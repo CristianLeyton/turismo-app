@@ -6,6 +6,7 @@ use App\Models\Bus;
 use App\Models\Location;
 use App\Models\Passenger;
 use App\Models\Sale;
+use App\Models\Setting;
 use App\Models\Ticket;
 use App\Models\User;
 use App\Services\TicketPdfService;
@@ -277,6 +278,77 @@ class PendingTicketPdfTest extends TestCase
 
         $this->assertNotEmpty($pdf);
         $this->assertSame('%PDF', substr($pdf, 0, 4));
+    }
+
+    /** Texto del PDF como lo lee el pasajero: sin etiquetas y con los espacios colapsados. */
+    private function pendingNoticeText(Ticket $ticket): string
+    {
+        return (string) preg_replace('/\s+/', ' ', strip_tags($this->renderPdfHtml($ticket)));
+    }
+
+    public function test_el_aviso_dice_24hs_si_nadie_configuro_la_anticipacion(): void
+    {
+        $text = $this->pendingNoticeText($this->createPendingTicket());
+
+        $this->assertStringContainsString('elegir fecha y horario con al menos 24hs de anticipación, dentro de las cuales no se aplicaran recargos.', $text);
+        $this->assertStringContainsString('cuenta con asientos disponibles', $text);
+    }
+
+    public function test_el_aviso_dice_las_horas_configuradas(): void
+    {
+        Setting::set(Setting::CLIENT_ADVANCE_NOTICE_HOURS, '48');
+
+        $text = $this->pendingNoticeText($this->createPendingTicket());
+
+        $this->assertStringContainsString('con al menos 48hs de anticipación', $text);
+        $this->assertStringNotContainsString('con al menos 24hs de anticipación', $text);
+    }
+
+    public function test_el_aviso_sigue_el_cambio_de_la_configuracion(): void
+    {
+        $ticket = $this->createPendingTicket();
+
+        $this->assertStringContainsString('con al menos 24hs de anticipación', $this->pendingNoticeText($ticket));
+
+        Setting::set(Setting::CLIENT_ADVANCE_NOTICE_HOURS, '72');
+
+        $this->assertStringContainsString('con al menos 72hs de anticipación', $this->pendingNoticeText($ticket));
+    }
+
+    public function test_con_cero_horas_el_aviso_omite_la_anticipacion_y_conserva_el_resto(): void
+    {
+        Setting::set(Setting::CLIENT_ADVANCE_NOTICE_HOURS, '0');
+
+        $text = $this->pendingNoticeText($this->createPendingTicket());
+
+        $this->assertStringContainsString('queda en responsabilidad del pasajero elegir fecha y horario.', $text);
+        $this->assertStringNotContainsString('de anticipación, dentro de las cuales no se aplicaran recargos', $text);
+        $this->assertStringContainsString('cuenta con asientos disponibles', $text);
+    }
+
+    public function test_el_aviso_muestra_el_valor_aunque_el_panel_de_clientes_este_apagado(): void
+    {
+        Setting::set(Setting::PANEL_CLIENTES_ACTIVO, '0');
+        Setting::set(Setting::CLIENT_ADVANCE_NOTICE_HOURS, '48');
+
+        $this->assertStringContainsString('con al menos 48hs de anticipación', $this->pendingNoticeText($this->createPendingTicket()));
+    }
+
+    public function test_la_politica_de_cambios_y_devoluciones_no_cambia_con_la_anticipacion(): void
+    {
+        $ticket = $this->createPendingTicket();
+        $before = $this->pendingNoticeText($ticket);
+
+        Setting::set(Setting::CLIENT_ADVANCE_NOTICE_HOURS, '72');
+        $after = $this->pendingNoticeText($ticket);
+
+        foreach ([
+            'Entre 24hs y 48hs antes de la salida: 20% de retención.',
+            'Dentro de las 24hs previas a la salida: 30% de retención.',
+        ] as $policy) {
+            $this->assertStringContainsString($policy, $before);
+            $this->assertStringContainsString($policy, $after);
+        }
     }
 
     /** N° de boleto tal como lo imprime el PDF: marcador único de cada boleto. */

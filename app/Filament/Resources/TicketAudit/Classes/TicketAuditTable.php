@@ -4,7 +4,9 @@ namespace App\Filament\Resources\TicketAudit\Classes;
 
 use App\Filament\Resources\TicketAudit\Schemas\TicketAuditDetailSchema;
 use App\Filament\Resources\Tickets\Pages\EditTicket\EditTicketForm;
+use App\Models\Setting;
 use App\Models\Ticket;
+use App\Models\TicketDateChange;
 use App\Models\TicketEdit;
 use App\Models\User;
 use Carbon\CarbonInterface;
@@ -64,6 +66,7 @@ class TicketAuditTable
                         'seat',
                         'deletedBy',
                         'dateChanges.user',
+                        'dateChanges.client',
                         'edits.user',
                     ])
                     ->withCount(['dateChanges', 'edits'])
@@ -189,6 +192,8 @@ class TicketAuditTable
                         };
                     }),
 
+                self::actorFilter(),
+
                 Filter::make('ticket_id')
                     ->label('Número de boleto')
                     ->form([
@@ -236,11 +241,61 @@ class TicketAuditTable
                 self::editSearchFilter(),
             ])
             ->filtersLayout(FiltersLayout::AboveContent)
-            ->filtersFormColumns(3)
+            ->filtersFormColumns(4)
             ->deferFilters(false)
             ->persistFiltersInSession()
             ->emptyStateHeading('No hay boletos eliminados, reprogramados ni editados')
             ->emptyStateDescription('Cuando un boleto sea eliminado, reprogramado o se corrijan sus datos, aparecerá acá con su historial.');
+    }
+
+    /**
+     * Quién hizo el cambio: "Clientes" (asignaron la fecha desde su panel) o
+     * "Vendedores" (cualquier usuario del panel, sin importar su rol).
+     *
+     * Se decide por el tipo de autor guardado en cada reprogramación, no por
+     * `user_id`: un usuario borrado del todo sigue siendo "Vendedores". Las
+     * ediciones y eliminaciones sólo las hace personal. Sin elegir nada se ve
+     * todo el historial.
+     *
+     * Sólo existe con "Panel de clientes activo" encendido. Como los filtros se
+     * guardan en la sesión, la consulta y el indicador también lo comprueban:
+     * apagado el panel, un valor guardado no filtra ni se anuncia.
+     */
+    private static function actorFilter(): SelectFilter
+    {
+        return SelectFilter::make('actor')
+            ->label('Realizado por')
+            ->options([
+                'clients' => 'Clientes',
+                'sellers' => 'Vendedores',
+            ])
+            ->placeholder('Todos')
+            ->visible(fn (): bool => Setting::panelClientesActivo())
+            ->query(function (Builder $query, array $data): Builder {
+                if (! Setting::panelClientesActivo()) {
+                    return $query;
+                }
+
+                return match ($data['value'] ?? null) {
+                    'clients' => $query->whereHas('dateChanges', fn (Builder $changes) => $changes->where('actor_type', TicketDateChange::ACTOR_CLIENT)),
+                    'sellers' => $query->where(fn (Builder $sellers) => $sellers
+                        ->whereHas('dateChanges', fn (Builder $changes) => $changes->where('actor_type', TicketDateChange::ACTOR_USER))
+                        ->orWhereNotNull('tickets.deleted_at')
+                        ->orWhere(fn (Builder $edited): Builder => $edited->withVisibleEdits())),
+                    default => $query,
+                };
+            })
+            ->indicateUsing(function (array $data): array {
+                if (! Setting::panelClientesActivo()) {
+                    return [];
+                }
+
+                return match ($data['value'] ?? null) {
+                    'clients' => ['Realizado por: Clientes'],
+                    'sellers' => ['Realizado por: Vendedores'],
+                    default => [],
+                };
+            });
     }
 
     /**

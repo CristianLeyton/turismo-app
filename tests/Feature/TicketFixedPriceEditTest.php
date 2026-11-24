@@ -12,6 +12,7 @@ use App\Models\Ticket;
 use App\Models\TicketEdit;
 use App\Models\User;
 use App\Support\Permissions;
+use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
@@ -23,6 +24,7 @@ use Tests\TestCase;
  */
 class TicketFixedPriceEditTest extends TestCase
 {
+    use ConfiguresFixedPrice;
     use RefreshDatabase;
 
     private User $seller;
@@ -136,10 +138,10 @@ class TicketFixedPriceEditTest extends TestCase
         $this->assertEquals(10800, $ida->fresh()->price);
     }
 
-    public function test_el_ajuste_usa_el_seguro_vigente(): void
+    public function test_el_ajuste_usa_el_seguro_vigente_del_mismo_periodo(): void
     {
         $ticket = $this->oneWayTicket(5800, withChild: true);
-        Setting::set(Setting::PRECIO_FIJO_SEGURO_MENOR, '1000');
+        $this->configureFixedPrice(true, 5000, 1000);
 
         $this->editor($ticket)
             ->set('data.travels_with_child', false)
@@ -149,9 +151,58 @@ class TicketFixedPriceEditTest extends TestCase
         $this->assertEquals(4800, $ticket->fresh()->price);
     }
 
+    public function test_el_ajuste_usa_el_seguro_del_periodo_de_la_venta(): void
+    {
+        $this->travelTo(Carbon::parse('2026-11-25 10:00'));
+        $this->seasonPeriods();
+        $this->sale = Sale::create(['user_id' => $this->seller->id, 'sale_date' => now()]);
+        $ticket = $this->oneWayTicket(75000, withChild: true);
+
+        $this->travelTo(Carbon::parse('2026-12-05 10:00'));
+
+        $this->editor($ticket)
+            ->set('data.travels_with_child', false)
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertEquals(70000, $ticket->fresh()->price);
+    }
+
+    public function test_una_venta_anterior_al_primer_periodo_usa_el_mas_antiguo(): void
+    {
+        $this->travelTo(Carbon::parse('2026-10-10 10:00'));
+        $this->sale = Sale::create(['user_id' => $this->seller->id, 'sale_date' => now()]);
+        $ticket = $this->oneWayTicket(5000);
+
+        $this->travelTo(Carbon::parse('2026-11-25 10:00'));
+        $this->seasonPeriods();
+
+        $this->addChild($this->editor($ticket))->call('save')->assertHasNoErrors();
+
+        $this->assertEquals(10000, $ticket->fresh()->price);
+    }
+
+    public function test_desde_la_vuelta_se_usa_el_periodo_de_la_venta(): void
+    {
+        $this->travelTo(Carbon::parse('2026-11-25 10:00'));
+        $this->seasonPeriods();
+        $this->sale = Sale::create(['user_id' => $this->seller->id, 'sale_date' => now()]);
+        [$ida, $vuelta] = $this->roundTrip(140000, withChild: false);
+
+        $this->travelTo(Carbon::parse('2026-12-05 10:00'));
+
+        $this->addChild($this->editor($vuelta))
+            ->set('data.edit_reason', 'Avisó por teléfono')
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertEquals(145000, $ida->fresh()->price);
+        $this->assertEquals(0, $vuelta->fresh()->price);
+    }
+
     public function test_con_seguro_cero_el_precio_no_cambia(): void
     {
-        Setting::set(Setting::PRECIO_FIJO_SEGURO_MENOR, '0');
+        $this->configureFixedPrice(true, 5000, 0);
         $ticket = $this->oneWayTicket(5000);
 
         $this->addChild($this->editor($ticket))->call('save')->assertHasNoErrors();
@@ -214,11 +265,14 @@ class TicketFixedPriceEditTest extends TestCase
 
     // ====================== Helpers ======================
 
-    private function configureFixedPrice(bool $active, int $base, int $insurance): void
+    /** Períodos de temporada: seguro 5.000 desde el 20/11 y 8.000 desde el 02/12. */
+    private function seasonPeriods(): void
     {
-        Setting::set(Setting::PRECIO_FIJO_ACTIVO, $active ? '1' : '0');
-        Setting::set(Setting::PRECIO_FIJO_BOLETO, (string) $base);
-        Setting::set(Setting::PRECIO_FIJO_SEGURO_MENOR, (string) $insurance);
+        Setting::set(Setting::PRECIO_FIJO_ACTIVO, '1');
+        $this->setFixedPricePeriods([
+            ['desde' => '2026-11-20', 'boleto' => 70000, 'seguro' => 5000],
+            ['desde' => '2026-12-02', 'boleto' => 160000, 'seguro' => 8000],
+        ]);
     }
 
     private function editor(Ticket $ticket): Testable

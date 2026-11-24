@@ -137,6 +137,26 @@ class ClientPanelToggleTest extends TestCase
             ->assertSee('href="tel:3875551234"', false);
     }
 
+    public function test_cada_linea_del_ingreso_de_clientes_tiene_su_boton_de_whatsapp(): void
+    {
+        Setting::set(Setting::PANEL_CLIENTES_ACTIVO, '1');
+        Setting::set(Setting::CONTACT_LINES, json_encode([
+            ['name' => 'Oficina Orán', 'phone' => '+54 9 (3878) 804-506'],
+            ['name' => null, 'phone' => '387 555-1234'],
+        ]));
+
+        $response = $this->get('/clientes/login')
+            ->assertOk()
+            ->assertSee('href="https://wa.me/5493878804506"', false)
+            ->assertSee('href="https://wa.me/5493875551234"', false)
+            ->assertSee('data-icon="whatsapp"', false)
+            // Solo el ícono de WhatsApp: el nombre va en el título, no como texto visible.
+            ->assertSee('title="WhatsApp"', false)
+            ->assertSee('title="Llamar"', false);
+
+        $this->assertDoesNotMatchRegularExpression('/>\s*WhatsApp\s*</', $response->getContent());
+    }
+
     public function test_sin_lineas_de_contacto_el_ingreso_de_clientes_no_muestra_el_bloque(): void
     {
         Setting::set(Setting::PANEL_CLIENTES_ACTIVO, '1');

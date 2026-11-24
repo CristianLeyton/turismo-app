@@ -78,26 +78,31 @@ Con el parámetro "Descargar PDF automáticamente al vender" desactivado, abrir 
 - **THEN** el link público del boleto no cambia y sigue funcionando
 
 ### Requirement: Enviar por WhatsApp desde el detalle del boleto
-El "Ver boleto" del panel admin SHALL ofrecer la acción "Enviar por WhatsApp", que abre WhatsApp en una pestaña nueva hacia el teléfono del boleto con el mensaje de WhatsApp de Parámetros y `{link}` reemplazado por el link del boleto. El teléfono es el del pasajero del boleto y, si no tiene, el que el padrón tenga por su DNI. La acción MUST verse solo con el parámetro "Descargar PDF automáticamente al vender" desactivado, el boleto vigente y algún teléfono.
+El "Ver boleto" del panel admin SHALL ofrecer la acción "Enviar", con el ícono de WhatsApp de la aplicación, que abre WhatsApp en una pestaña nueva hacia el teléfono del boleto con el mensaje de WhatsApp de Parámetros y `{link}` reemplazado por el link del boleto. El teléfono es el del pasajero del boleto y, si no tiene, el que el padrón tenga por su DNI. La acción MUST verse solo con el parámetro "Descargar PDF automáticamente al vender" desactivado, el boleto vigente y algún teléfono.
 
 #### Scenario: Pasajero con teléfono
 - **GIVEN** el parámetro de descarga automática desactivado y un boleto vigente cuyo pasajero tiene el teléfono 3881234567
-- **WHEN** un usuario abre el detalle del boleto y toca "Enviar por WhatsApp"
+- **WHEN** un usuario abre el detalle del boleto y toca "Enviar"
 - **THEN** se abre en una pestaña nueva WhatsApp hacia 543881234567 con el mensaje y el link del boleto
 
 #### Scenario: Teléfono del padrón
 - **GIVEN** el parámetro desactivado y un pasajero sin teléfono cuyo DNI tiene el teléfono 3882222222 en el padrón
 - **WHEN** un usuario abre el detalle del boleto
-- **THEN** ve "Enviar por WhatsApp", dirigido a 543882222222
+- **THEN** ve "Enviar", dirigido a 543882222222
 
 #### Scenario: Sin teléfono
 - **GIVEN** el parámetro desactivado y un pasajero sin teléfono ni en la venta ni en el padrón
 - **WHEN** un usuario abre el detalle del boleto
-- **THEN** no ve "Enviar por WhatsApp"
+- **THEN** no ve "Enviar"
 
 #### Scenario: Descarga automática activada o boleto eliminado
 - **WHEN** el parámetro está activado o sin configurar, o el boleto está eliminado
-- **THEN** el detalle no muestra "Enviar por WhatsApp"
+- **THEN** el detalle no muestra "Enviar"
+
+#### Scenario: Ícono y nombre accesible
+- **GIVEN** un boleto vigente con teléfono y el parámetro desactivado
+- **WHEN** un usuario abre el detalle del boleto
+- **THEN** la acción muestra el ícono de WhatsApp de la aplicación y el texto "Enviar", ambos en blanco, y los lectores de pantalla la anuncian como "Enviar por WhatsApp"
 
 ### Requirement: Copiar el link desde la vista previa
 Con el parámetro "Descargar PDF automáticamente al vender" desactivado y el boleto vigente, la sección "Vista previa" SHALL ofrecer "Copiar link", que copia al portapapeles el link público del boleto, el mismo que se envía por WhatsApp, y confirma "¡Copiado!" durante unos segundos. Con el visor embebido, el botón va en el encabezado de la sección, en la esquina opuesta al título. Con la tarjeta, va en la tarjeta. En los dos lugares, el botón MUST usar el color de la empresa con estilo de contorno, sin relleno.

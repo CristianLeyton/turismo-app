@@ -256,6 +256,8 @@
     @php
         /* Se leen una vez por PDF: son las mismas para todos los boletos. */
         $contactLines = \App\Models\Setting::contactLines();
+        /* Horas de anticipación para elegir fecha (Parámetros > Clientes): 0 = sin mínimo. */
+        $advanceHours = \App\Models\Setting::clientAdvanceNoticeHours();
     @endphp
 
     @foreach (\App\Services\TicketPdfService::sheets($tickets) as $pair)
@@ -359,8 +361,7 @@
                                         </div>
                                         <div class='pending-note'>
                                             Al adquirir el pasaje queda en responsabilidad del pasajero
-                                            elegir fecha y horario con al menos 24hs de anticipación, dentro de las
-                                            cuales no se aplicaran recargos.
+                                            elegir fecha y horario{{ $advanceHours > 0 ? " con al menos {$advanceHours}hs de anticipación, dentro de las cuales no se aplicaran recargos" : '' }}.
                                             La asignación del mismo se realizará solo si la unidad
                                             cuenta con asientos disponibles.
                                         </div>

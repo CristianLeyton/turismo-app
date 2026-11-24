@@ -279,7 +279,12 @@ class TicketShareLinkModeTest extends TestCase
             $this->assertStringContainsString('href="'.e($ticket->sharePdfUrl('attachment')).'"', $html);
         }
 
-        $this->assertMatchesRegularExpression('/Enviar por WhatsApp.*Ver PDF.*Copiar link.*Descargar PDF/s', $html);
+        // El botón lleva el ícono de WhatsApp y solo dice "Enviar", seguido de las otras acciones.
+        $this->assertMatchesRegularExpression('/data-icon="whatsapp".*?Enviar\s*<\/a>.*Ver PDF.*Copiar link.*Descargar PDF/s', $html);
+        $this->assertDoesNotMatchRegularExpression('/>\s*Enviar por WhatsApp\s*</', $html);
+        $this->assertStringContainsString('aria-label="Enviar por WhatsApp"', $html);
+        // Texto e ícono en blanco sobre el verde.
+        $this->assertStringContainsString('text-white!', $html);
         $this->assertStringContainsString('Orán L → Salta L', $html);
         $this->assertStringContainsString('Uno Juan — 543881234567', $html);
         $this->assertStringContainsString('Otro número…', $html);
@@ -330,7 +335,9 @@ class TicketShareLinkModeTest extends TestCase
         $html = $this->renderDeliveryModal(collect([$first, $second]));
 
         $this->assertStringContainsString('Enviar todos a un número', $html);
-        $this->assertStringContainsString('Enviar todos por WhatsApp', $html);
+        $this->assertMatchesRegularExpression('/data-icon="whatsapp".*?Enviar todos\s*<\/a>/s', $html);
+        $this->assertStringContainsString('aria-label="Enviar todos por WhatsApp"', $html);
+        $this->assertDoesNotMatchRegularExpression('/>\s*Enviar todos por WhatsApp\s*</', $html);
 
         // Las líneas de "Enviar todos": "Apellido Nombre (N°id): link".
         $expectedLines = "Uno Juan (N°{$first->id}): {$first->shareUrl()}\nDos Juana (N°{$second->id}): {$second->shareUrl()}";
@@ -344,7 +351,7 @@ class TicketShareLinkModeTest extends TestCase
         $html = $this->renderDeliveryModal(collect([$ticket]));
 
         $this->assertStringNotContainsString('Enviar todos a un número', $html);
-        $this->assertStringContainsString('Enviar por WhatsApp', $html);
+        $this->assertMatchesRegularExpression('/data-icon="whatsapp".*?Enviar\s*<\/a>/s', $html);
     }
 
     public function test_el_modal_sin_telefonos_muestra_el_campo_del_numero(): void
@@ -491,6 +498,28 @@ class TicketShareLinkModeTest extends TestCase
             rawurlencode('Podés acceder a tu(s) boleto(s) desde aquí: '.$ticket->fresh()->shareUrl()),
             WhatsAppShare::url('543881234567', $ticket->fresh()->shareUrl()),
         );
+    }
+
+    public function test_la_accion_del_detalle_dice_enviar_con_el_icono_de_whatsapp(): void
+    {
+        $ticket = $this->sellLinkMode(['81000001'], ['81000001' => '3881234567']);
+        $this->actingAs($this->makeAdmin());
+
+        $action = Livewire::test(ViewTicket::class, ['record' => $ticket->id])
+            ->instance()
+            ->getAction('enviar_whatsapp');
+
+        $this->assertSame('Enviar', $action->getLabel());
+        $this->assertStringContainsString('data-icon="whatsapp"', $action->getIcon()->toHtml());
+        // El ícono es blanco por sí mismo: Filament le da su propio color al ícono de un botón.
+        $this->assertStringContainsString('text-white!', $action->getIcon()->toHtml());
+        $this->assertSame('success', $action->getColor());
+
+        // Sin "por WhatsApp" a la vista, el nombre accesible sigue completo.
+        $attributes = $action->getExtraAttributeBag();
+        $this->assertSame('Enviar por WhatsApp', $attributes->get('title'));
+        $this->assertSame('Enviar por WhatsApp', $attributes->get('aria-label'));
+        $this->assertSame('text-white!', $attributes->get('class'), 'Texto en blanco.');
     }
 
     public function test_enviar_por_whatsapp_usa_el_telefono_del_padron(): void

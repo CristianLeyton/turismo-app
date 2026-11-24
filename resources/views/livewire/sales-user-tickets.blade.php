@@ -28,7 +28,7 @@
 
             @if ($this->type !== 'tickets')
                 <div class="rounded-lg bg-amber-500/10 p-3">
-                    <p class="text-xs text-amber-700 dark:text-amber-400">Pagos recibidos</p>
+                    <p class="text-xs text-amber-700 dark:text-amber-400">Pagos realizados</p>
                     <p class="mt-0.5 text-lg font-bold text-amber-700 dark:text-amber-400">
                         {{ $this->totals['payments_count'] }}</p>
                 </div>

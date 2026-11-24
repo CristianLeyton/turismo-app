@@ -18,7 +18,7 @@ La página "Parámetros", con tilde, SHALL figurar en el grupo "Configuración" 
 - **THEN** no la ve en el menú y el acceso se rechaza
 
 ### Requirement: Parámetros agrupados en pestañas
-La página SHALL organizar los parámetros en pestañas, en este orden: "Venta" (acompañantes, venta fuera de término y, con su permiso, selectores de origen y destino y, con su permiso, observaciones y, con su permiso, precio de los boletos), "Boleto" (con su permiso, emisión al finalizar la venta con el PDF automático y el mensaje de WhatsApp; y líneas de contacto), "Calendario" (días con servicio y excepciones), esta solo con el permiso de calendario, "Seguridad" (confirmación de contraseña), esta solo con el permiso de seguridad, "Clientes" (panel de clientes), esta solo con el permiso del panel de clientes, y "Apariencia" (color principal), esta solo con el permiso de apariencia. Un único botón "Guardar cambios" MUST guardar todas las pestañas visibles.
+La página SHALL organizar los parámetros en pestañas, en este orden: "Venta" (acompañantes, venta fuera de término y, con su permiso, pasajeros por venta y, con su permiso, selectores de origen y destino y, con su permiso, observaciones y, con su permiso, precio de los boletos), "Boleto" (con su permiso, emisión al finalizar la venta con el PDF automático y el mensaje de WhatsApp; y líneas de contacto), "Calendario" (días con servicio y excepciones), esta solo con el permiso de calendario, "Seguridad" (confirmación de contraseña), esta solo con el permiso de seguridad, "Clientes" (panel de clientes), esta solo con el permiso del panel de clientes, y "Apariencia" (color principal), esta solo con el permiso de apariencia. Un único botón "Guardar cambios" MUST guardar todas las pestañas visibles.
 
 #### Scenario: Abrir la página
 - **WHEN** un usuario con `settings.manage` y sin los permisos de calendario, seguridad, panel de clientes ni apariencia abre Parámetros
@@ -63,6 +63,10 @@ La página SHALL organizar los parámetros en pestañas, en este orden: "Venta" 
 #### Scenario: Pestaña Venta con el permiso del precio fijo
 - **WHEN** un usuario con `settings.manage` y con el permiso del precio fijo abre la pestaña Venta
 - **THEN** ve, además de las secciones que le correspondan, la sección "Precio de los boletos", al final de la pestaña
+
+#### Scenario: Pestaña Venta con el permiso del límite de pasajeros
+- **WHEN** un usuario con `settings.manage` y con el permiso del límite de pasajeros abre la pestaña Venta
+- **THEN** ve la sección "Pasajeros por venta" después de "Venta fuera de término"
 
 #### Scenario: Pestaña Boleto con el permiso de emisión
 - **WHEN** un usuario con `settings.manage` y con el permiso de emisión abre la pestaña Boleto
@@ -277,60 +281,87 @@ Solo un usuario con el permiso "Configurar emisión al finalizar la venta" del m
 - **THEN** el rol Administrador no recibe el permiso de emisión, y se lo puede asignar desde la matriz de roles
 
 ### Requirement: Configurar el precio fijo de los boletos
-La sección "Precio de los boletos" de la pestaña Venta SHALL ofrecer el interruptor "Precio fijo activo", que sin configurar aparece apagado, y, solo con el interruptor prendido, los campos "Precio del boleto" y "Seguro para menores", con prefijo `$` y los valores guardados.
+La sección "Precio de los boletos" de la pestaña Venta SHALL ofrecer el interruptor "Precio fijo activo", que sin configurar aparece apagado, y, solo con el interruptor prendido, la grilla "Períodos de precio". Cada fila MUST tener "Desde", "Precio del boleto" y "Seguro para menores", con prefijo `$`, y mostrar sin poder editarlo el "Hasta": el día anterior al "Desde" de la fila siguiente, o "en adelante" en la última. La grilla MUST ordenarse por "Desde" al guardar y marcar como "Vigente" el período que rige hoy. Los períodos pasados MUST conservarse.
 
 #### Scenario: Valor inicial
 - **WHEN** nadie configuró el precio fijo y un usuario con el permiso abre la pestaña Venta
-- **THEN** el interruptor aparece apagado y los campos de montos no se ven
+- **THEN** el interruptor aparece apagado y la grilla no se ve
 
 #### Scenario: Prender el precio fijo
-- **WHEN** un usuario con el permiso prende "Precio fijo activo", carga 5000 como precio del boleto y 800 como seguro, y guarda
-- **THEN** los tres parámetros quedan guardados y la venta calcula el precio con esos montos
+- **WHEN** un usuario con el permiso prende "Precio fijo activo", carga un período desde hoy con boleto 5000 y seguro 800, y guarda
+- **THEN** el interruptor y el período quedan guardados y la venta calcula el precio con esos montos
+
+#### Scenario: Hasta calculado
+- **GIVEN** períodos desde el 20/11/2026 y desde el 02/12/2026
+- **WHEN** el usuario abre la pestaña Venta
+- **THEN** el primero muestra "Hasta 01/12/2026" y el segundo "en adelante"
+
+#### Scenario: Orden al guardar
+- **WHEN** el usuario carga primero un período desde el 02/12/2026 y después uno desde el 20/11/2026, y guarda
+- **THEN** la grilla muestra primero el del 20/11/2026
+
+#### Scenario: Período vigente marcado
+- **GIVEN** hoy es el 25/11/2026 y hay períodos desde el 01/11/2026, el 20/11/2026 y el 02/12/2026
+- **WHEN** el usuario abre la pestaña Venta
+- **THEN** solo el período del 20/11/2026 aparece como "Vigente"
 
 #### Scenario: Apagar conserva los montos
-- **GIVEN** el precio fijo prendido con precio 5000 y seguro 800
+- **GIVEN** el precio fijo prendido con dos períodos
 - **WHEN** el usuario apaga el interruptor, guarda y lo vuelve a prender
-- **THEN** los campos muestran 5000 y 800
+- **THEN** la grilla muestra los mismos dos períodos
 
 ### Requirement: Validación de los montos del precio fijo
-Con "Precio fijo activo" prendido, "Precio del boleto" y "Seguro para menores" SHALL ser obligatorios y MUST ser números enteros, sin centavos: el precio entre 1 y 999.999 y el seguro entre 0 y 999.999. Un valor con decimales MUST rechazarse en lugar de redondearse. Con el interruptor apagado, los montos MUST NOT validarse ni modificarse al guardar.
+Con "Precio fijo activo" prendido, cada período SHALL tener "Desde", "Precio del boleto" y "Seguro para menores" obligatorios. Dos períodos MUST NOT tener el mismo "Desde". Los montos MUST ser números enteros, sin centavos: el precio entre 1 y 999.999 y el seguro entre 0 y 999.999. Un valor con decimales MUST rechazarse en lugar de redondearse. Con el interruptor apagado, los períodos MUST NOT validarse ni modificarse al guardar.
 
 #### Scenario: Prender sin montos
-- **WHEN** el usuario prende "Precio fijo activo" sin cargar el precio del boleto y guarda
+- **WHEN** el usuario prende "Precio fijo activo", carga un período desde hoy sin el precio del boleto y guarda
 - **THEN** el campo muestra un mensaje en español que pide el precio del boleto y no se guarda ningún parámetro
 
+#### Scenario: Período sin fecha
+- **WHEN** el usuario carga un período con montos pero sin "Desde" y guarda
+- **THEN** el campo muestra un mensaje en español que pide la fecha y no se guarda ningún parámetro
+
+#### Scenario: Fecha repetida
+- **WHEN** el usuario carga dos períodos desde el 02/12/2026 y guarda
+- **THEN** la grilla muestra "Hay más de un período que empieza el mismo día." y no se guarda ningún parámetro
+
 #### Scenario: Precio en cero
-- **WHEN** el usuario carga 0 como precio del boleto y guarda
+- **WHEN** el usuario carga 0 como precio del boleto de un período y guarda
 - **THEN** el campo muestra que el precio debe ser de al menos $1 y no se guarda ningún parámetro
 
 #### Scenario: Seguro en cero
-- **WHEN** el usuario carga 5000 como precio del boleto y 0 como seguro y guarda
+- **WHEN** el usuario carga un período desde hoy con 5000 como precio del boleto y 0 como seguro, y guarda
 - **THEN** se guarda y la venta no suma seguro al viajar con menor
 
 #### Scenario: Monto con centavos
-- **WHEN** el usuario carga 5000,50 como precio del boleto y guarda
+- **WHEN** el usuario carga 5000,50 como precio del boleto de un período y guarda
 - **THEN** el campo muestra que el precio debe ser un número entero y no se guarda ningún parámetro
 
 #### Scenario: Monto fuera de rango
-- **WHEN** el usuario carga 1000000 como seguro y guarda
+- **WHEN** el usuario carga 1000000 como seguro de un período y guarda
 - **THEN** el campo muestra que el máximo es $999.999 y no se guarda ningún parámetro
 
+#### Scenario: Apagado no valida
+- **GIVEN** el precio fijo prendido con un período vigente
+- **WHEN** el usuario apaga el interruptor y guarda
+- **THEN** se guarda y los períodos siguen como estaban
+
 ### Requirement: Permiso para configurar el precio fijo
-Solo un usuario con el permiso "Configurar precio fijo de los boletos" (`settings.fixed_price`) del módulo Configuración MUST ver la sección "Precio de los boletos" y cambiar sus tres parámetros. Si quien guarda no tiene el permiso, los tres MUST quedar como estaban, aunque el pedido traiga otros valores o no los traiga.
+Solo un usuario con el permiso "Configurar precio fijo de los boletos" (`settings.fixed_price`) del módulo Configuración MUST ver la sección "Precio de los boletos" y cambiar el interruptor y los períodos de precio. Si quien guarda no tiene el permiso, el interruptor y los períodos MUST quedar como estaban, aunque el pedido traiga otros valores o no los traiga.
 
 #### Scenario: Sin el permiso
 - **WHEN** un usuario con `settings.manage` pero sin el permiso del precio fijo abre la pestaña Venta
 - **THEN** no ve la sección "Precio de los boletos"
 
 #### Scenario: Guardar sin el permiso conserva el precio fijo
-- **GIVEN** el precio fijo prendido con precio 5000 y seguro 800
+- **GIVEN** el precio fijo prendido con un período desde el 20/11/2026 con boleto 5000 y seguro 800
 - **WHEN** un usuario sin el permiso del precio fijo cambia las horas de venta a 8 y guarda
-- **THEN** las horas de venta quedan en 8 y el precio fijo sigue prendido con precio 5000 y seguro 800
+- **THEN** las horas de venta quedan en 8 y el precio fijo sigue prendido con el mismo período
 
 #### Scenario: Pedido manipulado
 - **GIVEN** el precio fijo apagado
-- **WHEN** un usuario sin el permiso del precio fijo guarda Parámetros enviando el precio fijo prendido con precio 1
-- **THEN** los demás parámetros se guardan y el precio fijo sigue apagado, sin montos cambiados
+- **WHEN** un usuario sin el permiso del precio fijo guarda Parámetros enviando el precio fijo prendido con un período de precio 1
+- **THEN** los demás parámetros se guardan y el precio fijo sigue apagado, sin períodos cambiados
 
 #### Scenario: Permiso no asignado por defecto
 - **WHEN** se sincronizan los permisos y roles del sistema
@@ -377,3 +408,133 @@ Solo un usuario con el permiso "Configurar confirmación de contraseña" (`setti
 #### Scenario: Permiso no asignado por defecto
 - **WHEN** se sincronizan los permisos y roles del sistema
 - **THEN** ni el rol Administrador ni el Vendedor reciben el permiso de seguridad, y se lo puede asignar desde la matriz de roles
+
+### Requirement: Anticipación mínima para elegir fecha
+La pestaña "Clientes" SHALL ofrecer el campo "Anticipación mínima para elegir fecha", en horas, que muestra el valor guardado y, sin configurar, 24. El campo MUST aceptar solo números enteros de 0 a 720 y MUST ser obligatorio cuando se muestra, con los errores en español. Con 0 no se exige anticipación. El mismo permiso que gobierna la pestaña Clientes MUST gobernar el campo.
+
+#### Scenario: Valor inicial
+- **GIVEN** que nadie configuró la anticipación y el panel de clientes está activo
+- **WHEN** un usuario con el permiso abre la pestaña Clientes
+- **THEN** el campo muestra 24
+
+#### Scenario: Cambiar las horas
+- **WHEN** un usuario con el permiso escribe 48 y guarda
+- **THEN** el parámetro queda en 48 y el panel de clientes y el PDF usan ese valor
+
+#### Scenario: Valor inválido
+- **WHEN** el usuario escribe un texto, un decimal, un número negativo o un número mayor que 720
+- **THEN** no se guarda nada y el campo muestra el error debajo, en voseo
+
+#### Scenario: Campo vacío
+- **WHEN** el usuario deja el campo vacío con el panel de clientes activo y guarda
+- **THEN** no se guarda nada y el campo pide ingresar las horas
+
+#### Scenario: Cero horas
+- **WHEN** el usuario escribe 0 y guarda
+- **THEN** el parámetro queda en 0 y el panel de clientes no exige anticipación
+
+### Requirement: La anticipación solo se ve con el panel de clientes activo
+El campo "Anticipación mínima para elegir fecha" SHALL mostrarse solo mientras el interruptor "Panel de clientes activo" está encendido en el formulario, y MUST aparecer o desaparecer al cambiar el interruptor, sin guardar antes. Con el campo oculto, guardar la página MUST conservar el valor guardado y MUST NOT exigir ni validar el campo.
+
+#### Scenario: Panel apagado
+- **WHEN** el interruptor "Panel de clientes activo" está apagado
+- **THEN** la pestaña Clientes no muestra la anticipación mínima
+
+#### Scenario: Encender el interruptor
+- **WHEN** el usuario enciende "Panel de clientes activo" sin guardar
+- **THEN** el campo de anticipación aparece con el valor guardado
+
+#### Scenario: Guardar con el panel apagado
+- **GIVEN** la anticipación guardada en 48 y el panel de clientes apagado
+- **WHEN** el usuario guarda la página sin mostrar el campo
+- **THEN** la anticipación sigue en 48
+
+#### Scenario: Pedido manipulado sin permiso
+- **GIVEN** un usuario sin el permiso del panel de clientes
+- **WHEN** guarda Parámetros enviando otra anticipación
+- **THEN** la anticipación guardada no cambia
+
+### Requirement: Configurar el límite de pasajeros por venta
+La sección "Pasajeros por venta" de la pestaña Venta SHALL ofrecer el campo "Máximo de pasajeros por venta", que muestra el valor guardado y, sin configurar, 4. El campo MUST ser obligatorio y aceptar solo números enteros de 1 a 8, con los errores en español con voseo. Cambiar el límite MUST NOT modificar ventas ya emitidas.
+
+#### Scenario: Valor inicial
+- **WHEN** nadie configuró el límite y un usuario con el permiso abre la pestaña Venta
+- **THEN** el campo muestra 4
+
+#### Scenario: Cambiar el límite
+- **WHEN** un usuario con el permiso escribe 6 y guarda
+- **THEN** el parámetro queda en 6 y la venta ofrece de 1 a 6 pasajeros
+
+#### Scenario: Valor fuera de rango
+- **WHEN** el usuario escribe 0 o 9 y guarda
+- **THEN** no se guarda ningún parámetro y el campo muestra el error debajo, en español
+
+#### Scenario: Valor con decimales
+- **WHEN** el usuario escribe 2,5 y guarda
+- **THEN** no se guarda ningún parámetro y el campo indica que tiene que ser un número entero
+
+#### Scenario: Campo vacío
+- **WHEN** el usuario deja el campo vacío y guarda
+- **THEN** no se guarda ningún parámetro y el campo pide ingresar la cantidad
+
+#### Scenario: Ventas ya emitidas
+- **GIVEN** una venta emitida con 4 pasajeros
+- **WHEN** el límite baja a 2
+- **THEN** la venta y sus 4 boletos siguen iguales
+
+### Requirement: Permiso para configurar el límite de pasajeros por venta
+Solo un usuario con el permiso "Configurar límite de pasajeros por venta" (`settings.passenger_limit`) del módulo Configuración MUST ver la sección "Pasajeros por venta" y cambiar el parámetro. Si quien guarda no tiene el permiso, el límite MUST quedar como estaba, aunque el pedido traiga otro valor o no lo traiga.
+
+#### Scenario: Sin el permiso
+- **WHEN** un usuario con `settings.manage` pero sin el permiso del límite de pasajeros abre la pestaña Venta
+- **THEN** no ve la sección "Pasajeros por venta"
+
+#### Scenario: Guardar sin el permiso conserva el límite
+- **GIVEN** el límite de pasajeros por venta en 6
+- **WHEN** un usuario sin el permiso cambia las horas de venta a 8 y guarda
+- **THEN** las horas de venta quedan en 8 y el límite sigue en 6
+
+#### Scenario: Pedido manipulado
+- **GIVEN** el límite de pasajeros por venta en 4
+- **WHEN** un usuario sin el permiso guarda Parámetros enviando 8 como límite
+- **THEN** los demás parámetros se guardan y el límite sigue en 4
+
+#### Scenario: Permiso no asignado por defecto
+- **WHEN** se sincronizan los permisos y roles del sistema
+- **THEN** ni el rol Administrador ni el Vendedor reciben el permiso del límite de pasajeros, y se lo puede asignar desde la matriz de roles
+
+### Requirement: Cobertura del día de hoy
+Con "Precio fijo activo" prendido, la grilla SHALL tener al menos un período con "Desde" igual a hoy o anterior. Si al guardar no queda ninguno, ya sea al prender el interruptor, al borrar períodos o al mover su "Desde" hacia adelante, la página MUST mostrar en la grilla "Tiene que haber un precio vigente para hoy: cargá un período que empiece hoy o antes." y no guardar ningún parámetro.
+
+#### Scenario: Prender solo con períodos futuros
+- **GIVEN** hoy es el 21/11/2026
+- **WHEN** el usuario prende "Precio fijo activo", carga un único período desde el 02/12/2026 y guarda
+- **THEN** aparece el mensaje y no se guarda ningún parámetro
+
+#### Scenario: Borrar el período vigente sin otro anterior
+- **GIVEN** hoy es el 21/11/2026 y el precio fijo prendido con un período desde el 20/11/2026 y otro desde el 02/12/2026
+- **WHEN** el usuario borra el período del 20/11/2026 y guarda
+- **THEN** aparece el mensaje y los dos períodos siguen guardados
+
+#### Scenario: Borrar el período vigente con uno anterior
+- **GIVEN** hoy es el 21/11/2026 y el precio fijo prendido con períodos desde el 01/11/2026, el 20/11/2026 y el 02/12/2026
+- **WHEN** el usuario borra el período del 20/11/2026 y guarda
+- **THEN** se guarda y desde ese momento rige el período del 01/11/2026
+
+#### Scenario: Período que empieza hoy
+- **GIVEN** hoy es el 21/11/2026
+- **WHEN** el usuario prende "Precio fijo activo", carga un único período desde el 21/11/2026 y guarda
+- **THEN** se guarda
+
+### Requirement: Migración del precio fijo a períodos
+Al actualizar el sistema, si había montos de precio fijo cargados, el precio del boleto y el seguro SHALL convertirse en un único período con "Desde" igual al día de la actualización. Si estaba prendido, MUST seguir prendido y cobrando los mismos montos. Sin montos cargados, la grilla MUST quedar vacía.
+
+#### Scenario: Precio fijo prendido antes de actualizar
+- **GIVEN** el precio fijo prendido con precio 5000 y seguro 800
+- **WHEN** se actualiza el sistema el 21/11/2026
+- **THEN** el precio fijo sigue prendido con un período desde el 21/11/2026 con boleto 5000 y seguro 800, y la venta cobra lo mismo que antes
+
+#### Scenario: Precio fijo nunca configurado
+- **GIVEN** nadie configuró el precio fijo
+- **WHEN** se actualiza el sistema
+- **THEN** el interruptor sigue apagado y la grilla no tiene períodos

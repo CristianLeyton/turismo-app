@@ -34,6 +34,7 @@
                     @foreach (range(1, $floorCount) as $f)
                         <button
                             type="button"
+                            x-on:click="selected = null"
                             wire:click="setFloor({{ $f }})"
                             wire:loading.attr="disabled"
                             class="px-4 py-1.5 text-sm font-medium transition
@@ -66,10 +67,21 @@
                         : 'bg-white text-gray-600 hover:bg-gray-50 dark:bg-gray-900 dark:text-gray-300'"
                     class="px-4 py-1.5 text-sm font-medium transition"
                 >Zonas</button>
+                <button
+                    type="button"
+                    x-on:click="setMode('move')"
+                    :class="mode === 'move'
+                        ? 'bg-amber-500 text-white'
+                        : 'bg-white text-gray-600 hover:bg-gray-50 dark:bg-gray-900 dark:text-gray-300'"
+                    class="px-4 py-1.5 text-sm font-medium transition"
+                >Mover</button>
             </div>
 
             <span class="text-xs text-gray-500 dark:text-gray-400" x-show="mode === 'seat'">
                 Clic en una celda vacía para agregar un asiento · Clic en un asiento para quitarlo
+            </span>
+            <span class="text-xs text-amber-700 dark:text-amber-400" x-show="mode === 'move'" x-cloak>
+                Clic en un asiento para elegirlo · Después, clic en una celda vacía para moverlo o en otro asiento para intercambiarlos · Esc cancela
             </span>
             <span class="text-xs text-indigo-600 dark:text-indigo-400" x-show="mode === 'area'" x-cloak>
                 Arrastrá sobre la grilla para marcar la zona · Clic en una zona para quitarla
@@ -121,9 +133,12 @@
                             <button
                                 type="button"
                                 wire:key="seat-{{ $seat['floor'] }}-{{ $row }}-{{ $col }}"
-                                title="Asiento {{ $seat['seat_number'] }}{{ ($seat['tickets_count'] ?? 0) > 0 ? ' — tiene boletos vendidos (no se puede quitar)' : '' }}{{ $seat['is_active'] ? '' : ' — inactivo' }}"
-                                wire:click="removeSeatAt({{ $row }}, {{ $col }})"
+                                title="Asiento {{ $seat['seat_number'] }}{{ ($seat['tickets_count'] ?? 0) > 0 ? ' — tiene boletos vendidos (se puede mover, no quitar)' : '' }}{{ $seat['is_active'] ? '' : ' — inactivo' }}"
+                                x-on:click="clickSeat({{ $row }}, {{ $col }})"
                                 wire:loading.attr="disabled"
+                                :class="isSelected({{ $row }}, {{ $col }})
+                                    ? 'ring-2 ring-amber-500 ring-offset-2 ring-offset-white dark:ring-amber-400 dark:ring-offset-gray-900'
+                                    : ''"
                                 class="rounded border text-xs font-semibold h-9 flex items-center justify-center transition
                                     {{ ($seat['tickets_count'] ?? 0) > 0
                                         ? 'bg-red-100 border-red-300 text-red-800 dark:bg-red-900/30 dark:border-red-700 dark:text-red-200'
@@ -136,7 +151,7 @@
                                 type="button"
                                 wire:key="area-{{ $area['type'] }}-{{ $row }}-{{ $col }}"
                                 title="{{ $area['label'] }} — clic para quitar"
-                                wire:click="removeAreaAt({{ $row }}, {{ $col }})"
+                                x-on:click="clickArea({{ $row }}, {{ $col }})"
                                 wire:loading.attr="disabled"
                                 class="rounded border text-[0.6rem] font-semibold h-9 flex items-center justify-center transition
                                     {{ match ($area['type']) {
@@ -158,7 +173,7 @@
                                 title="{{ 'Zona libre' }}"
                                 @mousedown.prevent="startDrag({{ $row }}, {{ $col }})"
                                 @mouseenter="extendDrag({{ $row }}, {{ $col }})"
-                                @click="addSeatOrNothing({{ $row }}, {{ $col }})"
+                                @click="clickEmptyCell({{ $row }}, {{ $col }})"
                                 :class="cellPreviewClass({{ $row }}, {{ $col }})"
                                 class="h-9 rounded cursor-pointer transition-colors"
                             ></div>
@@ -325,9 +340,63 @@
                 dragStart: null,
                 dragEnd: null,
 
+                // Asiento elegido en modo "Mover" ({ row, col } del piso actual).
+                selected: null,
+
                 setMode(mode) {
                     this.mode = mode;
                     this.cancelDrag();
+                },
+
+                isSelected(row, col) {
+                    return this.selected !== null && this.selected.row === row && this.selected.col === col;
+                },
+
+                // Segundo clic del modo "Mover": el servidor decide si mueve, intercambia o avisa.
+                moveSelectedTo(row, col) {
+                    const from = this.selected;
+                    this.selected = null;
+                    this.$wire.moveSeat(from.row, from.col, row, col);
+                },
+
+                clickSeat(row, col) {
+                    if (this.mode !== 'move') {
+                        this.$wire.removeSeatAt(row, col);
+
+                        return;
+                    }
+
+                    if (this.selected === null) {
+                        this.selected = { row, col };
+                    } else if (this.isSelected(row, col)) {
+                        this.selected = null;
+                    } else {
+                        this.moveSelectedTo(row, col);
+                    }
+                },
+
+                clickArea(row, col) {
+                    if (this.mode !== 'move') {
+                        this.$wire.removeAreaAt(row, col);
+
+                        return;
+                    }
+
+                    if (this.selected !== null) {
+                        this.moveSelectedTo(row, col);
+                    }
+                },
+
+                clickEmptyCell(row, col) {
+                    if (this.mode === 'move') {
+                        if (this.selected !== null) {
+                            this.moveSelectedTo(row, col);
+                        }
+
+                        return;
+                    }
+
+                    this.addSeatOrNothing(row, col);
                 },
 
                 // ── Dibujo de zonas por arrastre (100 % navegador) ──
@@ -396,7 +465,9 @@
                     this.$wire.addSeatAt(row, col);
                 },
 
+                // También lo dispara Esc y el cambio de modo: limpia la selección del modo "Mover".
                 cancelDrag() {
+                    this.selected = null;
                     this.dragging = false;
                     this.dragStart = null;
                     this.dragEnd = null;

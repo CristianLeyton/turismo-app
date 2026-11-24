@@ -9,12 +9,14 @@ use App\Models\SeatReservation;
 use App\Models\Setting;
 use App\Models\Ticket;
 use App\Models\Trip;
+use App\Support\Permissions;
 use App\Support\ServiceDays;
 use Carbon\Carbon;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Radio;
 use Filament\Forms\Components\Select;
+use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\ViewField;
 use Filament\Schemas\Components\Grid;
@@ -22,10 +24,16 @@ use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
+use Filament\Support\Icons\Heroicon;
+use Illuminate\Support\Facades\Auth;
 use Livewire\Component as LivewireComponent;
 
 class TicketRescheduleForm
 {
+    public const MODE_RESCHEDULE = 'reschedule';
+
+    public const MODE_OPEN_DATE = 'open_date';
+
     public static function configure(Schema $schema): Schema
     {
         return $schema
@@ -45,8 +53,31 @@ class TicketRescheduleForm
                     ])
                     ->columnSpanFull(),
 
+                // Fecha abierta: el boleto vuelve a quedar sin viaje ni
+                // asiento, como uno vendido sin fecha. Solo para boletos con
+                // fecha y con los dos permisos ("Reprogramar" y "Vender sin
+                // fecha/horario"), igual que la venta sin fecha.
+                Radio::make('mode')
+                    ->label('¿Qué querés hacer?')
+                    ->options([
+                        self::MODE_RESCHEDULE => 'Elegir una fecha nueva',
+                        self::MODE_OPEN_DATE => 'Dejar con fecha abierta',
+                    ])
+                    ->default(self::MODE_RESCHEDULE)
+                    // Uno al lado del otro; bajan solo si no entran (pantallas muy chicas).
+                    ->inline()
+                    ->live()
+                    ->visible(fn (LivewireComponent $livewire): bool => self::canOpenDate(self::ticket($livewire)))
+                    ->dehydrated()
+                    ->helperText(fn (Get $get): ?string => self::isOpenDateMode($get)
+                        ? 'El boleto queda sin fecha ni asiento y el asiento se libera. La fecha nueva se asigna después reprogramando'
+                            .(Setting::panelClientesActivo() ? ' o la elige el pasajero desde su panel.' : '.')
+                        : null),
+
                 Radio::make('scope')
-                    ->label('¿Qué tramo querés reprogramar?')
+                    ->label(fn (Get $get): string => self::isOpenDateMode($get)
+                        ? '¿Qué tramo querés dejar con fecha abierta?'
+                        : '¿Qué tramo querés reprogramar?')
                     ->options([
                         'outbound' => 'Solo este tramo',
                         'both' => 'Ida y vuelta',
@@ -55,7 +86,9 @@ class TicketRescheduleForm
                     ->live()
                     ->visible(fn (LivewireComponent $livewire) => self::isOutboundOfRoundTrip(self::ticket($livewire)))
                     ->dehydrated()
-                    ->helperText('"Ida y vuelta" asigna fecha, horario y asiento a los dos tramos en un solo paso.'),
+                    ->helperText(fn (Get $get): string => self::isOpenDateMode($get)
+                        ? '"Ida y vuelta" deja los dos tramos sin fecha en un solo paso.'
+                        : '"Ida y vuelta" asigna fecha, horario y asiento a los dos tramos en un solo paso.'),
 
                 // ================= Ida =================
                 Grid::make()
@@ -227,7 +260,8 @@ class TicketRescheduleForm
                             }),
                     ])
                     ->columnSpanFull()
-                    ->columns(2),
+                    ->columns(2)
+                    ->visible(fn (Get $get): bool => ! self::isOpenDateMode($get)),
 
                 // ================= Vuelta =================
                 Grid::make()
@@ -367,7 +401,19 @@ class TicketRescheduleForm
                     ->columnSpanFull()
                     ->columns(2)
                     ->visible(fn (LivewireComponent $livewire, Get $get) => $get('scope') === 'both'
+                        && ! self::isOpenDateMode($get)
                         && self::isOutboundOfRoundTrip(self::ticket($livewire))),
+
+                Textarea::make('reason')
+                    ->label('Motivo')
+                    ->placeholder('Ej: No sabe cuándo vuelve')
+                    ->rows(2)
+                    ->maxLength(500)
+                    ->visible(fn (Get $get): bool => self::isOpenDateMode($get))
+                    ->validationMessages([
+                        'max' => 'El motivo puede tener hasta 500 caracteres.',
+                    ])
+                    ->hintIcon(Heroicon::OutlinedInformationCircle, tooltip: 'Opcional. Queda en el Historial de boletos.'),
 
                 // Confirmación de contraseña (opt-in vía Configuración).
                 // No es dato del boleto: dehydrated(false) y se lee directo
@@ -381,6 +427,31 @@ class TicketRescheduleForm
                     ->visible(fn (): bool => Setting::getBool(Setting::REQUIRE_PASSWORD_TICKET_RESCHEDULE))
                     ->helperText('Confirmá tu clave de administrador para ejecutar la reprogramación.'),
             ]);
+    }
+
+    /**
+     * ¿El formulario está en modo "Dejar con fecha abierta"?
+     */
+    public static function isOpenDateMode(Get $get): bool
+    {
+        return $get('mode') === self::MODE_OPEN_DATE;
+    }
+
+    /**
+     * ¿Se puede ofrecer "Dejar con fecha abierta" para este boleto? Exige que
+     * tenga fecha y los permisos "Reprogramar" y "Vender sin fecha/horario"
+     * (este último asignado a algún rol, como en la venta sin fecha). El
+     * servicio vuelve a validar los permisos al confirmar.
+     */
+    public static function canOpenDate(?Ticket $ticket): bool
+    {
+        $user = Auth::user();
+
+        return $ticket !== null
+            && ! $ticket->isPendingDate()
+            && (bool) $user?->can('tickets.reschedule')
+            && (bool) $user?->can('tickets.vender_sin_fecha')
+            && Permissions::permissionGrantedToAnyRole('tickets.vender_sin_fecha');
     }
 
     /**

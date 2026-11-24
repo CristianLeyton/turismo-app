@@ -52,11 +52,11 @@ class TicketSettings extends Page
      * @var array<string, list<string>>
      */
     public const TAB_FIELDS = [
-        'Venta' => ['permitir_acompanantes', 'venta_limite_horas', 'selectores_detallados', 'observaciones_activas', 'precio_fijo_activo', 'precio_fijo_boleto', 'precio_fijo_seguro_menor'],
+        'Venta' => ['permitir_acompanantes', 'venta_limite_horas', 'limite_pasajeros_venta', 'selectores_detallados', 'observaciones_activas', 'precio_fijo_activo', 'precio_fijo_periodos'],
         'Boleto' => ['descarga_automatica_pdf', 'whatsapp_mensaje', 'contact_lines'],
         'Calendario' => ['service_weekdays', 'service_exceptions'],
         'Seguridad' => ['require_password_ticket_delete', 'require_password_ticket_reschedule', 'require_password_ticket_edit'],
-        'Clientes' => ['panel_clientes_activo'],
+        'Clientes' => ['panel_clientes_activo', 'client_advance_notice_hours'],
         'Apariencia' => ['primary_color'],
     ];
 
@@ -78,6 +78,9 @@ class TicketSettings extends Page
     /** Permiso para ver y cambiar el precio fijo de los boletos. */
     public const FIXED_PRICE_PERMISSION = 'settings.fixed_price';
 
+    /** Permiso para ver y cambiar el máximo de pasajeros por venta. */
+    public const PASSENGER_LIMIT_PERMISSION = 'settings.passenger_limit';
+
     /** Permiso para ver la pestaña Calendario y cambiar los días de servicio y sus excepciones. */
     public const CALENDAR_PERMISSION = 'settings.calendar';
 
@@ -86,6 +89,9 @@ class TicketSettings extends Page
 
     /** Tope de los montos del precio fijo (mismo máximo que el precio a mano). */
     private const FIXED_PRICE_MAX = 999999;
+
+    /** Mensaje de la grilla cuando ningún período rige hoy (vacía o solo futuros). */
+    private const FIXED_PRICE_NO_CURRENT_PERIOD_MESSAGE = 'Tiene que haber un precio vigente para hoy: cargá un período que empiece hoy o antes.';
 
     private const PRIMARY_COLOR_INVALID_MESSAGE = 'Elegí un color válido en formato #RRGGBB (por ejemplo, #10288c).';
 
@@ -139,6 +145,7 @@ class TicketSettings extends Page
             'require_password_ticket_reschedule' => Setting::getBool(Setting::REQUIRE_PASSWORD_TICKET_RESCHEDULE),
             'require_password_ticket_edit' => Setting::getBool(Setting::REQUIRE_PASSWORD_TICKET_EDIT),
             'venta_limite_horas' => Setting::ventaLimiteHoras(),
+            'limite_pasajeros_venta' => Setting::limitePasajerosVenta(),
             'permitir_acompanantes' => Setting::permiteAcompanantes(),
             'descarga_automatica_pdf' => Setting::descargaAutomaticaPdf(),
             'whatsapp_mensaje' => Setting::whatsappMensaje(),
@@ -156,11 +163,15 @@ class TicketSettings extends Page
                 fn (array $exception): bool => $exception['date'] >= $today,
             ))),
             'panel_clientes_activo' => Setting::panelClientesActivo(),
+            'client_advance_notice_hours' => Setting::clientAdvanceNoticeHours(),
             'selectores_detallados' => Setting::selectoresDetallados(),
             'observaciones_activas' => Setting::observacionesActivas(),
             'precio_fijo_activo' => Setting::precioFijoActivo(),
-            'precio_fijo_boleto' => $this->storedAmount(Setting::PRECIO_FIJO_BOLETO),
-            'precio_fijo_seguro_menor' => $this->storedAmount(Setting::PRECIO_FIJO_SEGURO_MENOR),
+            'precio_fijo_periodos' => array_map(fn (array $period): array => [
+                'desde' => $period['desde'],
+                'boleto' => $period['boleto'],
+                'seguro' => $period['seguro'],
+            ], Setting::precioFijoPeriodos()),
             'primary_color' => Setting::primaryColor(),
         ];
     }
@@ -198,14 +209,70 @@ class TicketSettings extends Page
     }
 
     /**
-     * Monto guardado del precio fijo, o null si nunca se cargó: así el campo
-     * aparece vacío (y no en $0) la primera vez que se prende.
+     * Períodos de la grilla con fecha `Y-m-d` y montos enteros, ordenados por
+     * "Desde". Las filas sin fecha se descartan.
+     *
+     * @param  array<array-key, mixed>  $periods
+     * @return list<array{desde: string, boleto: int, seguro: int}>
      */
-    protected function storedAmount(string $key): ?int
+    protected static function normalizedPeriods(array $periods): array
     {
-        $value = Setting::getInt($key, -1);
+        return collect($periods)
+            ->filter(fn (mixed $period): bool => is_array($period) && filled($period['desde'] ?? null))
+            ->map(fn (array $period): array => [
+                'desde' => Carbon::parse($period['desde'])->format('Y-m-d'),
+                'boleto' => (int) ($period['boleto'] ?? 0),
+                'seguro' => (int) ($period['seguro'] ?? 0),
+            ])
+            ->sortBy('desde')
+            ->values()
+            ->all();
+    }
 
-        return $value < 0 ? null : $value;
+    /**
+     * ¿Algún período de la grilla empieza hoy o antes?
+     *
+     * @param  array<array-key, mixed>  $periods
+     */
+    protected static function periodsCoverToday(array $periods): bool
+    {
+        $today = today()->format('Y-m-d');
+
+        return collect(self::normalizedPeriods($periods))
+            ->contains(fn (array $period): bool => $period['desde'] <= $today);
+    }
+
+    /**
+     * Encabezado de una fila de la grilla: "Hasta dd/mm/aaaa" (el día anterior
+     * al período siguiente) o "en adelante", y "Vigente" si rige hoy. Se
+     * calcula sobre lo cargado en el formulario, aunque todavía no se guardó.
+     *
+     * @param  array<array-key, mixed>  $items
+     */
+    protected function fixedPricePeriodLabel(array $items, string $key): string
+    {
+        $from = $items[$key]['desde'] ?? null;
+
+        if (blank($from)) {
+            return 'Período nuevo';
+        }
+
+        $from = Carbon::parse($from)->format('Y-m-d');
+        $starts = collect($items)
+            ->map(fn (mixed $item): ?string => is_array($item) && filled($item['desde'] ?? null) ? Carbon::parse($item['desde'])->format('Y-m-d') : null)
+            ->filter()
+            ->unique()
+            ->sort()
+            ->values();
+
+        $next = $starts->first(fn (string $start): bool => $start > $from);
+        $current = $starts->last(fn (string $start): bool => $start <= today()->format('Y-m-d'));
+
+        $label = 'Desde '.Carbon::parse($from)->format('d/m/Y').' · '.($next === null
+            ? 'en adelante'
+            : 'Hasta '.Carbon::parse($next)->subDay()->format('d/m/Y'));
+
+        return $from === $current ? "{$label} · Vigente" : $label;
     }
 
     /**
@@ -214,6 +281,14 @@ class TicketSettings extends Page
     protected function canManageFixedPrice(): bool
     {
         return (bool) Auth::user()?->can(self::FIXED_PRICE_PERMISSION);
+    }
+
+    /**
+     * ¿Quien usa la página puede cambiar el máximo de pasajeros por venta?
+     */
+    protected function canManagePassengerLimit(): bool
+    {
+        return (bool) Auth::user()?->can(self::PASSENGER_LIMIT_PERMISSION);
     }
 
     /**
@@ -314,6 +389,28 @@ class TicketSettings extends Page
                         ]),
                 ]),
 
+            Section::make('Pasajeros por venta')
+                ->columnSpanFull()
+                ->visible(fn (): bool => $this->canManagePassengerLimit())
+                ->schema([
+                    TextInput::make('limite_pasajeros_venta')
+                        ->label('Máximo de pasajeros por venta')
+                        ->hintIcon(Heroicon::OutlinedInformationCircle, tooltip: 'Es la cantidad máxima que ofrece "Cantidad de pasajeros" al vender. Las ventas ya hechas no cambian.')
+                        ->integer()
+                        ->minValue(1)
+                        ->maxValue(Setting::LIMITE_PASAJEROS_VENTA_MAX)
+                        ->required()
+                        ->default(Setting::LIMITE_PASAJEROS_VENTA_DEFAULT)
+                        ->suffix('pasajeros')
+                        ->validationMessages([
+                            'required' => 'Ingresá la cantidad de pasajeros.',
+                            'numeric' => 'La cantidad de pasajeros tiene que ser un número.',
+                            'integer' => 'La cantidad de pasajeros tiene que ser un número entero.',
+                            'min' => 'La cantidad de pasajeros tiene que ser de al menos :min.',
+                            'max' => 'La cantidad de pasajeros no puede ser mayor a :max.',
+                        ]),
+                ]),
+
             Section::make('Selectores de origen y destino')
                 ->columnSpanFull()
                 ->visible(fn (): bool => $this->canManageSaleSelectors())
@@ -339,27 +436,57 @@ class TicketSettings extends Page
             Section::make('Precio de los boletos')
                 ->columnSpanFull()
                 ->visible(fn (): bool => $this->canManageFixedPrice())
-                ->columns(['default' => 1, 'sm' => 2])
                 ->schema([
                     Toggle::make('precio_fijo_activo')
                         ->label('Precio fijo activo')
                         ->helperText('Prendido, el precio se calcula solo y nadie lo puede cambiar al vender ni al editar un boleto.')
                         ->hintIcon(Heroicon::OutlinedInformationCircle, tooltip: 'Precio = precio del boleto + seguro si viaja con un menor, por 2 si es ida y vuelta. Los boletos ya vendidos no cambian. Apagado, el precio se carga a mano como siempre.')
                         ->live()
-                        ->default(false)
-                        ->columnSpanFull(),
+                        ->default(false),
 
-                    $this->fixedPriceAmountInput('precio_fijo_boleto', 'Precio del boleto', 'el precio del boleto', 1),
+                    Repeater::make('precio_fijo_periodos')
+                        ->label('Períodos de precio')
+                        ->helperText('Cada período rige desde su fecha hasta el día anterior al siguiente. El precio lo decide el día de la venta, no el del viaje.')
+                        ->hintIcon(Heroicon::OutlinedInformationCircle, tooltip: 'Ej.: un período desde el 20/11 a $70.000 y otro desde el 02/12 a $160.000: el sistema cambia solo el 02/12. Los períodos pasados se conservan porque se usan al editar el menor de boletos ya vendidos.')
+                        ->addActionLabel('Agregar período')
+                        ->defaultItems(0)
+                        ->reorderable(false)
+                        ->columns(['default' => 1, 'sm' => 3])
+                        ->itemLabel(fn (Repeater $component, string $key): string => $this->fixedPricePeriodLabel($component->getRawState() ?? [], $key))
+                        ->visible(fn (Get $get): bool => (bool) $get('precio_fijo_activo'))
+                        ->required(fn (Get $get): bool => (bool) $get('precio_fijo_activo'))
+                        ->rule(static fn (): Closure => static function (string $attribute, mixed $value, Closure $fail): void {
+                            if (! self::periodsCoverToday(is_array($value) ? $value : [])) {
+                                $fail(self::FIXED_PRICE_NO_CURRENT_PERIOD_MESSAGE);
+                            }
+                        })
+                        ->validationMessages([
+                            'required' => self::FIXED_PRICE_NO_CURRENT_PERIOD_MESSAGE,
+                        ])
+                        ->schema([
+                            DatePicker::make('desde')
+                                ->label('Desde')
+                                ->displayFormat('d/m/Y')
+                                ->live()
+                                ->required()
+                                ->distinct()
+                                ->validationMessages([
+                                    'required' => 'Ingresá la fecha desde la que rige el período.',
+                                    'distinct' => 'Hay más de un período que empieza el mismo día.',
+                                ]),
 
-                    $this->fixedPriceAmountInput('precio_fijo_seguro_menor', 'Seguro para menores', 'el seguro para menores', 0)
-                        ->hintIcon(Heroicon::OutlinedInformationCircle, tooltip: 'Se suma por cada tramo en que el pasajero viaja con un menor. 0 = no se cobra seguro.'),
+                            $this->fixedPriceAmountInput('boleto', 'Precio del boleto', 'el precio del boleto', 1),
+
+                            $this->fixedPriceAmountInput('seguro', 'Seguro para menores', 'el seguro para menores', 0)
+                                ->hintIcon(Heroicon::OutlinedInformationCircle, tooltip: 'Se suma por cada tramo en que el pasajero viaja con un menor. 0 = no se cobra seguro.'),
+                        ]),
                 ]),
         ];
     }
 
     /**
-     * Monto del precio fijo: obligatorio y en pesos enteros solo mientras el
-     * precio fijo está prendido (oculto, no se valida ni se pisa al guardar).
+     * Monto de un período de precio, en pesos enteros. La grilla entera se
+     * oculta con el precio fijo apagado: así no se valida ni se pisa al guardar.
      */
     protected function fixedPriceAmountInput(string $name, string $label, string $article, int $min): TextInput
     {
@@ -369,8 +496,7 @@ class TicketSettings extends Page
             ->integer()
             ->minValue($min)
             ->maxValue(self::FIXED_PRICE_MAX)
-            ->required(fn (Get $get): bool => (bool) $get('precio_fijo_activo'))
-            ->visible(fn (Get $get): bool => (bool) $get('precio_fijo_activo'))
+            ->required()
             ->validationMessages([
                 'required' => "Ingresá {$article}.",
                 'numeric' => 'El monto tiene que ser un número.',
@@ -569,7 +695,27 @@ class TicketSettings extends Page
                         ->label('Panel de clientes activo')
                         ->helperText('Desactivado, los pasajeros no pueden entrar a ver sus boletos ni elegir la fecha de un boleto sin fecha.')
                         ->hintIcon(Heroicon::OutlinedInformationCircle, tooltip: 'Activado, el ingreso del panel de administración muestra el acceso para pasajeros y el logo del link del boleto lleva al ingreso de clientes.')
-                        ->default(false),
+                        ->default(false)
+                        ->live(),
+
+                    TextInput::make('client_advance_notice_hours')
+                        ->label('Anticipación mínima para elegir fecha')
+                        ->helperText('Los pasajeros solo pueden elegir horarios que salgan con al menos estas horas de anticipación. 0 = sin mínimo.')
+                        ->hintIcon(Heroicon::OutlinedInformationCircle, tooltip: 'Cuenta desde la salida del origen del servicio. Solo afecta al panel de clientes y es el número que dice el aviso del PDF de los boletos sin fecha.')
+                        ->visible(fn (Get $get): bool => (bool) $get('panel_clientes_activo'))
+                        ->integer()
+                        ->minValue(0)
+                        ->maxValue(Setting::CLIENT_ADVANCE_NOTICE_HOURS_MAX)
+                        ->required()
+                        ->default(Setting::CLIENT_ADVANCE_NOTICE_HOURS_DEFAULT)
+                        ->suffix('horas')
+                        ->validationMessages([
+                            'required' => 'Ingresá la cantidad de horas.',
+                            'numeric' => 'La cantidad de horas tiene que ser un número.',
+                            'integer' => 'La cantidad de horas tiene que ser un número entero.',
+                            'min' => 'La cantidad de horas no puede ser negativa.',
+                            'max' => 'La cantidad de horas no puede ser mayor a :max.',
+                        ]),
                 ]),
         ];
     }
@@ -740,6 +886,15 @@ class TicketSettings extends Page
             (string) max(0, (int) ($data['venta_limite_horas'] ?? Setting::VENTA_LIMITE_HORAS_DEFAULT)),
         );
 
+        // Sin el permiso, la sección está oculta: el límite queda como estaba
+        // aunque el pedido lo traiga.
+        if ($this->canManagePassengerLimit() && array_key_exists('limite_pasajeros_venta', $data)) {
+            Setting::set(
+                Setting::LIMITE_PASAJEROS_VENTA,
+                (string) (int) $data['limite_pasajeros_venta'],
+            );
+        }
+
         Setting::set(
             Setting::PERMITIR_ACOMPANANTES,
             ($data['permitir_acompanantes'] ?? true) ? '1' : '0',
@@ -811,6 +966,15 @@ class TicketSettings extends Page
             );
         }
 
+        // Oculto (panel apagado en el formulario) no llega en el estado: el
+        // valor guardado se conserva. Mismo permiso que la pestaña.
+        if ($this->canManageClientPanel() && array_key_exists('client_advance_notice_hours', $data)) {
+            Setting::set(
+                Setting::CLIENT_ADVANCE_NOTICE_HOURS,
+                (string) max(0, (int) $data['client_advance_notice_hours']),
+            );
+        }
+
         // Sin el permiso, la sección está oculta: el parámetro queda como
         // estaba aunque el pedido lo traiga.
         if ($this->canManageSaleSelectors() && array_key_exists('selectores_detallados', $data)) {
@@ -836,10 +1000,10 @@ class TicketSettings extends Page
                 $data['precio_fijo_activo'] ? '1' : '0',
             );
 
-            foreach ([Setting::PRECIO_FIJO_BOLETO => 'precio_fijo_boleto', Setting::PRECIO_FIJO_SEGURO_MENOR => 'precio_fijo_seguro_menor'] as $key => $field) {
-                if ($data['precio_fijo_activo'] && array_key_exists($field, $data)) {
-                    Setting::set($key, (string) (int) $data[$field]);
-                }
+            // Los períodos pasados no se depuran: la edición del menor de un
+            // boleto ya vendido usa el seguro del período de su venta.
+            if ($data['precio_fijo_activo'] && array_key_exists('precio_fijo_periodos', $data)) {
+                Setting::set(Setting::PRECIO_FIJO_PERIODOS, json_encode(self::normalizedPeriods($data['precio_fijo_periodos'] ?? [])));
             }
         }
 

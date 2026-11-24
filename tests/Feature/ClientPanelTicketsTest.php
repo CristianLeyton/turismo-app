@@ -22,9 +22,11 @@ use App\Services\ClientTicketAssignmentService;
 use Filament\Actions\Testing\TestAction;
 use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 /**
@@ -228,6 +230,71 @@ class ClientPanelTicketsTest extends TestCase
         $this->assertGuest('client');
     }
 
+    /**
+     * Chrome guarda las contraseñas por dominio: en el login de clientes puede
+     * autocompletar el usuario del panel de administración en el campo DNI.
+     */
+    public function test_un_usuario_del_admin_en_el_dni_muestra_el_error_de_formato(): void
+    {
+        $this->createClient('11223344');
+
+        $this->clientLogin()
+            ->fillForm(['dni' => 'cristian', 'password' => 'clave-prueba'])
+            ->call('authenticate')
+            ->assertHasFormErrors(['dni' => 'Ingresá solo los números de tu DNI.']);
+
+        $this->assertGuest('client');
+    }
+
+    public function test_un_dni_sin_digitos_muestra_el_error_de_formato(): void
+    {
+        $this->createClient('11223344');
+
+        $this->clientLogin()
+            ->fillForm(['dni' => '...', 'password' => 'clave-prueba'])
+            ->call('authenticate')
+            ->assertHasFormErrors(['dni' => 'Ingresá solo los números de tu DNI.']);
+
+        $this->assertGuest('client');
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function dniConSeparadores(): array
+    {
+        return [
+            'puntos' => ['11.223.344'],
+            'espacios' => ['11 223 344'],
+            'guiones' => ['11-223-344'],
+        ];
+    }
+
+    #[DataProvider('dniConSeparadores')]
+    public function test_el_dni_con_separadores_inicia_sesion(string $dni): void
+    {
+        $client = $this->createClient('11223344');
+
+        $this->clientLogin()
+            ->fillForm(['dni' => $dni, 'password' => 'clave-prueba'])
+            ->call('authenticate')
+            ->assertHasNoFormErrors();
+
+        $this->assertAuthenticatedAs($client, 'client');
+    }
+
+    public function test_un_dni_bien_escrito_fuera_del_padron_recibe_el_error_generico(): void
+    {
+        $this->createClient('11223344');
+
+        $this->clientLogin()
+            ->fillForm(['dni' => '55.666.777', 'password' => 'clave-prueba'])
+            ->call('authenticate')
+            ->assertHasFormErrors(['dni' => 'El DNI o la contraseña son incorrectos.']);
+
+        $this->assertGuest('client');
+    }
+
     private function clientLogin(): \Livewire\Features\SupportTesting\Testable
     {
         Filament::setCurrentPanel('clientes');
@@ -252,6 +319,135 @@ class ClientPanelTicketsTest extends TestCase
 
         // El dashboard renderiza con el cliente identificado.
         Livewire::test(MyTickets::class)->assertSuccessful();
+    }
+
+    /**
+     * Crea un boleto del cliente ya con fecha (y opcionalmente horario).
+     *
+     * @return array<string, mixed> fixture de createPendingTicket con 'ticket' fechado
+     */
+    private function createDatedTicket(string $dni, string $date, string $time = '08:00', int $n = 1): array
+    {
+        $f = $this->createPendingTicket($dni, $n);
+
+        $f['schedule']->update(['departure_time' => $time]);
+
+        $trip = Trip::create([
+            'route_id' => $f['route']->id,
+            'schedule_id' => $f['schedule']->id,
+            'bus_id' => $f['bus']->id,
+            'trip_date' => $date,
+        ]);
+
+        $f['ticket']->update([
+            'trip_id' => $trip->id,
+            'seat_id' => Seat::where('bus_id', $f['bus']->id)->first()->id,
+        ]);
+
+        $f['ticket'] = $f['ticket']->fresh();
+
+        return $f;
+    }
+
+    public function test_cada_boleto_cae_en_una_sola_pestana(): void
+    {
+        $pendiente = $this->createPendingTicket('11223344', 1);
+        $proximo = $this->createDatedTicket('11223344', '2026-10-10', n: 2);
+        $hoy = $this->createDatedTicket('11223344', '2026-10-01', n: 3);
+        $pasado = $this->createDatedTicket('11223344', '2026-09-20', n: 4);
+
+        $this->identify('11223344');
+
+        $ids = fn ($query) => $query->pluck('tickets.id')->all();
+
+        $this->assertSame([$pendiente['ticket']->id], $ids(ClientTicketAssignmentService::pendingTicketsForCurrentClient()));
+        $this->assertEqualsCanonicalizing(
+            [$proximo['ticket']->id, $hoy['ticket']->id],
+            $ids(ClientTicketAssignmentService::upcomingTicketsForCurrentClient()),
+        );
+        $this->assertSame([$pasado['ticket']->id], $ids(ClientTicketAssignmentService::pastTicketsForCurrentClient()));
+    }
+
+    public function test_un_boleto_eliminado_no_cuenta_en_ninguna_pestana(): void
+    {
+        $pendiente = $this->createPendingTicket('11223344', 1);
+        $proximo = $this->createDatedTicket('11223344', '2026-10-10', n: 2);
+        $pasado = $this->createDatedTicket('11223344', '2026-09-20', n: 3);
+
+        foreach ([$pendiente, $proximo, $pasado] as $f) {
+            $f['ticket']->delete();
+        }
+
+        $this->identify('11223344');
+
+        $this->assertSame(0, ClientTicketAssignmentService::pendingTicketsForCurrentClient()->count());
+        $this->assertSame(0, ClientTicketAssignmentService::upcomingTicketsForCurrentClient()->count());
+        $this->assertSame(0, ClientTicketAssignmentService::pastTicketsForCurrentClient()->count());
+        $this->assertNull(ClientTicketAssignmentService::nextTripTicketForCurrentClient());
+    }
+
+    public function test_las_pestanas_no_cuentan_boletos_de_otro_cliente(): void
+    {
+        $this->createPendingTicket('11223344');
+        $this->createDatedTicket('55667788', '2026-10-10', n: 2);
+        $this->createDatedTicket('55667788', '2026-09-20', n: 3);
+
+        $this->identify('11223344');
+
+        $this->assertSame(1, ClientTicketAssignmentService::pendingTicketsForCurrentClient()->count());
+        $this->assertSame(0, ClientTicketAssignmentService::upcomingTicketsForCurrentClient()->count());
+        $this->assertSame(0, ClientTicketAssignmentService::pastTicketsForCurrentClient()->count());
+    }
+
+    public function test_el_proximo_viaje_es_el_de_fecha_y_horario_mas_cercanos(): void
+    {
+        $this->createDatedTicket('11223344', '2026-10-20', '21:00', n: 1);
+        $cercano = $this->createDatedTicket('11223344', '2026-10-15', '08:30', n: 2);
+        $this->createDatedTicket('11223344', '2026-10-15', '18:00', n: 3);
+
+        $this->identify('11223344');
+
+        $this->assertSame(
+            $cercano['ticket']->id,
+            ClientTicketAssignmentService::nextTripTicketForCurrentClient()->id,
+        );
+    }
+
+    public function test_el_proximo_viaje_desempata_por_menor_numero_y_ignora_pendientes(): void
+    {
+        $this->createPendingTicket('11223344', 1);
+        $primero = $this->createDatedTicket('11223344', '2026-10-15', '08:00', n: 2);
+        $this->createDatedTicket('11223344', '2026-10-15', '08:00', n: 3);
+
+        $this->identify('11223344');
+
+        $this->assertSame(
+            $primero['ticket']->id,
+            ClientTicketAssignmentService::nextTripTicketForCurrentClient()->id,
+        );
+    }
+
+    public function test_sin_viajes_futuros_no_hay_proximo_viaje(): void
+    {
+        $this->createPendingTicket('11223344', 1);
+        $this->createDatedTicket('11223344', '2026-09-20', n: 2);
+
+        $this->identify('11223344');
+
+        $this->assertNull(ClientTicketAssignmentService::nextTripTicketForCurrentClient());
+    }
+
+    public function test_el_boleto_pendiente_mas_antiguo_es_el_de_menor_numero(): void
+    {
+        $primero = $this->createPendingTicket('11223344', 1);
+        $this->createPendingTicket('11223344', 2);
+
+        $this->identify('11223344');
+
+        $this->assertSame(
+            $primero['ticket']->id,
+            ClientTicketAssignmentService::oldestPendingTicketForCurrentClient()->id,
+        );
     }
 
     public function test_sin_sesion_la_query_de_boletos_esta_vacia(): void
@@ -289,8 +485,51 @@ class ClientPanelTicketsTest extends TestCase
         $this->assertNotNull($change);
         $this->assertSame(TicketDateChange::LEG_OUTBOUND, $change->leg);
         $this->assertNull($change->user_id); // asignó un cliente, no un admin
+        $this->assertSame(TicketDateChange::ACTOR_CLIENT, $change->actor_type);
+        $this->assertSame($f['client']->id, $change->client_id);
         $this->assertNull($change->from_trip_id);
         $this->assertSame($ticket->trip_id, $change->to_trip_id);
+    }
+
+    public function test_la_reprogramacion_de_un_vendedor_queda_a_nombre_del_usuario(): void
+    {
+        $f = $this->createPendingTicket('11223344');
+        $seat = Seat::where('bus_id', $f['bus']->id)->where('seat_number', 1)->first();
+        $vendedor = User::factory()->vendedor()->create();
+
+        app(\App\Services\TicketRescheduleService::class)->rescheduleForActor($f['ticket'], [
+            'scope' => 'outbound',
+            'date' => '2026-10-05',
+            'schedule_id' => $f['schedule']->id,
+            'seat_id' => $seat->id,
+        ], $vendedor->id);
+
+        $change = TicketDateChange::query()->where('ticket_id', $f['ticket']->id)->firstOrFail();
+
+        $this->assertSame(TicketDateChange::ACTOR_USER, $change->actor_type);
+        $this->assertSame($vendedor->id, $change->user_id);
+        $this->assertNull($change->client_id);
+    }
+
+    public function test_borrar_del_todo_al_usuario_deja_su_reprogramacion_como_de_usuario(): void
+    {
+        $f = $this->createPendingTicket('11223344');
+        $seat = Seat::where('bus_id', $f['bus']->id)->where('seat_number', 1)->first();
+        $vendedor = User::factory()->vendedor()->create();
+
+        app(\App\Services\TicketRescheduleService::class)->rescheduleForActor($f['ticket'], [
+            'scope' => 'outbound',
+            'date' => '2026-10-05',
+            'schedule_id' => $f['schedule']->id,
+            'seat_id' => $seat->id,
+        ], $vendedor->id);
+
+        $vendedor->forceDelete();
+
+        $change = TicketDateChange::query()->where('ticket_id', $f['ticket']->id)->firstOrFail();
+
+        $this->assertNull($change->user_id);
+        $this->assertSame(TicketDateChange::ACTOR_USER, $change->actor_type, 'No pasa a ser un cambio de cliente.');
     }
 
     public function test_tras_asignar_el_cliente_queda_bloqueado(): void
@@ -433,6 +672,261 @@ class ClientPanelTicketsTest extends TestCase
     }
 
     // ------------------------------------------------------------------
+    // Anticipación mínima (Parámetros > Clientes). "Ahora": 01/10/2026 09:00;
+    // el horario del fixture sale a las 08:00.
+    // ------------------------------------------------------------------
+
+    /** Intenta asignar la fecha por el servicio y devuelve el error de `schedule_id`, o null si se asignó. */
+    private function assignOn(array $f, string $date): ?string
+    {
+        try {
+            app(ClientTicketAssignmentService::class)->assign($f['ticket'], [
+                'date' => $date,
+                'schedule_id' => $f['schedule']->id,
+                'seat_id' => Seat::where('bus_id', $f['bus']->id)->where('seat_number', 1)->first()->id,
+            ]);
+        } catch (ValidationException $e) {
+            return $e->errors()['schedule_id'][0] ?? 'otro error: '.implode(' ', Arr::flatten($e->errors()));
+        }
+
+        return null;
+    }
+
+    public function test_el_servidor_rechaza_un_horario_dentro_de_las_24hs(): void
+    {
+        $f = $this->createPendingTicket('11223344');
+        $this->identify('11223344');
+
+        // 02/10 08:00 sale a menos de 24hs de las 09:00 del 01/10.
+        $this->assertSame('Elegí un horario con al menos 24hs de anticipación.', $this->assignOn($f, '2026-10-02'));
+        $this->assertNull($f['ticket']->fresh()->trip_id, 'El boleto sigue sin fecha.');
+    }
+
+    public function test_el_servidor_acepta_un_horario_con_mas_de_24hs(): void
+    {
+        $f = $this->createPendingTicket('11223344');
+        $this->identify('11223344');
+
+        $this->assertNull($this->assignOn($f, '2026-10-03'));
+        $this->assertNotNull($f['ticket']->fresh()->trip_id);
+    }
+
+    public function test_el_mensaje_dice_las_horas_configuradas(): void
+    {
+        Setting::set(Setting::CLIENT_ADVANCE_NOTICE_HOURS, '48');
+
+        $f = $this->createPendingTicket('11223344');
+        $this->identify('11223344');
+
+        // 03/10 08:00 está a menos de 48hs de las 09:00 del 01/10.
+        $this->assertSame('Elegí un horario con al menos 48hs de anticipación.', $this->assignOn($f, '2026-10-03'));
+        $this->assertNull($f['ticket']->fresh()->trip_id);
+    }
+
+    public function test_con_cero_horas_no_se_exige_anticipacion(): void
+    {
+        Setting::set(Setting::CLIENT_ADVANCE_NOTICE_HOURS, '0');
+
+        $f = $this->createPendingTicket('11223344');
+        $this->identify('11223344');
+
+        $this->assertNull($this->assignOn($f, '2026-10-02'));
+    }
+
+    public function test_el_selector_no_ofrece_un_horario_fuera_de_plazo(): void
+    {
+        $f = $this->createPendingTicket('11223344');
+        $this->identify('11223344');
+
+        $data = [
+            'schedule_id' => $f['schedule']->id,
+            'seat_ids' => [Seat::where('bus_id', $f['bus']->id)->where('seat_number', 1)->first()->id],
+        ];
+
+        Livewire::test(MyTickets::class)
+            ->callAction(TestAction::make('asignar_fecha')->table($f['ticket']), data: ['date' => '2026-10-02'] + $data)
+            ->assertHasActionErrors(['schedule_id']);
+
+        $this->assertNull($f['ticket']->fresh()->trip_id);
+
+        Livewire::test(MyTickets::class)
+            ->callAction(TestAction::make('asignar_fecha')->table($f['ticket']), data: ['date' => '2026-10-05'] + $data)
+            ->assertHasNoActionErrors();
+
+        $this->assertNotNull($f['ticket']->fresh()->trip_id);
+    }
+
+    public function test_si_el_dia_no_tiene_horarios_con_anticipacion_el_selector_lo_explica(): void
+    {
+        $f = $this->createPendingTicket('11223344');
+        $this->identify('11223344');
+
+        $component = Livewire::test(MyTickets::class)
+            ->mountTableAction('asignar_fecha', (string) $f['ticket']->id)
+            ->setTableActionData(['date' => '2026-10-02']);
+
+        // El esquema se renderiza fuera de la vista de Livewire: hay que darle $errors.
+        \Illuminate\Support\Facades\View::share('errors', new \Illuminate\Support\ViewErrorBag);
+
+        $render = function () use ($component): string {
+            $schema = (new \ReflectionMethod($component->instance(), 'getMountedActionSchema'))->invoke($component->instance());
+
+            return (string) preg_replace('/\s+/', ' ', $schema->toHtml());
+        };
+
+        $this->assertStringContainsString('No hay horarios con 24hs de anticipación para ese día. Elegí otra fecha.', $render());
+
+        // Un día con horarios en plazo muestra el texto normal.
+        $component->setTableActionData(['date' => '2026-10-05']);
+
+        $this->assertStringNotContainsString('No hay horarios con', $render());
+        $this->assertStringContainsString('Elegí un horario', $render());
+    }
+
+    // ------------------------------------------------------------------
+    // Reconfirmación: un segundo paso avisa que la fecha no se podrá cambiar
+    // ------------------------------------------------------------------
+
+    /** Datos de un viaje elegido para el ticket del fixture. */
+    private function chosenTrip(array $f, bool $withSeat = true): array
+    {
+        return [
+            'date' => '2026-10-05',
+            'schedule_id' => $f['schedule']->id,
+            'seat_ids' => $withSeat
+                ? [Seat::where('bus_id', $f['bus']->id)->where('seat_number', 1)->first()->id]
+                : [],
+        ];
+    }
+
+    /** HTML del modal montado, como lo ve el cliente (los espacios colapsados). */
+    private function mountedModalText(object $component): string
+    {
+        \Illuminate\Support\Facades\View::share('errors', new \Illuminate\Support\ViewErrorBag);
+        \Illuminate\Support\Facades\View::share('__livewire', $component->instance());
+
+        $schema = (new \ReflectionMethod($component->instance(), 'getMountedActionSchema'))->invoke($component->instance());
+
+        return (string) preg_replace('/\s+/', ' ', strip_tags($schema->toHtml()));
+    }
+
+    public function test_elegir_fecha_tiene_dos_pasos_el_segundo_para_reconfirmar(): void
+    {
+        $f = $this->createPendingTicket('11223344');
+        $this->identify('11223344');
+
+        Livewire::test(MyTickets::class)
+            ->mountTableAction('asignar_fecha', (string) $f['ticket']->id)
+            ->assertWizardStepExists(1)
+            ->assertWizardStepExists(2)
+            ->assertWizardCurrentStep(1);
+    }
+
+    public function test_el_segundo_paso_pregunta_si_esta_seguro_y_avisa_que_no_se_podra_cambiar(): void
+    {
+        $f = $this->createPendingTicket('11223344');
+        $this->identify('11223344');
+
+        $component = Livewire::test(MyTickets::class)
+            ->mountTableAction('asignar_fecha', (string) $f['ticket']->id)
+            ->setTableActionData($this->chosenTrip($f))
+            ->goToNextWizardStep()
+            ->assertDispatched('next-wizard-step')
+            ->assertWizardCurrentStep(2);
+
+        $text = $this->mountedModalText($component);
+
+        $this->assertStringContainsString('¿Estás seguro de confirmar esta fecha?', $text);
+        $this->assertStringContainsString('no vas a poder cambiarla de nuevo', $text);
+        $this->assertStringContainsString('comunicarte con boletería', $text);
+    }
+
+    public function test_el_segundo_paso_resume_lo_elegido(): void
+    {
+        $f = $this->createPendingTicket('11223344');
+        $this->identify('11223344');
+
+        $component = Livewire::test(MyTickets::class)
+            ->mountTableAction('asignar_fecha', (string) $f['ticket']->id)
+            ->setTableActionData($this->chosenTrip($f))
+            ->goToNextWizardStep();
+
+        $text = $this->mountedModalText($component);
+
+        $this->assertStringContainsString($f['origin']->name.' → '.$f['destination']->name, $text);
+        $this->assertStringContainsString('05/10/2026', $text);
+        $this->assertStringContainsString($f['schedule']->display_name, $text);
+        $this->assertMatchesRegularExpression('/Asiento 1\b/', $text);
+    }
+
+    public function test_sin_asiento_no_se_pasa_a_reconfirmar(): void
+    {
+        $f = $this->createPendingTicket('11223344');
+        $this->identify('11223344');
+
+        Livewire::test(MyTickets::class)
+            ->mountTableAction('asignar_fecha', (string) $f['ticket']->id)
+            ->setTableActionData($this->chosenTrip($f, withSeat: false))
+            ->goToNextWizardStep()
+            ->assertNotified('Falta elegir el asiento')
+            // El evento que mueve la pantalla al paso 2 no se dispara: se queda en el paso 1.
+            ->assertNotDispatched('next-wizard-step');
+    }
+
+    public function test_confirmar_en_el_segundo_paso_asigna_la_fecha_y_ya_no_se_puede_cambiar(): void
+    {
+        $f = $this->createPendingTicket('11223344');
+        $this->identify('11223344');
+
+        Livewire::test(MyTickets::class)
+            ->callAction(TestAction::make('asignar_fecha')->table($f['ticket']), data: $this->chosenTrip($f))
+            ->assertHasNoActionErrors();
+
+        $this->assertNotNull($f['ticket']->fresh()->trip_id);
+
+        // Con fecha asignada, "Elegir fecha" ya no se ofrece.
+        Livewire::test(MyTickets::class)
+            ->set('activeTab', MyTickets::TAB_UPCOMING)
+            ->assertTableActionHidden('asignar_fecha', $f['ticket']->fresh());
+    }
+
+    public function test_el_boton_de_confirmar_dice_si_confirmar_fecha(): void
+    {
+        $this->createPendingTicket('11223344');
+        $this->identify('11223344');
+
+        $action = collect(Livewire::test(MyTickets::class)->instance()->getTable()->getRecordActions())
+            ->first(fn ($a) => ! $a instanceof \Filament\Actions\ActionGroup && $a->getName() === 'asignar_fecha');
+
+        $this->assertSame('Sí, confirmar fecha', $action->getModalSubmitActionLabel());
+    }
+
+    public function test_el_administrador_reprograma_sin_anticipacion_minima(): void
+    {
+        $f = $this->createPendingTicket('11223344');
+        $vendedor = User::factory()->vendedor()->create();
+
+        // Sale en menos de 24hs: el panel de clientes lo rechazaría, la reprogramación del admin no.
+        app(\App\Services\TicketRescheduleService::class)->rescheduleForActor($f['ticket'], [
+            'scope' => 'outbound',
+            'date' => '2026-10-02',
+            'schedule_id' => $f['schedule']->id,
+            'seat_id' => Seat::where('bus_id', $f['bus']->id)->where('seat_number', 1)->first()->id,
+        ], $vendedor->id);
+
+        $this->assertNotNull($f['ticket']->fresh()->trip_id);
+    }
+
+    public function test_un_dia_sin_servicio_sigue_rechazado_ademas_de_la_anticipacion(): void
+    {
+        $f = $this->createPendingTicket('11223344');
+        $this->identify('11223344');
+
+        // Domingo 04/10: sin servicio por defecto. Falla por el día, no por el horario.
+        $this->assertStringStartsWith('otro error:', (string) $this->assignOn($f, '2026-10-04'));
+    }
+
+    // ------------------------------------------------------------------
     // Ida y vuelta: ida y vuelta pendientes, se asignan por separado
     // ------------------------------------------------------------------
 
@@ -555,6 +1049,45 @@ class ClientPanelTicketsTest extends TestCase
             'schedule_id' => $f['scheduleReturn']->id,
             'seat_id' => $seat1->id,
         ]);
+    }
+
+    public function test_la_anticipacion_tambien_se_exige_al_tramo_de_vuelta(): void
+    {
+        $f = $this->createRoundTripFailing();
+        $this->identify($f['client']->dni);
+
+        $seat1 = Seat::where('bus_id', $f['bus']->id)->where('seat_number', 1)->first();
+        $service = app(ClientTicketAssignmentService::class);
+
+        $service->assign($f['outbound'], [
+            'date' => '2026-10-05',
+            'schedule_id' => $f['scheduleOutbound']->id,
+            'seat_id' => $seat1->id,
+        ]);
+
+        // Pasan cuatro días: la vuelta de las 20:00 del 06/10 sale a menos de 24hs.
+        $this->travelTo(\Carbon\Carbon::parse('2026-10-05 21:00:00'));
+
+        try {
+            $service->assign($f['return'], [
+                'date' => '2026-10-06',
+                'schedule_id' => $f['scheduleReturn']->id,
+                'seat_id' => $seat1->id,
+            ]);
+            $this->fail('La vuelta dentro de las 24hs tendría que rechazarse.');
+        } catch (ValidationException $e) {
+            $this->assertSame('Elegí un horario con al menos 24hs de anticipación.', $e->errors()['schedule_id'][0]);
+        }
+
+        $this->assertNull($f['return']->fresh()->trip_id);
+
+        $service->assign($f['return'], [
+            'date' => '2026-10-07',
+            'schedule_id' => $f['scheduleReturn']->id,
+            'seat_id' => $seat1->id,
+        ]);
+
+        $this->assertNotNull($f['return']->fresh()->trip_id);
     }
 
     public function test_los_diferidos_se_identifican_con_su_tramo(): void
@@ -683,35 +1216,412 @@ class ClientPanelTicketsTest extends TestCase
         $this->assertFalse(Ticket::query()->whereNotNull('share_token')->exists(), 'Listar no genera links.');
     }
 
-    public function test_por_defecto_ve_solo_pendientes_y_el_switch_incluye_fechados(): void
+    public function test_las_pestanas_muestran_cada_grupo_de_boletos(): void
+    {
+        $pendiente = $this->createPendingTicket('11223344', 1);
+        $proximo = $this->createDatedTicket('11223344', '2026-10-10', n: 2);
+        $pasado = $this->createDatedTicket('11223344', '2026-09-20', n: 3);
+        $ajeno = $this->createDatedTicket('55667788', '2026-10-12', n: 4);
+
+        $this->identify('11223344');
+
+        // Con boletos sin fecha, abre en "Pendientes".
+        Livewire::test(MyTickets::class)
+            ->assertSet('activeTab', MyTickets::TAB_PENDING)
+            ->assertCanSeeTableRecords([$pendiente['ticket']])
+            ->assertCanNotSeeTableRecords([$proximo['ticket'], $pasado['ticket'], $ajeno['ticket']])
+            ->set('activeTab', MyTickets::TAB_UPCOMING)
+            ->assertCanSeeTableRecords([$proximo['ticket']])
+            ->assertCanNotSeeTableRecords([$pendiente['ticket'], $pasado['ticket'], $ajeno['ticket']])
+            ->set('activeTab', MyTickets::TAB_HISTORY)
+            ->assertCanSeeTableRecords([$pasado['ticket']])
+            ->assertCanNotSeeTableRecords([$pendiente['ticket'], $proximo['ticket'], $ajeno['ticket']]);
+    }
+
+    public function test_sin_pendientes_abre_en_proximos(): void
+    {
+        $this->createDatedTicket('11223344', '2026-10-10');
+
+        $this->identify('11223344');
+
+        Livewire::test(MyTickets::class)
+            ->assertSet('activeTab', MyTickets::TAB_UPCOMING);
+    }
+
+    public function test_las_pestanas_muestran_su_conteo(): void
+    {
+        $this->createPendingTicket('11223344', 1);
+        $this->createPendingTicket('11223344', 2);
+        $this->createDatedTicket('11223344', '2026-10-10', n: 3);
+        $this->createDatedTicket('11223344', '2026-10-11', n: 4);
+        $this->createDatedTicket('11223344', '2026-10-12', n: 5);
+        $this->createDatedTicket('11223344', '2026-09-20', n: 6);
+
+        $this->identify('11223344');
+
+        $component = Livewire::test(MyTickets::class);
+
+        $tabs = collect($component->instance()->getSchema('content')->getComponents())
+            ->first(fn ($c) => $c instanceof \Filament\Schemas\Components\Tabs)
+            ->getDefaultChildComponents();
+
+        $this->assertSame(
+            ['Pendientes' => 2, 'Próximos' => 3, 'Historial' => 1],
+            collect($tabs)->mapWithKeys(fn ($tab) => [$tab->getLabel() => $tab->getBadge()])->all(),
+        );
+    }
+
+    public function test_cada_pestana_vacia_muestra_su_mensaje(): void
+    {
+        $this->createClient('11223344');
+        $this->identify('11223344');
+
+        Livewire::test(MyTickets::class)
+            ->set('activeTab', MyTickets::TAB_PENDING)
+            ->assertSeeText('No tenés boletos pendientes de fecha')
+            ->set('activeTab', MyTickets::TAB_UPCOMING)
+            ->assertSeeText('No tenés viajes próximos')
+            ->set('activeTab', MyTickets::TAB_HISTORY)
+            ->assertSeeText('Todavía no tenés viajes realizados');
+    }
+
+    public function test_elegir_fecha_solo_se_ofrece_en_boletos_sin_fecha(): void
+    {
+        $pendiente = $this->createPendingTicket('11223344', 1);
+        $proximo = $this->createDatedTicket('11223344', '2026-10-10', n: 2);
+
+        $this->identify('11223344');
+
+        Livewire::test(MyTickets::class)
+            ->assertTableActionVisible('asignar_fecha', $pendiente['ticket'])
+            ->set('activeTab', MyTickets::TAB_UPCOMING)
+            ->assertTableActionHidden('asignar_fecha', $proximo['ticket'])
+            ->assertTableActionVisible('boleto_pdf', $proximo['ticket']);
+    }
+
+    public function test_las_acciones_de_fila_tienen_menu_para_celular_y_botones_para_escritorio(): void
+    {
+        $this->createPendingTicket('11223344');
+        $this->identify('11223344');
+
+        $actions = Livewire::test(MyTickets::class)->instance()->getTable()->getRecordActions();
+
+        $menus = array_filter($actions, fn ($a) => $a instanceof \Filament\Actions\ActionGroup);
+        $this->assertCount(1, $menus);
+        $this->assertStringContainsString('md:hidden', (string) array_values($menus)[0]->getExtraAttributeBag()->get('class'));
+
+        $desktop = collect($actions)
+            ->reject(fn ($a) => $a instanceof \Filament\Actions\ActionGroup)
+            ->map(fn ($a) => $a->getName())
+            ->all();
+        $this->assertEqualsCanonicalizing(['asignar_fecha', 'boleto_pdf', 'descargar_pdf'], $desktop);
+
+        foreach (collect($actions)->reject(fn ($a) => $a instanceof \Filament\Actions\ActionGroup) as $action) {
+            $this->assertStringContainsString('hidden md:inline-flex', (string) $action->getExtraAttributeBag()->get('class'));
+        }
+
+        $menuItems = array_values($menus)[0]->getActions();
+        $this->assertEqualsCanonicalizing(
+            ['asignar_fecha', 'boleto_pdf', 'descargar_pdf'],
+            array_values(array_map(fn ($a) => $a->getName(), $menuItems)),
+        );
+    }
+
+    public function test_descargar_apunta_al_pdf_del_boleto_propio_y_baja_el_archivo(): void
     {
         $f = $this->createPendingTicket('11223344');
+        $this->identify('11223344');
 
-        // Fecha el primer boleto directamente (queda "Confirmado").
-        $trip = Trip::create([
-            'route_id' => $f['route']->id,
-            'schedule_id' => $f['schedule']->id,
-            'bus_id' => $f['bus']->id,
-            'trip_date' => '2026-10-10',
-        ]);
-        $f['ticket']->update(['trip_id' => $trip->id, 'seat_id' => Seat::where('bus_id', $f['bus']->id)->first()->id]);
+        $component = Livewire::test(MyTickets::class);
 
-        // Y le agrega un segundo boleto pendiente.
-        $other = $this->createPendingTicket('11223344', n: 2);
+        foreach ($component->instance()->getTable()->getRecordActions() as $action) {
+            if ($action instanceof \Filament\Actions\ActionGroup || $action->getName() !== 'descargar_pdf') {
+                continue;
+            }
 
-        $this->identify($f['client']->dni);
+            $action->record($f['ticket']);
 
-        // Por defecto: sólo pendientes (el fechado no aparece).
+            $this->assertSame(route('clientes.boletos.pdf', ['ticket' => $f['ticket']->id]), $action->getUrl());
+            $this->assertArrayHasKey('download', $action->getExtraAttributeBag()->getAttributes(), 'El botón baja el archivo.');
+            $this->assertSame('Descargar boleto', $action->getExtraAttributeBag()->get('title'));
+        }
+
+        $this->get(route('clientes.boletos.pdf', ['ticket' => $f['ticket']->id]))
+            ->assertOk()
+            ->assertHeader('Content-Type', 'application/pdf');
+    }
+
+    public function test_los_badges_de_la_tabla_usan_los_colores_del_panel_de_administracion(): void
+    {
+        $f = $this->createPendingTicket('11223344', 1);
+        $dated = $this->createDatedTicket('11223344', '2026-10-10', n: 2);
+
+        $this->identify('11223344');
+
+        $table = Livewire::test(MyTickets::class)->instance()->getTable();
+
+        $badge = function (string $name, $ticket) use ($table): array {
+            $column = $table->getColumn($name);
+            $column->record($ticket);
+
+            return [$column->isBadge(), $column->getColor($column->getState())];
+        };
+
+        $this->assertSame([true, 'gray'], $badge('id', $f['ticket']));
+        $this->assertSame([true, 'warning'], $badge('tramo', $f['ticket']));
+        $this->assertSame([true, 'primary'], $badge('seat.seat_number', $dated['ticket']));
+
+        // Fecha y horario: amarillo mientras no hay fecha, azul una vez confirmada.
+        $this->assertSame([true, 'warning'], $badge('viaje', $f['ticket']));
+        $this->assertSame([true, 'info'], $badge('viaje', $dated['ticket']));
+
+        $this->assertSame([true, 'warning'], $badge('estado', $f['ticket']));
+        $this->assertSame([true, 'success'], $badge('estado', $dated['ticket']));
+    }
+
+    public function test_una_falla_inesperada_no_muestra_la_excepcion_y_se_registra(): void
+    {
+        $f = $this->createPendingTicket('11223344');
+        $seat = Seat::where('bus_id', $f['bus']->id)->where('seat_number', 1)->first();
+
+        $this->identify('11223344');
+
+        $this->mock(ClientTicketAssignmentService::class, function ($mock): void {
+            $mock->shouldReceive('assign')->andThrow(new \RuntimeException('detalle-tecnico-secreto'));
+        });
+
+        \Illuminate\Support\Facades\Exceptions::fake();
+
         Livewire::test(MyTickets::class)
-            ->assertDontSeeText('Confirmado')
-            // El switch los incluye.
-            ->set('mostrarFechados', true)
-            ->assertSeeText('Confirmado')
-            ->assertSeeText('10/10/2026');
+            ->callAction(TestAction::make('asignar_fecha')->table($f['ticket']), data: [
+                'date' => '2026-10-05',
+                'schedule_id' => $f['schedule']->id,
+                'seat_ids' => [$seat->id],
+            ])
+            ->assertNotified(
+                \Filament\Notifications\Notification::make()
+                    ->title('No se pudo asignar la fecha')
+                    ->body('Ocurrió un problema inesperado. Volvé a intentar en unos minutos o comunicate con boletería.')
+                    ->danger()
+                    ->persistent(),
+            )
+            ->assertDontSeeText('detalle-tecnico-secreto');
 
-        // El pendiente sigue visible en ambos casos.
+        \Illuminate\Support\Facades\Exceptions::assertReported(
+            fn (\RuntimeException $e): bool => $e->getMessage() === 'detalle-tecnico-secreto',
+        );
+        $this->assertNull($f['ticket']->fresh()->trip_id);
+    }
+
+    // ------------------------------------------------------------------
+    // Aviso de pendientes y próximo viaje
+    // ------------------------------------------------------------------
+
+    public function test_con_un_solo_pendiente_el_aviso_lo_nombra_y_ofrece_elegir_fecha(): void
+    {
+        $f = $this->createPendingTicket('11223344', 1);
+        $this->identify('11223344');
+
         Livewire::test(MyTickets::class)
-            ->assertSeeText('Pendiente');
+            ->assertSeeText('Tenés 1 boleto sin fecha:')
+            ->assertSeeText($f['origin']->name.' → '.$f['destination']->name)
+            ->assertSeeText('N°'.$f['ticket']->id)
+            ->assertSeeHtml('wire:click="chooseDateOfOldestPending"')
+            ->assertDontSeeHtml('wire:click="showPendingTickets"');
+    }
+
+    public function test_con_varios_pendientes_el_aviso_dice_cuantos_y_ofrece_ver_pendientes(): void
+    {
+        $this->createPendingTicket('11223344', 1);
+        $this->createPendingTicket('11223344', 2);
+        $this->identify('11223344');
+
+        // Con "Próximos" abierta: el botón lleva a "Pendientes".
+        Livewire::test(MyTickets::class)
+            ->set('activeTab', MyTickets::TAB_UPCOMING)
+            ->assertSeeText('Tenés 2 boletos sin fecha.')
+            ->assertSeeText('Ver pendientes')
+            ->assertSeeHtml('wire:click="showPendingTickets"')
+            // No elige por el cliente: el aviso no abre ningún boleto.
+            ->assertDontSeeHtml('wire:click="chooseDateOfOldestPending"');
+    }
+
+    public function test_ya_en_pendientes_el_aviso_no_ofrece_ver_pendientes(): void
+    {
+        $this->createPendingTicket('11223344', 1);
+        $this->createPendingTicket('11223344', 2);
+        $this->identify('11223344');
+
+        // Con pendientes, la pestaña inicial ya es "Pendientes".
+        Livewire::test(MyTickets::class)
+            ->assertSet('activeTab', MyTickets::TAB_PENDING)
+            ->assertSeeText('Tenés 2 boletos sin fecha.')
+            ->assertDontSeeText('Ver pendientes')
+            ->assertDontSeeHtml('wire:click="showPendingTickets"')
+            ->assertSeeText('con su botón «Elegir fecha»')
+            // Y vuelve a aparecer al salir de "Pendientes".
+            ->set('activeTab', MyTickets::TAB_HISTORY)
+            ->assertSeeText('Ver pendientes');
+    }
+
+    public function test_ver_pendientes_lleva_a_la_pestana_sin_abrir_ningun_formulario(): void
+    {
+        $this->createPendingTicket('11223344', 1);
+        $this->createPendingTicket('11223344', 2);
+        $this->createDatedTicket('11223344', '2026-10-10', n: 3);
+        $this->identify('11223344');
+
+        Livewire::test(MyTickets::class)
+            ->set('activeTab', MyTickets::TAB_UPCOMING)
+            ->call('showPendingTickets')
+            ->assertSet('activeTab', MyTickets::TAB_PENDING)
+            ->assertSet('mountedActions', []);
+    }
+
+    public function test_el_aviso_de_pendientes_se_ve_en_cualquier_pestana(): void
+    {
+        $this->createPendingTicket('11223344', 1);
+        $this->createPendingTicket('11223344', 2);
+        $this->identify('11223344');
+
+        $component = Livewire::test(MyTickets::class);
+
+        foreach ([MyTickets::TAB_PENDING, MyTickets::TAB_UPCOMING, MyTickets::TAB_HISTORY] as $tab) {
+            $component->set('activeTab', $tab)->assertSeeText('Tenés 2 boletos sin fecha.');
+        }
+    }
+
+    public function test_elegir_fecha_es_un_boton_relleno_de_color_warning(): void
+    {
+        $this->createPendingTicket('11223344');
+        $this->identify('11223344');
+
+        $component = Livewire::test(MyTickets::class);
+
+        // Las dos variantes de la fila (menú del celular y botón de escritorio).
+        $assignActions = collect($component->instance()->getTable()->getRecordActions())
+            ->flatMap(fn ($action) => $action instanceof \Filament\Actions\ActionGroup ? $action->getActions() : [$action])
+            ->filter(fn ($action) => $action->getName() === 'asignar_fecha');
+
+        $this->assertCount(2, $assignActions);
+
+        foreach ($assignActions as $action) {
+            $this->assertFalse($action->isOutlined(), 'Con relleno.');
+            $this->assertSame('warning', $action->getColor());
+        }
+
+        // El botón del aviso de pendientes es el mismo botón: relleno y warning.
+        $component->assertDontSeeHtml('fi-outlined');
+    }
+
+    public function test_sin_pendientes_no_hay_aviso(): void
+    {
+        $this->createDatedTicket('11223344', '2026-10-10');
+        $this->identify('11223344');
+
+        Livewire::test(MyTickets::class)->assertDontSeeText('sin fecha.');
+    }
+
+    public function test_el_boton_del_aviso_con_un_solo_pendiente_abre_su_formulario(): void
+    {
+        $primero = $this->createPendingTicket('11223344', 1);
+        $this->createDatedTicket('11223344', '2026-10-10', n: 3);
+
+        $this->identify('11223344');
+
+        // Aun parado en "Próximos", el botón vuelve a "Pendientes" y abre el formulario.
+        Livewire::test(MyTickets::class)
+            ->set('activeTab', MyTickets::TAB_UPCOMING)
+            ->call('chooseDateOfOldestPending')
+            ->assertSet('activeTab', MyTickets::TAB_PENDING)
+            ->assertSet('mountedActions.0.name', 'asignar_fecha')
+            ->assertSet('mountedActions.0.context.recordKey', (string) $primero['ticket']->id);
+    }
+
+    public function test_la_tarjeta_muestra_el_proximo_viaje(): void
+    {
+        $this->createDatedTicket('11223344', '2026-10-20', '21:00', n: 1);
+        $this->createDatedTicket('11223344', '2026-10-15', '08:30', n: 2);
+
+        $this->identify('11223344');
+
+        Livewire::test(MyTickets::class)
+            ->assertSeeText('Próximo viaje')
+            ->assertSeeText('15/10/2026')
+            ->assertSeeText('08:30');
+    }
+
+    public function test_sin_viajes_futuros_no_hay_tarjeta(): void
+    {
+        $this->createPendingTicket('11223344', 1);
+        $this->createDatedTicket('11223344', '2026-09-20', n: 2);
+
+        $this->identify('11223344');
+
+        Livewire::test(MyTickets::class)->assertDontSeeText('Próximo viaje');
+    }
+
+    public function test_la_tarjeta_salta_el_boleto_eliminado(): void
+    {
+        $eliminado = $this->createDatedTicket('11223344', '2026-10-05', n: 1);
+        $this->createDatedTicket('11223344', '2026-10-15', n: 2);
+        $eliminado['ticket']->delete();
+
+        $this->identify('11223344');
+
+        Livewire::test(MyTickets::class)
+            ->assertSeeText('15/10/2026')
+            ->assertDontSeeText('05/10/2026');
+    }
+
+    // ------------------------------------------------------------------
+    // Ayuda: líneas de contacto con llamada y WhatsApp
+    // ------------------------------------------------------------------
+
+    public function test_la_ayuda_muestra_cada_linea_con_llamar_y_whatsapp(): void
+    {
+        Setting::set(Setting::CONTACT_LINES, json_encode([
+            ['name' => 'Orán', 'phone' => '3878-804506'],
+            ['name' => '', 'phone' => '+54 9 (3873) 309-893'],
+        ]));
+
+        $this->createPendingTicket('11223344');
+        $this->identify('11223344');
+
+        $component = Livewire::test(MyTickets::class)
+            ->assertSeeText('¿Necesitás ayuda?')
+            ->assertSeeText('Orán')
+            ->assertSeeText('3878-804506')
+            ->assertSeeHtml('href="tel:3878804506"')
+            ->assertSeeHtml('href="https://wa.me/5493878804506"')
+            ->assertSeeHtml('href="tel:+5493873309893"')
+            ->assertSeeHtml('href="https://wa.me/5493873309893"')
+            // Botones solo con ícono: el nombre va en el título.
+            ->assertSeeHtml('title="Llamar"')
+            ->assertSeeHtml('title="WhatsApp"')
+            ->assertSeeHtml('data-icon="whatsapp"');
+
+        $this->assertDoesNotMatchRegularExpression('/>\s*(Llamar|WhatsApp)\s*</', $component->html());
+    }
+
+    public function test_sin_lineas_de_contacto_no_hay_bloque_de_ayuda(): void
+    {
+        $this->createPendingTicket('11223344');
+        $this->identify('11223344');
+
+        Livewire::test(MyTickets::class)->assertDontSeeText('¿Necesitás ayuda?');
+    }
+
+    public function test_el_numero_de_whatsapp_se_arma_con_codigo_de_pais(): void
+    {
+        $this->assertSame('5493878804506', Setting::whatsappNumber('+54 9 (3878) 804-506'));
+        $this->assertSame('5493878804506', Setting::whatsappNumber('3878-804506'));
+        $this->assertSame('5493878804506', Setting::whatsappNumber('03878-804506'));
+        $this->assertSame('5493878804506', Setting::whatsappNumber('(03878) 15-804506'));
+        $this->assertSame('5493873309893', Setting::whatsappNumber('3873 15 309893'));
+
+        // El teléfono para llamar no cambia.
+        $this->assertSame('3878804506', Setting::dialablePhone('3878-804506'));
     }
 
     public function test_mis_boletos_no_tiene_un_salir_propio(): void
@@ -747,5 +1657,96 @@ class ClientPanelTicketsTest extends TestCase
             ->assertSee(route('clientes.logout'), false)
             ->assertDontSee(route('filament.clientes.auth.logout'), false)
             ->assertSee('/clientes/perfil', false);
+    }
+
+    // ------------------------------------------------------------------
+    // Boleto que el personal dejó con fecha abierta
+    // ------------------------------------------------------------------
+
+    /**
+     * El personal deja el boleto con fecha abierta desde "Reprogramar boleto".
+     */
+    private function openDateAsStaff(Ticket $ticket, string $scope = 'outbound'): void
+    {
+        $this->actingAs(User::factory()->superAdmin()->create());
+
+        app(\App\Services\TicketRescheduleService::class)->openDate($ticket, ['scope' => $scope]);
+    }
+
+    public function test_un_boleto_con_fecha_abierta_vuelve_a_pendientes_con_elegir_fecha(): void
+    {
+        $f = $this->createDatedTicket('11223344', '2026-10-10');
+        $this->openDateAsStaff($f['ticket']);
+
+        $this->identify('11223344');
+        $ticket = $f['ticket']->fresh();
+
+        $component = Livewire::test(MyTickets::class)
+            ->assertSet('activeTab', MyTickets::TAB_PENDING)
+            ->assertCanSeeTableRecords([$ticket])
+            ->assertTableActionVisible('asignar_fecha', $ticket)
+            ->assertSeeText('Tenés 1 boleto sin fecha:')
+            ->set('activeTab', MyTickets::TAB_UPCOMING)
+            ->assertCanNotSeeTableRecords([$ticket]);
+
+        $tabs = collect($component->instance()->getSchema('content')->getComponents())
+            ->first(fn ($c) => $c instanceof \Filament\Schemas\Components\Tabs)
+            ->getDefaultChildComponents();
+
+        $this->assertSame(
+            ['Pendientes' => 1, 'Próximos' => 0, 'Historial' => 0],
+            collect($tabs)->mapWithKeys(fn ($tab) => [$tab->getLabel() => $tab->getBadge()])->all(),
+        );
+    }
+
+    public function test_un_boleto_con_fecha_abierta_deja_de_ser_el_proximo_viaje(): void
+    {
+        $abierto = $this->createDatedTicket('11223344', '2026-10-10', n: 1);
+        $siguiente = $this->createDatedTicket('11223344', '2026-10-20', n: 2);
+        $this->openDateAsStaff($abierto['ticket']);
+
+        $this->identify('11223344');
+
+        $this->assertSame(
+            $siguiente['ticket']->id,
+            ClientTicketAssignmentService::nextTripTicketForCurrentClient()->id,
+        );
+    }
+
+    public function test_sin_otro_viaje_con_fecha_no_hay_proximo_viaje_tras_abrir_la_fecha(): void
+    {
+        $abierto = $this->createDatedTicket('11223344', '2026-10-10');
+        $this->openDateAsStaff($abierto['ticket']);
+
+        $this->identify('11223344');
+
+        $this->assertNull(ClientTicketAssignmentService::nextTripTicketForCurrentClient());
+    }
+
+    public function test_la_vuelta_abierta_no_puede_quedar_antes_de_la_ida(): void
+    {
+        $f = $this->createRoundTripFailing();
+        $this->identify($f['client']->dni);
+        $seat1 = Seat::where('bus_id', $f['bus']->id)->where('seat_number', 1)->first();
+        $service = app(ClientTicketAssignmentService::class);
+
+        $service->assign($f['outbound'], ['date' => '2026-10-06', 'schedule_id' => $f['scheduleOutbound']->id, 'seat_id' => $seat1->id]);
+        $service->assign($f['return'], ['date' => '2026-10-08', 'schedule_id' => $f['scheduleReturn']->id, 'seat_id' => $seat1->id]);
+
+        $this->openDateAsStaff($f['return']->fresh());
+        $this->identify($f['client']->dni);
+
+        try {
+            $service->assign($f['return']->fresh(), ['date' => '2026-10-05', 'schedule_id' => $f['scheduleReturn']->id, 'seat_id' => $seat1->id]);
+            $this->fail('La vuelta no debió quedar antes de la ida.');
+        } catch (ValidationException $e) {
+            $this->assertStringContainsString('debe ser posterior al viaje de ida', Arr::flatten($e->errors())[0]);
+        }
+
+        $this->assertTrue($f['return']->fresh()->isPendingDate());
+
+        // Una fecha posterior a la ida sí se acepta.
+        $service->assign($f['return']->fresh(), ['date' => '2026-10-07', 'schedule_id' => $f['scheduleReturn']->id, 'seat_id' => $seat1->id]);
+        $this->assertSame('2026-10-07', $f['return']->fresh()->trip->trip_date->format('Y-m-d'));
     }
 }

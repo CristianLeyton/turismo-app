@@ -281,7 +281,7 @@ Solo un usuario con el permiso "Configurar emisión al finalizar la venta" del m
 - **THEN** el rol Administrador no recibe el permiso de emisión, y se lo puede asignar desde la matriz de roles
 
 ### Requirement: Configurar el precio fijo de los boletos
-La sección "Precio de los boletos" de la pestaña Venta SHALL ofrecer el interruptor "Precio fijo activo", que sin configurar aparece apagado, y, solo con el interruptor prendido, la grilla "Períodos de precio". Cada fila MUST tener "Desde", "Precio del boleto" y "Seguro para menores", con prefijo `$`, y mostrar sin poder editarlo el "Hasta": el día anterior al "Desde" de la fila siguiente, o "en adelante" en la última. La grilla MUST ordenarse por "Desde" al guardar y marcar como "Vigente" el período que rige hoy. Los períodos pasados MUST conservarse.
+La sección "Precio de los boletos" de la pestaña Venta SHALL ofrecer el interruptor "Precio fijo activo", que sin configurar aparece apagado, y, solo con el interruptor prendido, la grilla "Períodos de precio". Cada fila MUST tener "Desde", "Precio del boleto" y "Seguro para menores", con prefijo `$`, y mostrar sin poder editarlo el "Hasta": el día anterior al "Desde" de la fila siguiente, o "en adelante" en la última. La grilla MUST ordenarse por "Desde" al guardar y marcar como "Vigente" el período que rige hoy. Los períodos pasados MUST conservarse hasta que un usuario los borre: el sistema no los depura solo. La ayuda de la grilla MUST explicar que los boletos vendidos guardan su propio seguro y que solo los vendidos antes de este cambio dependen de la grilla.
 
 #### Scenario: Valor inicial
 - **WHEN** nadie configuró el precio fijo y un usuario con el permiso abre la pestaña Venta
@@ -309,6 +309,11 @@ La sección "Precio de los boletos" de la pestaña Venta SHALL ofrecer el interr
 - **GIVEN** el precio fijo prendido con dos períodos
 - **WHEN** el usuario apaga el interruptor, guarda y lo vuelve a prender
 - **THEN** la grilla muestra los mismos dos períodos
+
+#### Scenario: Borrar un período pasado
+- **GIVEN** hoy es el 25/11/2026 y hay períodos desde el 01/11/2026 y el 20/11/2026
+- **WHEN** el usuario borra el período del 01/11/2026, confirma y guarda
+- **THEN** la grilla queda solo con el período del 20/11/2026
 
 ### Requirement: Validación de los montos del precio fijo
 Con "Precio fijo activo" prendido, cada período SHALL tener "Desde", "Precio del boleto" y "Seguro para menores" obligatorios. Dos períodos MUST NOT tener el mismo "Desde". Los montos MUST ser números enteros, sin centavos: el precio entre 1 y 999.999 y el seguro entre 0 y 999.999. Un valor con decimales MUST rechazarse en lugar de redondearse. Con el interruptor apagado, los períodos MUST NOT validarse ni modificarse al guardar.
@@ -538,3 +543,54 @@ Al actualizar el sistema, si había montos de precio fijo cargados, el precio de
 - **GIVEN** nadie configuró el precio fijo
 - **WHEN** se actualiza el sistema
 - **THEN** el interruptor sigue apagado y la grilla no tiene períodos
+
+### Requirement: Confirmación al borrar un período de precio
+Borrar una fila de la grilla "Períodos de precio" SHALL pedir siempre confirmación antes de quitarla. Si al cancelar no se confirma, la fila MUST quedar como estaba. Como con cualquier cambio de la página, el borrado se aplica recién al guardar.
+
+#### Scenario: Confirmar el borrado
+- **GIVEN** el precio fijo prendido con dos períodos
+- **WHEN** el usuario toca borrar en uno y confirma
+- **THEN** la fila se quita de la grilla, y al guardar deja de existir
+
+#### Scenario: Cancelar el borrado
+- **GIVEN** el precio fijo prendido con dos períodos
+- **WHEN** el usuario toca borrar en uno y cancela
+- **THEN** la grilla sigue con los dos períodos
+
+### Requirement: Aviso de boletos anteriores que dependen del período
+Si al borrar un período existen boletos de ida sin modo de precio registrado, no eliminados, vendidos dentro del rango de ese período y con su ida o su vuelta todavía por viajar o sin fecha, la confirmación MUST avisar cuántos son y que van a tomar el seguro de otro período. El rango va desde su "Desde" hasta el día anterior al período siguiente de la grilla; si es el más antiguo, incluye también las ventas anteriores. Sin esos boletos, la confirmación MUST ser la simple.
+
+#### Scenario: Período con boletos anteriores por viajar
+- **GIVEN** un período desde el 01/11/2026 y otro desde el 20/11/2026, y 3 boletos de ida sin modo de precio vendidos el 10/11/2026 para viajes del 15/12/2026
+- **WHEN** el usuario toca borrar el período del 01/11/2026
+- **THEN** la confirmación avisa que 3 boletos vendidos en ese período van a tomar el seguro de otro período
+
+#### Scenario: Boletos anteriores ya viajados
+- **GIVEN** un período desde el 01/11/2026 y otro desde el 20/11/2026, y solo boletos sin modo de precio vendidos el 10/11/2026 para viajes ya realizados, solo ida
+- **WHEN** el usuario toca borrar el período del 01/11/2026
+- **THEN** aparece la confirmación simple, sin el aviso
+
+#### Scenario: Ida viajada con vuelta por viajar
+- **GIVEN** un período desde el 01/11/2026 y otro desde el 20/11/2026, y una ida y vuelta sin modo de precio vendida el 10/11/2026 cuya ida ya viajó y cuya vuelta es el 15/12/2026
+- **WHEN** el usuario toca borrar el período del 01/11/2026
+- **THEN** la confirmación avisa que 1 boleto va a tomar el seguro de otro período
+
+#### Scenario: Boleto anterior sin fecha
+- **GIVEN** un período desde el 01/11/2026 y otro desde el 20/11/2026, y un boleto sin modo de precio vendido el 10/11/2026 sin fecha asignada
+- **WHEN** el usuario toca borrar el período del 01/11/2026
+- **THEN** la confirmación muestra el aviso con 1 boleto
+
+#### Scenario: Período más antiguo con ventas anteriores
+- **GIVEN** el período más antiguo desde el 20/11/2026 y un boleto sin modo de precio vendido el 10/10/2026 para un viaje futuro
+- **WHEN** el usuario toca borrar el período del 20/11/2026
+- **THEN** la confirmación muestra el aviso con ese boleto
+
+#### Scenario: Solo boletos con modo registrado
+- **GIVEN** un período con boletos vendidos solo después de este cambio, registrados como "fijo" o "manual"
+- **WHEN** el usuario toca borrar ese período
+- **THEN** aparece la confirmación simple, sin el aviso
+
+#### Scenario: Boletos anteriores eliminados
+- **GIVEN** un período cuyos únicos boletos sin modo de precio por viajar están eliminados
+- **WHEN** el usuario toca borrar ese período
+- **THEN** aparece la confirmación simple, sin el aviso

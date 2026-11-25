@@ -6,6 +6,7 @@ use App\Filament\Resources\Tickets\TicketResource;
 use App\Models\Ticket;
 use App\Models\User;
 use App\Services\TicketPdfService;
+use App\Support\Permissions;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
 use Filament\Actions\ViewAction;
@@ -18,6 +19,7 @@ use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Filters\Filter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\Auth;
 
 class TicketsTable
 {
@@ -280,11 +282,17 @@ class TicketsTable
                         return $indicators;
                     }),
 
-                // Filtrar boletos que no tienen fecha de salida
+                // Filtrar boletos que no tienen fecha de salida. Solo para quien
+                // vende sin fecha y reprograma, con la función activada (como el
+                // switch de la venta). Oculto, Filament tampoco lo aplica, así
+                // que un estado guardado en la sesión deja de filtrar.
                 Filter::make('trip_id')
                     ->label('Ver únicamente boletos sin fecha')
                     ->toggle()
                     ->columnSpan(2)
+                    ->visible(fn (): bool => (bool) Auth::user()?->can('tickets.vender_sin_fecha')
+                        && (bool) Auth::user()?->can('tickets.reschedule')
+                        && Permissions::permissionGrantedToAnyRole('tickets.vender_sin_fecha'))
                     ->query(function (Builder $query): Builder {
                         return $query->whereNull('trip_id');
                     }),

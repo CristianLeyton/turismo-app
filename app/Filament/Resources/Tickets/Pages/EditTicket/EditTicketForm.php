@@ -215,6 +215,11 @@ class EditTicketForm
                                         default => null,
                                     }
                                 )
+                                // Quien tiene "Editar precio fijo" sabe antes de guardar que
+                                // un precio cambiado deja de seguir la grilla.
+                                ->helperText(fn (mixed $livewire): ?string => self::isFixedPriceUnlockedByPermission($livewire)
+                                    ? 'Precio fijo. Si lo cambiás, el boleto pasa a precio manual.'
+                                    : null)
                                 ->validationMessages([
                                     'numeric' => 'El precio debe ser un número.',
                                     'min' => 'El precio no puede ser negativo.',
@@ -287,6 +292,19 @@ class EditTicketForm
         return $record instanceof Ticket
             ? EditTicket::isPriceLockedByFixedPrice($record)
             : FixedTicketPrice::isActive();
+    }
+
+    /**
+     * ¿El precio se puede editar solo gracias a `tickets.edit_fixed_price`?
+     * La vuelta con precio compartido queda afuera: ahí el precio no se edita.
+     */
+    private static function isFixedPriceUnlockedByPermission(mixed $livewire): bool
+    {
+        $record = $livewire instanceof EditTicket ? $livewire->getRecord() : self::livewireRecord();
+
+        return $record instanceof Ticket
+            && ! self::isSharedPriceReturnLeg($livewire)
+            && EditTicket::isFixedPriceUnlockedByPermission($record);
     }
 
     /**

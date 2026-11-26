@@ -279,8 +279,11 @@ class EditTicket extends ResourcePage
             }
         }
 
-        // Precio fijo: el seguro del menor ajusta el precio de la ida.
-        $adjustment = $this->fixedPriceAdjustment($ticket, (bool) ($data['travels_with_child'] ?? false));
+        // Precio fijo: el seguro del menor ajusta el precio de la ida, salvo
+        // que el precio se cambie a mano en esta edición (gana el cargado).
+        $adjustment = self::hasManualPriceChange($ticket, $data)
+            ? null
+            : $this->fixedPriceAdjustment($ticket, (bool) ($data['travels_with_child'] ?? false));
         if (is_array($adjustment)) {
             $label = $adjustment['ticket']->is($ticket) ? 'Precio' : 'Precio del boleto de ida';
             $details[] = $label.': $'.number_format($adjustment['old'], 0, ',', '.').' → $'.number_format($adjustment['new'], 0, ',', '.');
@@ -377,12 +380,47 @@ class EditTicket extends ResourcePage
 
     /**
      * ¿El precio fijo impide cambiar a mano el precio de este boleto? Sí,
-     * salvo que el pasaje se haya vendido a mano: ese precio lo puso una
-     * persona y lo sigue manejando una persona.
+     * salvo que el pasaje se haya vendido a mano (ese precio lo puso una
+     * persona y lo sigue manejando una persona) o que quien edita tenga
+     * `tickets.edit_fixed_price`. El formulario, el resumen y el guardado
+     * consultan este mismo método, así que el servidor también descarta el
+     * precio que mande quien no tiene el permiso.
      */
     public static function isPriceLockedByFixedPrice(Ticket $ticket): bool
     {
-        return FixedTicketPrice::isActive() && ! $ticket->isPricedManually();
+        return FixedTicketPrice::isActive()
+            && ! $ticket->isPricedManually()
+            && ! Auth::user()?->can('tickets.edit_fixed_price');
+    }
+
+    /**
+     * ¿El precio de este boleto está destrabado solo por el permiso
+     * `tickets.edit_fixed_price`? Es el caso en que el campo avisa que, si se
+     * cambia, el boleto pasa a precio manual.
+     */
+    public static function isFixedPriceUnlockedByPermission(Ticket $ticket): bool
+    {
+        return FixedTicketPrice::isActive()
+            && ! $ticket->isPricedManually()
+            && (bool) Auth::user()?->can('tickets.edit_fixed_price');
+    }
+
+    /**
+     * ¿La edición cambia a mano el precio de este boleto? Misma regla que el
+     * guardado: fuera de la vuelta compartida, con el precio destrabado y un
+     * monto distinto del actual.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    private static function hasManualPriceChange(Ticket $ticket, array $data): bool
+    {
+        if (self::isReturnLegWithSharedPrice($ticket) || self::isPriceLockedByFixedPrice($ticket)) {
+            return false;
+        }
+
+        $priceNew = $data['price'] ?? null;
+
+        return $priceNew !== null && (float) $priceNew !== (float) $ticket->price;
     }
 
     /**
@@ -593,7 +631,11 @@ class EditTicket extends ResourcePage
             $changes[] = ['observation', $observationOld, $observationNew];
         }
 
-        $priceAdjustment = $this->fixedPriceAdjustment($ticket, $childFlagNew);
+        // Con el precio cambiado a mano no se suma ni se resta el seguro: el
+        // boleto pasa a "manual" y el monto cargado es el que vale.
+        $priceAdjustment = collect($changes)->contains(fn (array $change): bool => $change[0] === 'price')
+            ? null
+            : $this->fixedPriceAdjustment($ticket, $childFlagNew);
 
         if ($priceAdjustment === false) {
             $this->notifyProblem(
@@ -739,6 +781,13 @@ class EditTicket extends ResourcePage
             }
             if (filled($data['price'] ?? null)) {
                 $ticket->price = $data['price'];
+            }
+
+            // Un precio cambiado a mano ya no es el de la grilla: el boleto
+            // pasa a "manual" (con o sin precio fijo) y el menor deja de
+            // ajustarlo solo. El seguro registrado se conserva como dato.
+            if (collect($changes)->contains(fn (array $change): bool => $change[0] === 'price')) {
+                $ticket->price_mode = Ticket::PRICE_MODE_MANUAL;
             }
         }
         if (Setting::observacionesActivas()) {

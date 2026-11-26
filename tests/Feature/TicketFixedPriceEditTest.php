@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Filament\Resources\Sales\SalesResource;
 use App\Filament\Resources\Tickets\Pages\EditTicket;
 use App\Models\Location;
 use App\Models\Passenger;
@@ -26,6 +27,8 @@ class TicketFixedPriceEditTest extends TestCase
 {
     use ConfiguresFixedPrice;
     use RefreshDatabase;
+
+    private const MANUAL_PRICE_NOTICE = 'Precio fijo. Si lo cambiás, el boleto pasa a precio manual.';
 
     private User $seller;
 
@@ -141,6 +144,235 @@ class TicketFixedPriceEditTest extends TestCase
 
         $this->assertEquals(0, $vuelta->fresh()->price);
         $this->assertEquals(9000, $ida->fresh()->price);
+    }
+
+    // ====================== Permiso "Editar precio fijo" ======================
+
+    public function test_con_el_permiso_un_boleto_fijo_se_edita_a_mano(): void
+    {
+        $ticket = $this->oneWayTicket(5000, pricing: $this->fixed(800));
+
+        $this->editor($ticket, $this->priceEditor())
+            ->assertFormFieldEnabled('price')
+            ->set('data.price', '4500')
+            ->set('data.edit_reason', 'Descuento acordado')
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertEquals(4500, $ticket->fresh()->price);
+        $this->assertEquals(4500, $this->sale->fresh()->total_amount);
+
+        $edit = TicketEdit::where('ticket_id', $ticket->id)->where('field', 'price')->sole();
+        $this->assertEquals(5000, (float) $edit->old_value);
+        $this->assertEquals(4500, (float) $edit->new_value);
+        $this->assertSame('Descuento acordado', $edit->reason);
+    }
+
+    public function test_con_el_permiso_un_boleto_sin_modo_se_edita_a_mano(): void
+    {
+        $ticket = $this->oneWayTicket(5000);
+
+        $this->editor($ticket, $this->priceEditor())
+            ->assertFormFieldEnabled('price')
+            ->set('data.price', '5500')
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertEquals(5500, $ticket->fresh()->price);
+    }
+
+    public function test_con_el_permiso_la_vuelta_sigue_sin_precio_propio(): void
+    {
+        [$ida, $vuelta] = $this->roundTrip(10000, withChild: false, pricing: $this->fixed(800));
+
+        $this->editor($vuelta, $this->priceEditor())
+            ->assertFormFieldDisabled('price')
+            ->assertSee('El precio viaja en el boleto de ida')
+            ->set('data.price', '7000')
+            ->set('data.first_name', 'Juan')
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertEquals(0, $vuelta->fresh()->price);
+        $this->assertEquals(10000, $ida->fresh()->price);
+    }
+
+    public function test_con_el_permiso_se_ve_el_aviso_de_precio_manual(): void
+    {
+        $ticket = $this->oneWayTicket(5000, pricing: $this->fixed(800));
+
+        $this->editor($ticket, $this->priceEditor())
+            ->assertSee(self::MANUAL_PRICE_NOTICE)
+            ->assertDontSee('Lo calcula el precio fijo');
+    }
+
+    public function test_sin_el_permiso_no_se_ve_el_aviso_de_precio_manual(): void
+    {
+        $ticket = $this->oneWayTicket(5000, pricing: $this->fixed(800));
+
+        $this->editor($ticket)->assertDontSee(self::MANUAL_PRICE_NOTICE);
+    }
+
+    public function test_el_aviso_no_aparece_en_un_boleto_manual_ni_con_precio_fijo_apagado(): void
+    {
+        $manual = $this->oneWayTicket(4500, pricing: ['price_mode' => Ticket::PRICE_MODE_MANUAL]);
+
+        $this->editor($manual, $this->priceEditor())->assertDontSee(self::MANUAL_PRICE_NOTICE);
+
+        $this->configureFixedPrice(false, 5000, 800);
+        $fixed = $this->oneWayTicket(5000, pricing: $this->fixed(800));
+
+        $this->editor($fixed, $this->priceEditor())->assertDontSee(self::MANUAL_PRICE_NOTICE);
+    }
+
+    public function test_el_permiso_sin_editar_boletos_no_da_acceso_a_la_edicion(): void
+    {
+        $ticket = $this->oneWayTicket(5000, pricing: $this->fixed(800));
+        $user = User::factory()->create()->assignRole(Permissions::ROLE_SELLER);
+        $user->givePermissionTo('tickets.edit_fixed_price');
+
+        Livewire::actingAs($user)
+            ->test(EditTicket::class, ['record' => $ticket->getKey()])
+            ->assertForbidden();
+    }
+
+    public function test_ventas_toma_el_precio_editado_en_el_dia_de_la_venta(): void
+    {
+        $this->sale->update(['sale_date' => '2026-11-10 10:00:00']);
+        $ticket = $this->oneWayTicket(5000, pricing: $this->fixed(800));
+
+        Carbon::setTestNow('2026-11-26 12:00:00');
+
+        $this->editor($ticket, $this->priceEditor())
+            ->set('data.price', '4500')
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertEquals(4500, $this->sale->fresh()->total_amount);
+
+        $saleDay = SalesResource::applySalesTotals(User::query(), [
+            'from' => '2026-11-10',
+            'to' => Carbon::parse('2026-11-10')->endOfDay(),
+            'methods' => [],
+        ])->whereKey($this->seller->id)->sole();
+        $this->assertEquals(4500, (float) $saleDay->total_amount);
+
+        $editDay = SalesResource::applySalesTotals(User::query(), [
+            'from' => '2026-11-26',
+            'to' => Carbon::parse('2026-11-26')->endOfDay(),
+            'methods' => [],
+        ])->whereKey($this->seller->id)->first();
+        $this->assertNull($editDay);
+    }
+
+    // ====================== El precio editado pasa a "manual" ======================
+
+    public function test_un_boleto_fijo_editado_con_el_permiso_pasa_a_manual_y_conserva_su_seguro(): void
+    {
+        $ticket = $this->oneWayTicket(5000, pricing: $this->fixed(800));
+
+        $this->editor($ticket, $this->priceEditor())
+            ->set('data.price', '4500')
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $ticket->refresh();
+        $this->assertSame(Ticket::PRICE_MODE_MANUAL, $ticket->price_mode);
+        $this->assertSame(800, $ticket->child_insurance);
+    }
+
+    public function test_con_precio_fijo_apagado_cambiar_el_precio_pasa_a_manual(): void
+    {
+        $this->configureFixedPrice(false, 5000, 800);
+        $fixed = $this->oneWayTicket(10000, pricing: $this->fixed(800));
+        $legacy = $this->oneWayTicket(5000);
+
+        foreach ([$fixed, $legacy] as $ticket) {
+            $this->editor($ticket)
+                ->set('data.price', '6000')
+                ->call('save')
+                ->assertHasNoErrors();
+
+            $this->assertSame(Ticket::PRICE_MODE_MANUAL, $ticket->fresh()->price_mode);
+        }
+    }
+
+    public function test_guardar_el_mismo_precio_no_cambia_el_modo(): void
+    {
+        $ticket = $this->oneWayTicket(5000, pricing: $this->fixed(800));
+
+        $this->editor($ticket, $this->priceEditor())
+            ->set('data.price', '5000')
+            ->set('data.phone_number', '3875559999')
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertSame(Ticket::PRICE_MODE_FIXED, $ticket->fresh()->price_mode);
+    }
+
+    public function test_vaciar_el_precio_no_lo_cambia_ni_cambia_el_modo(): void
+    {
+        $ticket = $this->oneWayTicket(5000, pricing: $this->fixed(800));
+
+        $this->editor($ticket, $this->priceEditor())
+            ->set('data.price', '')
+            ->set('data.first_name', 'Juan')
+            ->call('save');
+
+        $ticket->refresh();
+        $this->assertEquals(5000, $ticket->price);
+        $this->assertSame(Ticket::PRICE_MODE_FIXED, $ticket->price_mode);
+        $this->assertDatabaseMissing('ticket_edits', ['ticket_id' => $ticket->id, 'field' => 'price']);
+    }
+
+    public function test_cambiar_solo_el_menor_no_cambia_el_modo(): void
+    {
+        $ticket = $this->oneWayTicket(5000, pricing: $this->fixed(800));
+
+        $this->addChild($this->editor($ticket, $this->priceEditor()))->call('save')->assertHasNoErrors();
+
+        $ticket->refresh();
+        $this->assertEquals(5800, $ticket->price);
+        $this->assertSame(Ticket::PRICE_MODE_FIXED, $ticket->price_mode);
+    }
+
+    public function test_ya_manual_lo_edita_cualquiera_y_el_menor_no_cambia_el_precio(): void
+    {
+        $ticket = $this->oneWayTicket(5000, pricing: $this->fixed(800));
+
+        $this->editor($ticket, $this->priceEditor())
+            ->set('data.price', '4500')
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->addChild($this->editor($ticket->fresh())->assertFormFieldEnabled('price'))
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertEquals(4500, $ticket->fresh()->price);
+    }
+
+    public function test_el_precio_a_mano_gana_sobre_el_ajuste_del_seguro(): void
+    {
+        $this->configureFixedPrice(true, 70000, 5000);
+        $ticket = $this->oneWayTicket(70000, pricing: $this->fixed(5000));
+
+        $component = $this->addChild($this->editor($ticket, $this->priceEditor()))->set('data.price', '72000');
+
+        $summary = $this->summary($component);
+        $this->assertSame(1, substr_count($summary, 'Precio'));
+        $this->assertStringContainsString('Precio: $70.000 → $72.000', $summary);
+
+        $component->call('save')->assertHasNoErrors();
+
+        $ticket->refresh();
+        $this->assertEquals(72000, $ticket->price);
+        $this->assertSame(Ticket::PRICE_MODE_MANUAL, $ticket->price_mode);
+        $this->assertEquals(72000, $this->sale->fresh()->total_amount);
+
+        $edit = TicketEdit::where('ticket_id', $ticket->id)->where('field', 'price')->sole();
+        $this->assertEquals(70000, (float) $edit->old_value);
+        $this->assertEquals(72000, (float) $edit->new_value);
     }
 
     // ====================== Ajuste del seguro ======================
@@ -421,9 +653,18 @@ class TicketFixedPriceEditTest extends TestCase
         return ['price_mode' => Ticket::PRICE_MODE_FIXED, 'child_insurance' => $insurance];
     }
 
-    private function editor(Ticket $ticket): Testable
+    private function editor(Ticket $ticket, ?User $user = null): Testable
     {
-        return Livewire::actingAs($this->seller)->test(EditTicket::class, ['record' => $ticket->getKey()]);
+        return Livewire::actingAs($user ?? $this->seller)->test(EditTicket::class, ['record' => $ticket->getKey()]);
+    }
+
+    /** Vendedor que edita boletos y además tiene "Editar precio fijo". */
+    private function priceEditor(): User
+    {
+        $user = User::factory()->create()->assignRole(Permissions::ROLE_SELLER);
+        $user->givePermissionTo(['tickets.edit', 'tickets.edit_fixed_price']);
+
+        return $user;
     }
 
     private function addChild(Testable $component): Testable

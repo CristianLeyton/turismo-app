@@ -58,6 +58,9 @@ final class Permissions
                     'vender_dia_sin_servicio' => 'Vender en días sin servicio',
                     'reschedule' => 'Reprogramar',
                     'edit' => 'Editar datos del pasajero/venta',
+                    // Por bandera, sin defaults: destraba el precio de un boleto
+                    // con precio fijo al editarlo (solo junto con `edit`).
+                    'edit_fixed_price' => 'Editar precio fijo',
                     'delete' => 'Eliminar',
                     'restore' => 'Restaurar',
                     'force_delete' => 'Eliminar definitivamente',
